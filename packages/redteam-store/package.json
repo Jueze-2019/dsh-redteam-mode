@@ -1,0 +1,18 @@
+{
+  "name": "dsh-redteam-store",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RedTeam 资产库：靶标工作区 + SQLite 事实库（segment/asset/port/service/fingerprint/observation/edge/vuln）+ FTS5 全文索引",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./core": "./lib/core.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "bin"
+  ],
+  "license": "MIT"
+}

@@ -1,0 +1,1562 @@
+/**
+ * RedTeam 控制台 —— 浏览器半侧（手写 bundle）
+ *
+ * 格式与外壳的模块加载器一致：window.__ModuleLoader__.load({ id, factory })。
+ * id 必须等于包名（clientModules 以 manifest 包名作为浏览器模块身份）。
+ * 基座外无依赖：只用平台 seed 里的 react 与 ctx.slots。
+ */
+window.__ModuleLoader__.load({
+  id: 'dsh-redteam-ui',
+  factory: (require) => {
+    var module = { exports: {} }
+    var exports = module.exports
+    Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
+
+    const React = require('react')
+    const h = React.createElement
+
+    /*
+     * 布局接缝：AppFrame 是 display:grid（sidebar | 1fr | details），
+     * shell.overlay 是它内部 position:absolute;inset:0 的浮动层，带稳定属性
+     * data-shell-overlay。面板打开且详情栏关闭时，用 :has() 给 frame 加
+     * padding-right，让中栏（1fr）主动收窄 —— 面板常驻但不遮挡对话。
+     * 右侧栏打开时 frame 失去对应 collapsed 属性，面板滑出隐藏、宽度让回右侧栏。
+     * 注意属性名随 DSH 版本变化，这里同时兼容旧 data-details-collapsed 与新 data-rightbar-collapsed。
+     */
+    const CSS = `
+:root{--rt-dock-w:620px}
+/* 右侧栏收起时给 frame 加内边距，中栏主动收窄。属性名跨 DSH 版本兼容：\n   旧版 details 栏 data-details-collapsed，新版 rightbar 栏 data-rightbar-collapsed。 */\ndiv:has(> [data-shell-overlay] .rt-dock[data-open="1"])[data-details-collapsed],\ndiv:has(> [data-shell-overlay] .rt-dock[data-open="1"])[data-rightbar-collapsed]{padding-right:var(--rt-dock-w)}
+.rt-dock{position:absolute;top:0;right:0;bottom:0;z-index:20;display:flex;flex-direction:column;
+  background:var(--dsw-alias-bg-layer-1);border-left:1px solid var(--dsw-alias-border-l1);
+  box-shadow:-12px 0 32px rgba(0,0,0,.14);pointer-events:auto;color:var(--dsw-alias-label-primary);
+  font-size:13px;line-height:1.5;transition:transform .18s ease,opacity .18s ease}
+/* 右侧栏打开（或新版全屏）时让位：滑出隐藏。必须同时否定两个属性名——\n   旧写法只用 :not([data-details-collapsed])，在新 shell 里该属性不存在会导致条件恒真、面板永远打不开。 */\ndiv:has(> [data-shell-overlay] .rt-dock[data-open="1"]):not([data-details-collapsed]):not([data-rightbar-collapsed]) .rt-dock,\ndiv:has(> [data-shell-overlay] .rt-dock[data-open="1"])[data-rightbar-fullscreen] .rt-dock{
+  transform:translateX(100%);opacity:0;pointer-events:none}
+.rt-grip{position:absolute;left:-3px;top:0;bottom:0;width:6px;cursor:col-resize;background:transparent;z-index:2}
+.rt-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.rt-title{font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.rt-dot{width:8px;height:8px;border-radius:50%;background:var(--dsw-alias-brand-primary)}
+.rt-spacer{flex:1}
+.rt-btn{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);color:inherit;
+  border-radius:6px;padding:3px 9px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
+.rt-btn:hover{border-color:var(--dsw-alias-border-l2)}
+.rt-btn-primary{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);color:#fff}
+.rt-btn-primary:hover{opacity:.9}
+.rt-btn:disabled{opacity:.5;cursor:default}
+.rt-tabs{display:flex;gap:4px;padding:8px 12px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.rt-tab{padding:6px 12px;border-radius:6px 6px 0 0;cursor:pointer;font-size:12.5px;color:var(--dsw-alias-label-secondary)}
+.rt-tab.on{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);font-weight:600}
+.rt-body{flex:1;min-height:0;display:flex;flex-direction:column}
+.rt-split{flex:1;min-height:0;display:flex}
+.rt-side{width:200px;flex:none;border-right:1px solid var(--dsw-alias-border-l1);overflow:auto;padding:8px}
+.rt-main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.rt-seg{padding:7px 8px;border-radius:6px;cursor:pointer;margin-bottom:4px;border:1px solid transparent}
+.rt-seg:hover{background:var(--dsw-alias-bg-layer-2)}
+.rt-seg.on{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-brand-primary)}
+.rt-seg-cidr{font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
+.rt-seg-meta{font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:2px}
+.rt-toolbar{display:flex;gap:6px;padding:8px 10px;border-bottom:1px solid var(--dsw-alias-border-l1);flex-wrap:wrap;align-items:center}
+.rt-input{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);color:inherit;
+  border-radius:6px;padding:4px 8px;font-size:12px;font-family:inherit;outline:none;min-width:0}
+.rt-input:focus{border-color:var(--dsw-alias-brand-primary)}
+.rt-table{flex:1;overflow:auto}
+.rt-row{display:grid;grid-template-columns:112px 52px 78px 54px 1fr 1fr 96px;gap:8px;padding:6px 10px;
+  border-bottom:1px solid var(--dsw-alias-border-l1);align-items:center;cursor:pointer;font-size:12.5px}
+.rt-row:hover{background:var(--dsw-alias-bg-layer-2)}
+.rt-row.head{cursor:default;color:var(--dsw-alias-label-secondary);font-size:11.5px;font-weight:600;position:sticky;top:0;
+  background:var(--dsw-alias-bg-layer-1);z-index:1}
+.rt-row.head:hover{background:var(--dsw-alias-bg-layer-1)}
+.rt-mono{font-family:ui-monospace,Menlo,monospace}
+.rt-tag{display:inline-block;padding:0 5px;border-radius:4px;font-size:11px;margin-right:4px;
+  border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);white-space:nowrap}
+.rt-tag-passive{color:#8b5cf6;border-color:#8b5cf655;background:#8b5cf61a}
+.rt-tag-active{color:#f59e0b;border-color:#f59e0b55;background:#f59e0b1a}
+.rt-tag-live{color:#10b981;border-color:#10b98155;background:#10b9811a}
+.rt-tag-dead{color:var(--dsw-alias-label-secondary)}
+.rt-expand{grid-column:1/-1;padding:8px 4px 10px;font-size:12px;color:var(--dsw-alias-label-secondary)}
+.rt-kv{display:flex;gap:8px;margin-bottom:3px;align-items:baseline}
+.rt-kv b{color:var(--dsw-alias-label-primary);font-weight:600;min-width:64px;flex:none}
+.rt-graphwrap{flex:1;position:relative;overflow:hidden}
+.rt-graph{width:100%;height:100%;display:block}
+.rt-legend{position:absolute;left:10px;bottom:10px;display:flex;gap:10px;font-size:11px;
+  background:var(--dsw-alias-bg-overlay);border:1px solid var(--dsw-alias-border-l1);border-radius:6px;padding:5px 8px}
+.rt-legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
+.rt-pane{flex:1;overflow:auto;padding:12px}
+.rt-card{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:10px;margin-bottom:10px;background:var(--dsw-alias-bg-layer-2)}
+.rt-card h4{margin:0 0 6px;font-size:13px}
+.rt-textarea{width:100%;min-height:260px;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l1);
+  color:inherit;border-radius:6px;padding:8px;font-size:12.5px;font-family:ui-monospace,Menlo,monospace;
+  line-height:1.6;resize:vertical;outline:none;box-sizing:border-box}
+.rt-textarea:focus{border-color:var(--dsw-alias-brand-primary)}
+.rt-list{width:210px;flex:none;border-right:1px solid var(--dsw-alias-border-l1);overflow:auto;padding:8px}
+.rt-item{padding:7px 8px;border-radius:6px;cursor:pointer;margin-bottom:4px;border:1px solid transparent}
+.rt-item:hover{background:var(--dsw-alias-bg-layer-2)}
+.rt-item.on{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-brand-primary)}
+.rt-item-name{font-weight:600;font-size:12.5px}
+.rt-item-desc{font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:2px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.rt-empty{padding:24px;text-align:center;color:var(--dsw-alias-label-secondary);font-size:12.5px}
+.rt-err{color:var(--dsw-alias-state-error-primary);font-size:12px;padding:6px 10px}
+.rt-foot{padding:8px 12px;border-top:1px solid var(--dsw-alias-border-l1);font-size:11px;
+  color:var(--dsw-alias-label-secondary);display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.rt-icon-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;border:1px solid var(--dsw-alias-border-l1);
+  background:transparent;color:inherit;border-radius:6px;padding:6px 8px;cursor:pointer;font-family:inherit;font-size:12.5px}
+.rt-icon-btn:hover{background:var(--dsw-alias-bg-layer-2)}
+.rt-icon-btn.on{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary)}
+.rt-hbtn{border:1px solid var(--dsw-alias-border-l1);background:transparent;color:inherit;border-radius:6px;
+  padding:2px 8px;font-size:12px;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:5px}
+.rt-hbtn:hover{background:var(--dsw-alias-bg-layer-2)}
+.rt-hbtn.on{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary)}
+.rt-sev{display:inline-block;padding:0 5px;border-radius:4px;font-size:11px;font-weight:600;color:#fff}
+.rt-sev-critical{background:#ef4444}
+.rt-sev-high{background:#f97316}
+.rt-sev-medium{background:#f59e0b}
+.rt-sev-low{background:#3b82f6}
+.rt-sev-info{background:#94a3b8}
+.rt-test{display:inline-block;padding:0 5px;border-radius:4px;font-size:11px;white-space:nowrap;
+  border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary)}
+.rt-test-testing{color:#f59e0b;border-color:#f59e0b55;background:#f59e0b1a}
+.rt-test-tested{color:#10b981;border-color:#10b98155;background:#10b9811a}
+.rt-test-blocked{color:#fff;background:#ef4444;border-color:#ef4444}
+.rt-test-abandoned{color:#94a3b8;border-color:#94a3b855;background:#94a3b81a}
+.rt-test-no_surface{color:#6366f1;border-color:#6366f155;background:#6366f11a}
+.rt-pri{display:inline-block;padding:0 6px;border-radius:4px;font-size:11px;font-weight:600;white-space:nowrap}
+.rt-pri-high{color:#fff;background:#ef4444}
+.rt-pri-medium{color:#fff;background:#f59e0b}
+.rt-pri-low{color:#fff;background:#94a3b8}
+.rt-progress{height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-2);overflow:hidden;flex:1;min-width:60px;max-width:160px}
+.rt-progress>i{display:block;height:100%;background:var(--dsw-alias-brand-primary)}
+.rt-score-row{display:grid;grid-template-columns:56px 1fr 90px 64px;gap:8px;padding:7px 10px;
+  border-bottom:1px solid var(--dsw-alias-border-l1);align-items:center;font-size:12.5px;cursor:pointer}
+.rt-score-row:hover{background:var(--dsw-alias-bg-layer-2)}
+.rt-score-row.head{cursor:default;color:var(--dsw-alias-label-secondary);font-size:11.5px;font-weight:600;
+  position:sticky;top:0;background:var(--dsw-alias-bg-layer-1);z-index:1}
+.rt-score-detail{grid-column:1/-1;padding:8px 4px 10px;font-size:12px;color:var(--dsw-alias-label-secondary)}
+.rt-score-form{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px}
+.rt-score-form input,.rt-score-form select{width:100%;box-sizing:border-box}
+.rt-vrow{display:grid;grid-template-columns:62px 1fr 118px 76px 54px;gap:8px;padding:6px 10px;
+  border-bottom:1px solid var(--dsw-alias-border-l1);align-items:center;font-size:12.5px;cursor:pointer}
+.rt-vrow:hover{background:var(--dsw-alias-bg-layer-2)}
+.rt-vrow.head{cursor:default;color:var(--dsw-alias-label-secondary);font-size:11.5px;font-weight:600;
+  position:sticky;top:0;background:var(--dsw-alias-bg-layer-1);z-index:1}
+.rt-vdetail{grid-column:1/-1;padding:8px 4px 10px;font-size:12px;color:var(--dsw-alias-label-secondary)}
+.rt-vdetail .rt-kv{margin-bottom:4px}
+.rt-actions{display:flex;gap:6px;margin-top:6px}
+.rt-section{padding:8px 10px 2px;font-size:11.5px;font-weight:600;color:var(--dsw-alias-label-secondary)}
+.rt-link{color:var(--dsw-alias-brand-primary);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rt-link:hover{text-decoration:underline}
+.rt-full{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;
+  background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.5;
+  border-top:3px solid var(--dsw-alias-brand-primary)}
+.rt-full .rt-head{padding:12px 18px}
+.rt-full .rt-tabs{padding:10px 18px 0;gap:6px;flex-wrap:wrap}
+.rt-full .rt-side{width:260px}
+.rt-full .rt-list{width:280px}
+.rt-full .rt-row{grid-template-columns:150px 64px 100px 62px 1.2fr 1.2fr 120px}
+.rt-full .rt-vrow{grid-template-columns:80px 1.4fr 1.4fr 90px 70px}
+.rt-full .rt-pane{padding:18px}
+.rt-full .rt-textarea{min-height:60vh}
+.rt-full .rt-foot{padding:10px 18px;font-size:12px}
+.rt-full .rt-body{max-width:1400px;width:100%;margin:0 auto;flex:1;min-height:0;display:flex;flex-direction:column}
+.rt-chain{flex:1;overflow:auto;padding:10px 12px}
+.rt-step{display:flex;gap:10px;padding:8px 6px;border-left:2px solid var(--dsw-alias-border-l1);margin-left:6px}
+.rt-step:last-child{border-left-color:transparent}
+.rt-step-dot{width:22px;height:22px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:700;color:#fff;background:#64748b;margin-left:-13px}
+.rt-step-body{min-width:0}
+.rt-step-title{font-weight:600;font-size:13px}
+.rt-step-meta{font-size:11.5px;color:var(--dsw-alias-label-secondary);margin-top:2px;word-break:break-word}
+.rt-stage-recon{background:#6366f1}
+.rt-stage-vuln{background:#f59e0b}
+.rt-stage-exploit{background:#ef4444}
+.rt-stage-access{background:#10b981}
+.rt-stage-pivot{background:#8b5cf6}
+.rt-stage-data{background:#0ea5e9}
+.rt-stage-other{background:#64748b}
+.rt-md{flex:1;overflow:auto;margin:0;padding:14px 16px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;
+  line-height:1.65;white-space:pre-wrap;word-break:break-word;background:var(--dsw-alias-bg-base)}
+.rt-weblink{display:block;font-size:11.5px;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+`
+
+    /* ---------------------------------------------------------- 桥接与状态 */
+    /** 是否在「全面浏览」独立窗口里（URL hash 标记，复用同一套界面代码）。 */
+    const isFullWindow = () => {
+      try { return String(window.location.hash || '') === '#redteam-full' } catch { return false }
+    }
+
+    const api = (req) => fetch('/redteam/api', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(req),
+    }).then((res) => res.json())
+
+    let ui = { open: true, tab: 'assets' }
+    const subs = new Set()
+    const setUI = (patch) => {
+      ui = Object.assign({}, ui, patch)
+      for (const f of Array.from(subs)) f()
+    }
+    /* 面板宽度 → :root 自定义属性（frame 的 padding-right 依赖它） */
+    let dockWidthTag = null
+    const setDockWidth = (px) => {
+      if (dockWidthTag) dockWidthTag.textContent = ':root{--rt-dock-w:' + px + 'px}'
+    }
+    const useUI = () => {
+      const [, force] = React.useReducer((x) => x + 1, 0)
+      React.useEffect(() => {
+        const f = () => force()
+        subs.add(f)
+        return () => { subs.delete(f) }
+      }, [])
+      return ui
+    }
+
+    const fmt = (s) => (s ? String(s).replace('T', ' ').slice(0, 16) : '—')
+    const provLabel = (p) => (p === 'passive' ? '被动' : p === 'active' ? '主动' : '未知')
+
+    function ProvTag(props) {
+      if (!props.p) return h('span', { className: 'rt-tag' }, '未知')
+      return h('span', { className: 'rt-tag rt-tag-' + props.p }, provLabel(props.p))
+    }
+
+    const TEST_LABEL = { untested: '未测试', testing: '测试中', tested: '已测试', blocked: '被封禁', abandoned: '已放弃', no_surface: '无攻击面' }
+    const PRI_LABEL = { high: '高', medium: '中', low: '低' }
+
+    /** 资产易打性徽章。 */
+    function PriTag(props) {
+      if (!props.p) return h('span', { className: 'rt-tag' }, '未评')
+      return h('span', { className: 'rt-pri rt-pri-' + props.p, title: props.title || '' }, PRI_LABEL[props.p] || props.p)
+    }
+
+    /** 资产测试状态徽章。 */
+    function TestTag(props) {
+      const st = props.s || 'untested'
+      return h('span', { className: 'rt-test rt-test-' + st }, TEST_LABEL[st] || st)
+    }
+
+    /* ---------------------------------------------------------- 资产测绘 */
+    function AssetsTab(props) {
+      const eng = props.engagement
+      const snapshot = props.snapshot
+      const refreshKey = props.refreshKey || 0
+      const onRefresh = props.onRefresh
+      const [view, setView] = React.useState('list')
+      const [cidr, setCidr] = React.useState(null)
+      const [q, setQ] = React.useState('')
+      const [qApplied, setQApplied] = React.useState('')
+      const [service, setService] = React.useState('')
+      const [port, setPort] = React.useState('')
+      const [prov, setProv] = React.useState('')
+      const [testStatus, setTestStatus] = React.useState('')
+      const [priority, setPriority] = React.useState('')
+      const [state, setState] = React.useState({ loading: false, error: null, total: 0, items: [] })
+      const [graphState, setGraphState] = React.useState({ loading: false, data: null, error: null })
+      const [domains, setDomains] = React.useState(null)
+      const [web, setWeb] = React.useState(null)
+      const [openId, setOpenId] = React.useState(null)
+      const [detail, setDetail] = React.useState(null)
+      const seq = React.useRef(0)
+      const onData = props.onData
+
+      React.useEffect(() => {
+        if (!eng) return
+        const my = ++seq.current
+        setState((s) => Object.assign({}, s, { loading: true, error: null }))
+        api({
+          op: 'assets', engagement: eng, cidr: cidr || undefined, q: qApplied || undefined,
+          service: service || undefined, port: port || undefined,
+          provenance: prov || undefined, test_status: testStatus || undefined,
+          priority: priority || undefined, limit: 400,
+        }).then((r) => {
+          if (my !== seq.current) return
+          if (!r || r.ok === false) {
+            setState({ loading: false, error: (r && r.error) || '查询失败', total: 0, items: [] })
+            return
+          }
+          setState({ loading: false, error: null, total: r.total, items: r.items || [] })
+          /* C 段/统计可能因本轮采集新增：让外层重新拉一次快照，左侧分类立即更新 */
+          if (onData) onData()
+        }, (e) => {
+          if (my === seq.current) setState({ loading: false, error: String((e && e.message) || e), total: 0, items: [] })
+        })
+      }, [eng, cidr, qApplied, service, port, prov, testStatus, priority, refreshKey])
+
+      React.useEffect(() => {
+        if (!eng || view !== 'domain') return
+        setDomains(null)
+        api({ op: 'domains', engagement: eng, cidr: cidr || undefined })
+          .then((r) => setDomains((r && r.items) || []), () => setDomains([]))
+      }, [eng, view, cidr, refreshKey])
+
+      React.useEffect(() => {
+        if (!eng || view !== 'web') return
+        setWeb(null)
+        api({ op: 'web', engagement: eng, cidr: cidr || undefined })
+          .then((r) => setWeb((r && r.items) || []), () => setWeb([]))
+      }, [eng, view, cidr, refreshKey])
+
+      React.useEffect(() => {
+        if (!eng || view !== 'graph') return
+        setGraphState((s) => Object.assign({}, s, { loading: true, error: null }))
+        api({ op: 'attackGraph', engagement: eng, cidr: cidr || undefined }).then((r) => {
+          if (!r || r.ok === false) {
+            setGraphState({ loading: false, data: null, error: (r && r.error) || '图谱加载失败' })
+            return
+          }
+          setGraphState({ loading: false, data: { nodes: r.nodes || [], edges: r.edges || [] }, error: null })
+        }, (e) => setGraphState({ loading: false, data: null, error: String((e && e.message) || e) }))
+      }, [eng, view, cidr, refreshKey])
+
+      const toggleRow = (id) => {
+        if (openId === id) { setOpenId(null); setDetail(null); return }
+        setOpenId(id)
+        setDetail(null)
+        api({ op: 'asset', engagement: eng, id: id }).then((r) => {
+          if (r && r.ok && r.asset) setDetail(r.asset)
+        }, () => {})
+      }
+
+      const segs = (snapshot && snapshot.segments) || []
+
+      const sideChildren = []
+      sideChildren.push(h('div', {
+        key: 'all', className: 'rt-seg' + (cidr ? '' : ' on'), onClick: () => setCidr(null),
+      },
+        h('div', { className: 'rt-seg-cidr' }, '全部 C 段'),
+        h('div', { className: 'rt-seg-meta' }, segs.length + ' 个网段')))
+      for (const s of segs) {
+        sideChildren.push(h('div', {
+          key: s.cidr, className: 'rt-seg' + (cidr === s.cidr ? ' on' : ''),
+          onClick: () => setCidr(s.cidr),
+        },
+          h('div', { className: 'rt-seg-cidr' }, s.cidr),
+          h('div', { className: 'rt-seg-meta' }, (s.org || '未知归属') + ' · ' + s.assets + ' 资产 · ' + s.open_ports + ' 端口'),
+          h('div', { className: 'rt-seg-meta' },
+            h('span', { className: 'rt-tag rt-tag-passive' }, '被动 ' + s.passive_ports),
+            h('span', { className: 'rt-tag rt-tag-active' }, '主动 ' + s.active_ports))))
+      }
+      const side = h('div', { className: 'rt-side' }, sideChildren)
+
+      const toolbar = h('div', { className: 'rt-toolbar' },
+        h('input', {
+          className: 'rt-input', style: { flex: '1 1 150px' }, placeholder: '搜索 IP / 域名 / 指纹（回车）',
+          value: q, onChange: (e) => setQ(e.target.value),
+          onKeyDown: (e) => { if (e.key === 'Enter') setQApplied(q) },
+        }),
+        h('button', { className: 'rt-btn', onClick: () => setQApplied(q) }, '搜索'),
+        h('input', {
+          className: 'rt-input', style: { width: '78px' }, placeholder: '服务',
+          value: service, onChange: (e) => setService(e.target.value),
+        }),
+        h('input', {
+          className: 'rt-input', style: { width: '60px' }, placeholder: '端口',
+          value: port, onChange: (e) => setPort(e.target.value),
+        }),
+        h('select', { className: 'rt-input', value: prov, onChange: (e) => setProv(e.target.value) },
+          h('option', { value: '' }, '来源不限'),
+          h('option', { value: 'passive' }, '仅被动'),
+          h('option', { value: 'active' }, '仅主动')),
+        h('select', { className: 'rt-input', value: priority, onChange: (e) => setPriority(e.target.value) },
+          h('option', { value: '' }, '易打性不限'),
+          h('option', { value: 'high' }, '易打（高）'),
+          h('option', { value: 'medium' }, '一般（中）'),
+          h('option', { value: 'low' }, '难打（低）')),
+        h('select', { className: 'rt-input', value: testStatus, onChange: (e) => setTestStatus(e.target.value) },
+          h('option', { value: '' }, '测试状态不限'),
+          h('option', { value: 'untested' }, '未测试'),
+          h('option', { value: 'testing' }, '测试中'),
+          h('option', { value: 'tested' }, '已测试'),
+          h('option', { value: 'blocked' }, '被封禁'),
+          h('option', { value: 'abandoned' }, '已放弃'),
+          h('option', { value: 'no_surface' }, '无攻击面')),
+        h('div', { className: 'rt-spacer' }),
+        h('button', { className: 'rt-btn', title: '重新拉取快照与当前视图数据', onClick: () => { if (onRefresh) onRefresh() } }, '刷新'),
+        h('button', { className: 'rt-btn' + (view === 'list' ? ' rt-btn-primary' : ''), onClick: () => setView('list') }, '列表'),
+        h('button', { className: 'rt-btn' + (view === 'domain' ? ' rt-btn-primary' : ''), onClick: () => setView('domain') }, '域名'),
+        h('button', { className: 'rt-btn' + (view === 'web' ? ' rt-btn-primary' : ''), onClick: () => setView('web') }, 'Web'),
+        h('button', { className: 'rt-btn' + (view === 'graph' ? ' rt-btn-primary' : ''), onClick: () => setView('graph') }, '图谱'))
+
+      const head = h('div', { className: 'rt-row head' },
+        h('span', null, 'IP'), h('span', null, '状态'), h('span', null, '来源'), h('span', null, '易打'),
+        h('span', null, '开放端口 / 服务'), h('span', null, '指纹'), h('span', null, '测试'))
+
+      const rowNodes = []
+      for (const it of state.items) {
+        const openPorts = it.ports.filter((p) => p.state === 'open')
+        const portText = openPorts.map((p) => p.port + (p.service ? '/' + p.service : '')).join(', ') || '—'
+        const fpText = it.fingerprints.map((f) => [f.vendor, f.product, f.version].filter(Boolean).join(' ')).join(' / ') || '—'
+        rowNodes.push(h('div', {
+          key: 'r' + it.id, className: 'rt-row', onClick: () => toggleRow(it.id),
+        },
+          h('span', { className: 'rt-mono' }, it.ip),
+          h('span', null, h('span', {
+            className: 'rt-tag rt-tag-' + (it.state === 'live' ? 'live' : 'dead'),
+          }, it.state === 'live' ? '存活' : it.state)),
+          h('span', null,
+            it.passive ? h('span', { className: 'rt-tag rt-tag-passive' }, '被动 ' + it.passive) : null,
+            it.active ? h('span', { className: 'rt-tag rt-tag-active' }, '主动 ' + it.active) : null),
+          h('span', null, h(PriTag, { p: it.priority, title: it.potential || '' })),
+          h('span', { title: portText }, portText.length > 40 ? portText.slice(0, 40) + '…' : portText),
+          h('span', { title: fpText }, fpText.length > 34 ? fpText.slice(0, 34) + '…' : fpText),
+          h('span', null, h(TestTag, { s: it.test_status }),
+            it.blocked_count ? h('span', { className: 'rt-tag', style: { color: '#ef4444', borderColor: '#ef444455' } }, '封' + it.blocked_count) : null)))
+
+        if (openId !== it.id) continue
+        const d = detail && detail.id === it.id ? detail : null
+        const portRows = []
+        const fpRows = []
+        const obsRows = []
+        if (d) {
+          for (const p of (d.ports || [])) {
+            if (p.state !== 'open') continue
+            portRows.push(h('div', { key: 'p' + p.port, className: 'rt-kv' },
+              h('b', { className: 'rt-mono' }, p.port + '/' + p.proto),
+              h('span', null, [p.service, p.product, p.version].filter(Boolean).join(' ') || '未知服务'),
+              p.url ? h('a', { className: 'rt-link', href: p.url, target: '_blank', rel: 'noreferrer', title: p.url }, p.title ? p.title : p.url) : null,
+              h(ProvTag, { p: p.provenance })))
+          }
+          for (const f of (d.fingerprints || [])) {
+            fpRows.push(h('div', { key: 'f' + (f.product || '') + (f.version || '') + (f.evidence || ''), className: 'rt-kv' },
+              h('b', null, f.category || '—'),
+              h('span', null, [f.vendor, f.product, f.version].filter(Boolean).join(' ') + (f.evidence ? '（' + f.evidence + '）' : '')),
+              h(ProvTag, { p: f.provenance })))
+          }
+          for (const o of (d.observations || []).slice(0, 8)) {
+            obsRows.push(h('div', { key: 'o' + (o.attr || '') + (o.value || '') + (o.collected_at || ''), className: 'rt-kv' },
+              h('b', null, o.attr || '—'),
+              h('span', null, (o.value || '') + ' · ' + (o.tool || '未知工具') + ' · ' + fmt(o.collected_at)),
+              h(ProvTag, { p: o.provenance })))
+          }
+        }
+        const inner = d
+          ? h('div', null,
+              h('div', { className: 'rt-kv' }, h('b', null, '主机名'), h('span', null, (d.names || []).map((n) => n.name).join(', ') || '—')),
+              h('div', { className: 'rt-kv' }, h('b', null, 'C 段'), h('span', null, d.segment_cidr)),
+              h('div', { className: 'rt-kv' }, h('b', null, '时间'), h('span', null, '首见 ' + fmt(d.first_seen) + ' · 末见 ' + fmt(d.last_seen))),
+              h('div', { className: 'rt-kv' }, h('b', null, '测试'), h('span', null,
+                h(TestTag, { s: d.test_status }),
+                h('span', { style: { marginLeft: 8 } }, '封禁 ' + (d.blocked_count || 0) + ' 次' + (d.test_updated_at ? ' · 更新 ' + fmt(d.test_updated_at) : '')),
+                d.test_updated_by ? h('span', { style: { marginLeft: 8 } }, 'by ' + d.test_updated_by) : null)),
+              h('div', { className: 'rt-kv' }, h('b', null, '易打性'), h('span', null,
+                h(PriTag, { p: d.priority }),
+                h('span', { style: { marginLeft: 8 } }, d.potential || '未评估'),
+                d.assessed_at ? h('span', { style: { marginLeft: 8 } }, '· ' + fmt(d.assessed_at)) : null)),
+              d.assess_reason ? h('div', { className: 'rt-kv' }, h('b', null, '评估依据'), h('span', null, d.assess_reason)) : null,
+              d.test_surface ? h('div', { className: 'rt-kv' }, h('b', null, '剩余攻击面'), h('span', null, d.test_surface)) : null,
+              d.test_notes ? h('div', null,
+                h('div', { style: { fontWeight: 600, margin: '6px 0 3px' } }, '测试记录'),
+                h('div', null, d.test_notes.split('\n').filter(Boolean).map((line, i) => h('div', { key: 'tn' + i, style: { fontSize: 11.5, marginBottom: 2 } }, line)))) : null,
+              h('div', { style: { margin: '6px 0 3px', fontWeight: 600 } }, '开放端口 / 服务'),
+              h('div', null, portRows.length ? portRows : '—'),
+              h('div', { style: { margin: '6px 0 3px', fontWeight: 600 } }, '指纹'),
+              h('div', null, fpRows.length ? fpRows : '—'),
+              h('div', { style: { margin: '6px 0 3px', fontWeight: 600 } }, '采集溯源（最近 8 条）'),
+              h('div', null, obsRows.length ? obsRows : '—'))
+          : h('div', null, '加载中…')
+        rowNodes.push(h('div', {
+          key: 'd' + it.id, className: 'rt-row',
+          style: { cursor: 'default', gridTemplateColumns: '1fr' },
+        }, h('div', { className: 'rt-expand' }, inner)))
+      }
+
+      const listPane = h('div', { className: 'rt-table' }, head, rowNodes,
+        !state.loading && !state.items.length ? h('div', { className: 'rt-empty' }, '没有匹配的资产') : null)
+
+      /* 域名维度：域名 → 关联资产 */
+      const domainPane = h('div', { className: 'rt-table' },
+        domains === null ? h('div', { className: 'rt-empty' }, '加载中…')
+          : domains.length
+          ? domains.map((g) => h('div', { key: g.domain },
+              h('div', { className: 'rt-section', style: { padding: '8px 10px 4px' } },
+                h('a', { className: 'rt-link', href: 'http://' + g.domain, target: '_blank', rel: 'noreferrer' }, g.domain),
+                h('span', { className: 'rt-tag', style: { marginLeft: 8 } }, g.count + ' 个资产')),
+              g.assets.map((a) => h('div', {
+                key: g.domain + a.id, className: 'rt-row',
+                style: { gridTemplateColumns: '150px 130px 70px 1fr', cursor: 'pointer' },
+                onClick: () => { setView('list'); setQ(''); setQApplied(a.ip) },
+              },
+                h('span', { className: 'rt-mono' }, a.ip),
+                h('span', { className: 'rt-mono' }, a.segment),
+                h('span', null, h('span', { className: 'rt-tag rt-tag-' + (a.state === 'live' ? 'live' : 'dead') }, a.state === 'live' ? '存活' : a.state)),
+                h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)' } }, (a.names || []).join(', '))))))
+          : h('div', { className: 'rt-empty' }, cidr ? '该 C 段下暂无域名（切换到「全部 C 段」看全量）' : '暂无域名数据（信息收集阶段会写入域名）'))
+
+      /* Web 资产：标题 + 可直接点击的 URL */
+      const webPane = h('div', { className: 'rt-table' },
+        h('div', { className: 'rt-row head', style: { gridTemplateColumns: '1.6fr 1.2fr 130px 110px' } },
+          h('span', null, 'URL（可点击）'), h('span', null, '标题'), h('span', null, '资产'), h('span', null, '服务')),
+        (web || []).map((w) => {
+          const url = w.url || ('http' + (w.port === 443 || w.port === 8443 || w.port === 9443 ? 's' : '') + '://' + w.ip + (w.port === 80 || w.port === 443 ? '' : ':' + w.port))
+          return h('div', {
+            key: 'w' + w.port_id, className: 'rt-row',
+            style: { gridTemplateColumns: '1.6fr 1.2fr 130px 110px', cursor: 'default' },
+          },
+            h('a', { className: 'rt-link rt-mono', href: url, target: '_blank', rel: 'noreferrer', title: url }, url),
+            h('span', { title: w.title || '' }, w.title || '—'),
+            h('span', { className: 'rt-mono' }, w.ip + ' · ' + w.segment_cidr),
+            h('span', { style: { fontSize: 11 } }, [w.service, w.product, w.version].filter(Boolean).join(' ')))
+        }),
+        web === null ? h('div', { className: 'rt-empty' }, '加载中…')
+          : (!web.length ? h('div', { className: 'rt-empty' }, cidr ? '该 C 段下暂无 Web 资产' : '暂无 Web 资产（HTTP 探测后会写入 URL 与标题）') : null))
+
+      const graphPane = h('div', { className: 'rt-graphwrap' },
+        graphState.data
+          ? h(GraphCanvas, { data: graphState.data })
+          : h('div', { className: 'rt-empty' }, graphState.loading ? '图谱加载中…' : (graphState.error || '暂无数据')),
+        h('div', { className: 'rt-legend' },
+          h('span', null, h('i', { style: { background: '#6366f1' } }), 'C 段'),
+          h('span', null, h('i', { style: { background: '#10b981' } }), '存活资产'),
+          h('span', null, h('i', { style: { background: '#9ca3af' } }), '离线资产'),
+          h('span', null, h('i', { style: { background: '#f59e0b' } }), '开放端口'),
+          h('span', null, h('i', { style: { background: '#ef4444' } }), '已确认漏洞'),
+          h('span', null, h('i', { style: { background: '#fbbf24' } }), '已控制')))
+
+      let pane = listPane
+      if (view === 'domain') pane = domainPane
+      else if (view === 'web') pane = webPane
+      else if (view === 'graph') pane = graphPane
+
+      return h('div', { className: 'rt-split' }, side,
+        h('div', { className: 'rt-main' }, toolbar,
+          state.error ? h('div', { className: 'rt-err' }, state.error) : null,
+          pane))
+    }
+
+    /* ---------------------------------------------------------- 图谱画布 */
+    function GraphCanvas(props) {
+      const ref = React.useRef(null)
+      React.useEffect(() => {
+        const canvas = ref.current
+        if (!canvas || !props.data) return
+        const rect = canvas.getBoundingClientRect()
+        const W = Math.max(320, rect.width)
+        const H = Math.max(240, rect.height)
+        const dpr = window.devicePixelRatio || 1
+        canvas.width = Math.floor(W * dpr)
+        canvas.height = Math.floor(H * dpr)
+        const g = canvas.getContext('2d')
+        g.setTransform(dpr, 0, 0, dpr, 0, 0)
+
+        const kindColor = { segment: '#6366f1', asset: '#10b981', port: '#f59e0b', domain: '#8b5cf6', vuln: '#ef4444' }
+        const nodes = props.data.nodes.map((n, i) => {
+          const a = (i / Math.max(1, props.data.nodes.length)) * Math.PI * 2
+          const owned = n.kind === 'asset' && n.meta && n.meta.owned
+          return Object.assign({}, n, {
+            x: W / 2 + Math.cos(a) * Math.min(W, H) * 0.32,
+            y: H / 2 + Math.sin(a) * Math.min(W, H) * 0.32,
+            vx: 0, vy: 0,
+            r: n.kind === 'segment' ? 13 : n.kind === 'vuln' ? 8 : n.kind === 'asset' ? 7 : 4.5,
+            owned: owned,
+          })
+        })
+        const byId = new Map(nodes.map((n) => [n.id, n]))
+        const links = props.data.edges
+          .map((e) => ({ s: byId.get(e.source), t: byId.get(e.target), r: e.relation }))
+          .filter((l) => l.s && l.t)
+
+        let raf = null
+        let ticks = 0
+        const tick = () => {
+          ticks++
+          for (let i = 0; i < nodes.length; i++) {
+            const a = nodes[i]
+            for (let j = i + 1; j < nodes.length; j++) {
+              const b = nodes[j]
+              let dx = b.x - a.x
+              let dy = b.y - a.y
+              let d2 = dx * dx + dy * dy
+              if (d2 < 1) { d2 = 1; dx = Math.random() - 0.5; dy = Math.random() - 0.5 }
+              const d = Math.sqrt(d2)
+              const rep = 1400 / d2
+              const fx = (dx / d) * rep
+              const fy = (dy / d) * rep
+              a.vx -= fx; a.vy -= fy; b.vx += fx; b.vy += fy
+            }
+          }
+          for (const l of links) {
+            const dx = l.t.x - l.s.x
+            const dy = l.t.y - l.s.y
+            const d = Math.max(1, Math.sqrt(dx * dx + dy * dy))
+            const target = l.s.kind === 'segment' ? 110 : 62
+            const f = (d - target) * 0.035
+            const fx = (dx / d) * f
+            const fy = (dy / d) * f
+            l.s.vx += fx; l.s.vy += fy; l.t.vx -= fx; l.t.vy -= fy
+          }
+          for (const n of nodes) {
+            n.vx += (W / 2 - n.x) * 0.004
+            n.vy += (H / 2 - n.y) * 0.004
+            n.vx *= 0.82; n.vy *= 0.82
+            n.x = Math.max(24, Math.min(W - 24, n.x + n.vx))
+            n.y = Math.max(24, Math.min(H - 24, n.y + n.vy))
+          }
+          g.clearRect(0, 0, W, H)
+          g.lineWidth = 1
+          for (const l of links) {
+            g.strokeStyle = l.r === 'contains' ? 'rgba(99,102,241,.30)'
+              : l.r === 'has_vuln' ? 'rgba(239,68,68,.55)'
+                : 'rgba(148,163,184,.35)'
+            g.beginPath()
+            g.moveTo(l.s.x, l.s.y)
+            g.lineTo(l.t.x, l.t.y)
+            g.stroke()
+          }
+          for (const n of nodes) {
+            if (n.owned) {
+              g.beginPath()
+              g.arc(n.x, n.y, n.r + 4, 0, Math.PI * 2)
+              g.strokeStyle = '#fbbf24'
+              g.lineWidth = 2
+              g.stroke()
+              g.lineWidth = 1
+            }
+            g.beginPath()
+            g.arc(n.x, n.y, n.r, 0, Math.PI * 2)
+            g.fillStyle = n.kind === 'asset' && n.meta && n.meta.state !== 'live'
+              ? '#9ca3af'
+              : (kindColor[n.kind] || '#94a3b8')
+            g.fill()
+            if (n.kind === 'segment' || n.kind === 'asset' || n.kind === 'domain' || n.kind === 'vuln') {
+              g.fillStyle = n.kind === 'vuln' ? 'rgba(248,113,113,.95)' : 'rgba(148,163,184,.95)'
+              g.font = (n.kind === 'segment' ? '600 11px ' : '11px ') + 'ui-monospace,Menlo,monospace'
+              g.textAlign = 'center'
+              g.fillText(String(n.label), n.x, n.y - n.r - 5)
+            }
+          }
+          if (ticks < 260) raf = window.requestAnimationFrame(tick)
+        }
+        tick()
+        return () => { if (raf) window.cancelAnimationFrame(raf) }
+      }, [props.data])
+      return h('canvas', { ref: ref, className: 'rt-graph' })
+    }
+
+    /* ---------------------------------------------------------- 智能体提示词 */
+    function PromptsTab(props) {
+      const eng = props.engagement
+      const refreshKey = props.refreshKey || 0
+      const [roles, setRoles] = React.useState([])
+      const [active, setActive] = React.useState(null)
+      const [draft, setDraft] = React.useState('')
+      const [msg, setMsg] = React.useState(null)
+      const [busy, setBusy] = React.useState(false)
+
+      React.useEffect(() => {
+        if (!eng) return
+        api({ op: 'prompts', engagement: eng }).then((r) => {
+          if (!r || r.ok === false) { setMsg({ err: (r && r.error) || '读取失败' }); return }
+          setRoles(r.roles || [])
+          if (r.roles && r.roles.length) setActive((cur) => cur || r.roles[0].role)
+        }, (e) => setMsg({ err: String((e && e.message) || e) }))
+      }, [eng, refreshKey])
+
+      React.useEffect(() => {
+        const r = roles.find((x) => x.role === active)
+        if (r) setDraft(r.content || '')
+      }, [active, roles])
+
+      const save = () => {
+        setBusy(true)
+        setMsg(null)
+        api({ op: 'savePrompt', engagement: eng, role: active, content: draft }).then((r) => {
+          setBusy(false)
+          if (!r || r.ok === false) { setMsg({ err: (r && r.error) || '保存失败' }); return }
+          setRoles((list) => list.map((x) => (x.role === active
+            ? Object.assign({}, x, { content: draft, updated_at: new Date().toISOString() })
+            : x)))
+          setMsg({ ok: '已保存' })
+        }, (e) => { setBusy(false); setMsg({ err: String((e && e.message) || e) }) })
+      }
+
+      const cur = roles.find((x) => x.role === active)
+      const items = roles.map((r) => h('div', {
+        key: r.role, className: 'rt-item' + (active === r.role ? ' on' : ''),
+        onClick: () => { setActive(r.role); setMsg(null) },
+      },
+        h('div', { className: 'rt-item-name' }, r.title),
+        h('div', { className: 'rt-item-desc' }, (r.content || '').replace(/[#*`]/g, '').slice(0, 60) || '（空）')))
+
+      return h('div', { className: 'rt-split' },
+        h('div', { className: 'rt-list' }, items),
+        h('div', { className: 'rt-main' },
+          h('div', { className: 'rt-toolbar' },
+            h('span', { style: { fontWeight: 600 } }, cur ? cur.title : '提示词'),
+            h('span', { className: 'rt-tag' }, '更新 ' + fmt(cur && cur.updated_at)),
+            h('div', { className: 'rt-spacer' }),
+            h('button', { className: 'rt-btn rt-btn-primary', disabled: busy || !active, onClick: save }, busy ? '保存中…' : '保存')),
+          msg ? h('div', { className: msg.err ? 'rt-err' : 'rt-foot' }, msg.err || msg.ok) : null,
+          h('div', { className: 'rt-pane' },
+            h('textarea', {
+              className: 'rt-textarea', value: draft, spellCheck: false,
+              onChange: (e) => setDraft(e.target.value),
+              placeholder: '该角色的系统提示词（Markdown）',
+            }),
+            h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)', marginTop: 6 } },
+              '保存后写入 agents/' + (active || 'role') + '.md，并在该角色会话的每次模型请求前注入。'))))
+    }
+
+    /* ---------------------------------------------------------- 技能库（DSH 原生） */
+    function SkillsTab(props) {
+      const refreshKey = props.refreshKey || 0
+      const [items, setItems] = React.useState([])
+      const [roots, setRoots] = React.useState([])
+      const [err, setErr] = React.useState(null)
+      const [q, setQ] = React.useState('')
+      const [active, setActive] = React.useState(null)
+      const [detail, setDetail] = React.useState(null)
+      const [busy, setBusy] = React.useState(false)
+
+      const load = () => {
+        setBusy(true)
+        api({ op: 'skillCatalog' }).then((r) => {
+          setBusy(false)
+          if (!r || r.ok === false) { setErr((r && r.error) || '读取失败'); return }
+          setErr(null)
+          setRoots(r.roots || [])
+          setItems(r.items || [])
+        }, (e) => { setBusy(false); setErr(String((e && e.message) || e)) })
+      }
+      React.useEffect(load, [refreshKey])
+
+      const open = (name) => {
+        if (active === name) { setActive(null); setDetail(null); return }
+        setActive(name)
+        setDetail(null)
+        api({ op: 'skillRead', name: name }).then((r) => {
+          if (r && r.ok) setDetail(r)
+          else setErr((r && r.error) || '读取失败')
+        }, (e) => setErr(String((e && e.message) || e)))
+      }
+
+      const needle = q.trim().toLowerCase()
+      const filtered = needle
+        ? items.filter((s) => (s.name + ' ' + s.description + ' ' + s.whenToUse).toLowerCase().indexOf(needle) >= 0)
+        : items
+      const needRestart = err !== null && String(err).indexOf('unknown op') >= 0
+
+      const listItems = filtered.map((s) => h('div', {
+        key: s.name, className: 'rt-item' + (active === s.name ? ' on' : ''),
+        onClick: () => open(s.name),
+      },
+        h('div', { className: 'rt-item-name' }, s.name,
+          s.modelInvocable === false ? h('span', { className: 'rt-tag', style: { marginLeft: 6 } }, '仅人工') : null),
+        h('div', { className: 'rt-item-desc' }, s.description || '（无描述）')))
+
+      return h('div', { className: 'rt-split' },
+        h('div', { className: 'rt-list' },
+          h('input', {
+            className: 'rt-input', style: { width: '100%', marginBottom: 8, boxSizing: 'border-box' },
+            placeholder: '过滤技能', value: q, onChange: (e) => setQ(e.target.value),
+          }),
+          h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)', marginBottom: 8 } },
+            '共 ' + items.length + ' 个 · 由 DSH 管理'),
+          listItems),
+        h('div', { className: 'rt-main' },
+          h('div', { className: 'rt-toolbar' },
+            h('span', { style: { fontWeight: 600 } }, detail ? detail.name : '技能目录（DSH 原生）'),
+            h('div', { className: 'rt-spacer' }),
+            h('button', { className: 'rt-btn', disabled: busy, onClick: load }, busy ? '刷新中…' : '刷新')),
+          err
+            ? (needRestart
+                ? h('div', { className: 'rt-empty' }, '该模块的宿主代码已更新，需重启一次 dsh web 后生效')
+                : h('div', { className: 'rt-err' }, err))
+            : null,
+          detail
+            ? h('div', { className: 'rt-pane' },
+                h('div', { className: 'rt-kv' }, h('b', null, '描述'), h('span', null, detail.description || '—')),
+                h('div', { className: 'rt-kv' }, h('b', null, '何时使用'), h('span', null, detail.whenToUse || '—')),
+                h('div', { className: 'rt-kv' }, h('b', null, '来源'), h('span', null, (detail.provider || '—') + ' / ' + (detail.source || '—'))),
+                detail.path ? h('div', { className: 'rt-kv' }, h('b', null, '文件'), h('span', { className: 'rt-mono', style: { wordBreak: 'break-all' } }, detail.path)) : null,
+                h('pre', { className: 'rt-md', style: { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 6, maxHeight: '52vh' } }, detail.content || '（空）'))
+            : h('div', { className: 'rt-pane' },
+                h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)', marginBottom: 8 } },
+                  '技能由 harness 的 skill 体系管理，红队智能体通过原生 skill 工具调用。技能根：'),
+                h('div', { style: { fontSize: 12, marginBottom: 12 } }, roots.map((r) => h('div', { key: r, className: 'rt-mono' }, '· ' + r))),
+                h('div', { className: 'rt-empty' }, '左侧选择技能查看内容')))
+      )
+    }
+
+    /* ---------------------------------------------------------- 漏洞战果 */
+    const SEV_LABEL = { critical: '严重', high: '高危', medium: '中危', low: '低危', info: '信息' }
+    const STATUS_LABEL = { candidate: '待验证', confirmed: '已确认', 'false-positive': '误报', exploited: '已利用', fixed: '已修复' }
+    const sevClass = (s) => 'rt-sev rt-sev-' + (SEV_LABEL[s] ? s : 'info')
+
+    function FindingsTab(props) {
+      const eng = props.engagement
+      const refreshKey = props.refreshKey || 0
+      const [sev, setSev] = React.useState('')
+      const [status, setStatus] = React.useState('')
+      const [q, setQ] = React.useState('')
+      const [qApplied, setQApplied] = React.useState('')
+      const [state, setState] = React.useState({ loading: false, error: null, total: 0, items: [], stats: null })
+      const [creds, setCreds] = React.useState([])
+      const [accesses, setAccesses] = React.useState([])
+      const [openId, setOpenId] = React.useState(null)
+      const [msg, setMsg] = React.useState(null)
+
+      const load = () => {
+        if (!eng) return
+        api({
+          op: 'vulns', engagement: eng, severity: sev || undefined,
+          status: status || undefined, q: qApplied || undefined, limit: 200,
+        }).then((r) => {
+          if (!r || r.ok === false) {
+            setState({ loading: false, error: (r && r.error) || '查询失败', total: 0, items: [], stats: null })
+            return
+          }
+          setState({ loading: false, error: null, total: r.total, items: r.items || [], stats: r.stats || null })
+        }, (e) => setState({ loading: false, error: String((e && e.message) || e), total: 0, items: [], stats: null }))
+        api({ op: 'credentials', engagement: eng }).then((r) => setCreds((r && r.items) || []), () => {})
+        api({ op: 'access', engagement: eng }).then((r) => setAccesses((r && r.items) || []), () => {})
+      }
+      React.useEffect(load, [eng, sev, status, qApplied, refreshKey])
+
+      const setVulnStatus = (id, next) => {
+        setMsg(null)
+        api({ op: 'updateVuln', engagement: eng, id: id, patch: { status: next } }).then((r) => {
+          if (!r || r.ok === false) { setMsg({ err: (r && r.error) || '更新失败' }); return }
+          setMsg({ ok: '已更新为「' + (STATUS_LABEL[next] || next) + '」' })
+          load()
+        }, (e) => setMsg({ err: String((e && e.message) || e) }))
+      }
+
+      const stats = (state.stats && state.stats.bySeverity) ? state.stats : { bySeverity: {}, byStatus: {} }
+      const needRestart = state.error !== null && String(state.error).indexOf('unknown op') >= 0
+
+      const head = h('div', { className: 'rt-vrow head' },
+        h('span', null, '等级'), h('span', null, '漏洞 / 编号'), h('span', null, '目标'),
+        h('span', null, '状态'), h('span', null, '置信'))
+
+      const rows = []
+      for (const v of state.items) {
+        rows.push(h('div', {
+          key: 'v' + v.id, className: 'rt-vrow',
+          onClick: () => setOpenId(openId === v.id ? null : v.id),
+        },
+          h('span', null, h('span', { className: sevClass(v.severity) }, SEV_LABEL[v.severity] || v.severity)),
+          h('span', { title: v.title || '' }, (v.cve ? v.cve + ' ' : '') + (v.title || '')),
+          h('span', { className: 'rt-mono', title: v.target || '' }, v.target || v.asset_ip || '—'),
+          h('span', null, h('span', { className: 'rt-tag' }, STATUS_LABEL[v.status] || v.status)),
+          h('span', null, v.confidence === null || v.confidence === undefined ? '—' : Math.round(v.confidence * 100) + '%')))
+        if (openId !== v.id) continue
+        rows.push(h('div', {
+          key: 'vd' + v.id, className: 'rt-vrow',
+          style: { cursor: 'default', gridTemplateColumns: '1fr' },
+        }, h('div', { className: 'rt-vdetail' },
+          h('div', { className: 'rt-kv' }, h('b', null, '资产'), h('span', null, (v.asset_ip || '—') + ' · ' + (v.segment_cidr || ''))),
+          h('div', { className: 'rt-kv' }, h('b', null, '来源'), h('span', null, (v.source || '—') + ' · ' + (v.found_by_agent || '—') + ' · ' + fmt(v.found_at))),
+          h('div', { className: 'rt-kv' }, h('b', null, '证据'), h('span', null, v.evidence || '—')),
+          h('div', { className: 'rt-actions' },
+            h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); setVulnStatus(v.id, 'confirmed') } }, '确认'),
+            h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); setVulnStatus(v.id, 'exploited') } }, '已利用'),
+            h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); setVulnStatus(v.id, 'false-positive') } }, '误报'),
+            h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); setVulnStatus(v.id, 'fixed') } }, '已修复')))))
+      }
+
+      const toolbar = h('div', { className: 'rt-toolbar' },
+        h('input', {
+          className: 'rt-input', style: { flex: '1 1 140px' }, placeholder: '搜索标题 / CVE / 目标（回车）',
+          value: q, onChange: (e) => setQ(e.target.value),
+          onKeyDown: (e) => { if (e.key === 'Enter') setQApplied(q) },
+        }),
+        h('button', { className: 'rt-btn', onClick: () => setQApplied(q) }, '搜索'),
+        h('select', { className: 'rt-input', value: sev, onChange: (e) => setSev(e.target.value) },
+          h('option', { value: '' }, '全部等级'),
+          h('option', { value: 'critical' }, '严重'),
+          h('option', { value: 'high' }, '高危'),
+          h('option', { value: 'medium' }, '中危'),
+          h('option', { value: 'low' }, '低危'),
+          h('option', { value: 'info' }, '信息')),
+        h('select', { className: 'rt-input', value: status, onChange: (e) => setStatus(e.target.value) },
+          h('option', { value: '' }, '全部状态'),
+          h('option', { value: 'candidate' }, '待验证'),
+          h('option', { value: 'confirmed' }, '已确认'),
+          h('option', { value: 'exploited' }, '已利用'),
+          h('option', { value: 'false-positive' }, '误报'),
+          h('option', { value: 'fixed' }, '已修复')))
+
+      const summary = h('div', { className: 'rt-toolbar', style: { borderTop: 'none' } },
+        h('span', { className: 'rt-tag rt-sev-critical', style: { color: '#fff' } }, '严重 ' + (stats.bySeverity.critical || 0)),
+        h('span', { className: 'rt-tag rt-sev-high', style: { color: '#fff' } }, '高危 ' + (stats.bySeverity.high || 0)),
+        h('span', { className: 'rt-tag rt-sev-medium', style: { color: '#fff' } }, '中危 ' + (stats.bySeverity.medium || 0)),
+        h('span', { className: 'rt-tag rt-sev-low', style: { color: '#fff' } }, '低危 ' + (stats.bySeverity.low || 0)),
+        h('div', { className: 'rt-spacer' }),
+        h('span', null, '已确认 ' + ((stats.byStatus && stats.byStatus.confirmed) || 0)),
+        h('span', null, '已利用 ' + ((stats.byStatus && stats.byStatus.exploited) || 0)),
+        h('span', null, '误报 ' + ((stats.byStatus && stats.byStatus['false-positive']) || 0)))
+
+      const credSection = h('div', null,
+        h('div', { className: 'rt-section' }, '凭据线索（仅引用，不含明文）· ' + creds.length),
+        creds.length
+          ? creds.map((c) => h('div', { key: 'c' + c.id, className: 'rt-vrow', style: { cursor: 'default', gridTemplateColumns: '1fr 110px 90px 1fr' } },
+              h('span', { className: 'rt-mono' }, c.host),
+              h('span', null, c.username || '—'),
+              h('span', null, h('span', { className: 'rt-tag' }, c.secret_type || 'password')),
+              h('span', { className: 'rt-mono', title: c.secret_ref || '' }, c.secret_ref || '—')))
+          : h('div', { className: 'rt-empty' }, '暂无'))
+
+      const accessSection = h('div', null,
+        h('div', { className: 'rt-section' }, '已获得访问会话 · ' + accesses.length),
+        accesses.length
+          ? accesses.map((a) => h('div', { key: 'a' + a.id, className: 'rt-vrow', style: { cursor: 'default', gridTemplateColumns: '1fr 110px 80px 80px 1fr' } },
+              h('span', { className: 'rt-mono' }, a.host),
+              h('span', null, a.username || '—'),
+              h('span', null, h('span', { className: 'rt-tag rt-tag-active' }, a.method || '—')),
+              h('span', null, a.privilege || '—'),
+              h('span', { className: 'rt-mono', title: a.session_ref || '' }, a.session_ref || '—')))
+          : h('div', { className: 'rt-empty' }, '暂无'))
+
+      return h('div', { className: 'rt-main' }, toolbar, summary,
+        msg ? h('div', { className: msg.err ? 'rt-err' : 'rt-foot' }, msg.err || msg.ok) : null,
+        needRestart ? h('div', { className: 'rt-empty' }, '该模块的宿主代码已更新，需重启一次 dsh web 后生效') : null,
+        state.error && !needRestart ? h('div', { className: 'rt-err' }, state.error) : null,
+        h('div', { className: 'rt-table' }, head, rows,
+          !state.loading && !state.items.length && !state.error ? h('div', { className: 'rt-empty' }, '暂无漏洞记录') : null),
+        h('div', { style: { borderTop: '1px solid var(--dsw-alias-border-l1)', maxHeight: '38%', overflow: 'auto' } },
+          credSection, accessSection))
+    }
+
+    /* ---------------------------------------------------------- 攻击链 */
+    const STAGE_LABEL = { recon: '信息收集', vuln: '漏洞发现', exploit: '漏洞利用', access: '获得权限', pivot: '内网突破', data: '敏感数据', other: '其他' }
+
+    function ChainTab(props) {
+      const eng = props.engagement
+      const refreshKey = props.refreshKey || 0
+      const [items, setItems] = React.useState([])
+      const [err, setErr] = React.useState(null)
+      const [loading, setLoading] = React.useState(false)
+      /* 展示顺序：正序（按 seq 升序）或倒序（最新在前） */
+      const [desc, setDesc] = React.useState(false)
+
+      const load = () => {
+        if (!eng) return
+        setLoading(true)
+        api({ op: 'chain', engagement: eng }).then((r) => {
+          setLoading(false)
+          if (!r || r.ok === false) { setErr((r && r.error) || '读取失败'); return }
+          setErr(null)
+          setItems(r.items || [])
+        }, (e) => { setLoading(false); setErr(String((e && e.message) || e)) })
+      }
+      React.useEffect(load, [eng, refreshKey])
+
+      const ordered = desc ? items.slice().reverse() : items
+      const steps = ordered.map((s, i) => h('div', { key: 's' + s.id, className: 'rt-step' },
+        h('div', { className: 'rt-step-dot rt-stage-' + (STAGE_LABEL[s.stage] ? s.stage : 'other') }, String(s.seq === null || s.seq === undefined ? i + 1 : s.seq)),
+        h('div', { className: 'rt-step-body' },
+          h('div', { className: 'rt-step-title' }, s.title || '—',
+            h('span', { className: 'rt-tag', style: { marginLeft: 8 } }, STAGE_LABEL[s.stage] || s.stage)),
+          (s.asset_ip || s.vuln_title || s.detail)
+            ? h('div', { className: 'rt-step-meta' },
+                [s.asset_ip ? '资产 ' + s.asset_ip : null,
+                  (s.vuln_cve || s.vuln_title) ? '漏洞 ' + (s.vuln_cve ? s.vuln_cve + ' ' : '') + (s.vuln_title || '') : null,
+                  s.detail].filter(Boolean).join(' · '))
+            : null,
+          s.evidence_ref ? h('div', { className: 'rt-step-meta' }, '证据：' + s.evidence_ref) : null,
+          h('div', { className: 'rt-step-meta' }, fmt(s.recorded_at) + (s.recorded_by ? ' · ' + s.recorded_by : '')))))
+
+      return h('div', { className: 'rt-main' },
+        h('div', { className: 'rt-toolbar' },
+          h('span', { style: { fontWeight: 600 } }, '攻击链'),
+          h('span', { className: 'rt-tag' }, items.length + ' 步'),
+          h('div', { className: 'rt-spacer' }),
+          h('button', {
+            className: 'rt-btn',
+            title: desc ? '当前：最新在前，点击切换为正序（从第 1 步开始）' : '当前：从第 1 步开始，点击切换为倒序（最新在前）',
+            onClick: () => setDesc((d) => !d),
+          }, desc ? '倒序 ↓' : '正序 ↑'),
+          h('button', { className: 'rt-btn', disabled: loading, onClick: load }, loading ? '加载中…' : '刷新')),
+        err ? h('div', { className: 'rt-err' }, err) : null,
+        h('div', { className: 'rt-chain' },
+          steps.length
+            ? steps
+            : h('div', { className: 'rt-empty' }, '暂无攻击链记录（漏洞利用 / 内网突破阶段写入的步骤会按顺序出现在这里）')))
+    }
+
+    /* ---------------------------------------------------------- 报告（按目标折叠） */
+    function ReportTab(props) {
+      const eng = props.engagement
+      const refreshKey = props.refreshKey || 0
+      const [data, setData] = React.useState(null)
+      const [err, setErr] = React.useState(null)
+      const [busy, setBusy] = React.useState(false)
+      const [openTarget, setOpenTarget] = React.useState({})
+      const [closedGroup, setClosedGroup] = React.useState({})
+      const [msg, setMsg] = React.useState(null)
+
+      const load = () => {
+        if (!eng) return
+        setBusy(true)
+        setMsg(null)
+        api({ op: 'reportTargets', engagement: eng }).then((r) => {
+          setBusy(false)
+          if (!r || r.ok === false) { setErr((r && r.error) || '生成失败'); return }
+          setErr(null)
+          setData(r)
+        }, (e) => { setBusy(false); setErr(String((e && e.message) || e)) })
+      }
+      React.useEffect(load, [eng, refreshKey])
+
+      const copy = (markdown, label) => {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(markdown).then(() => setMsg({ ok: '已复制：' + label }), () => setMsg({ err: '复制失败，请手动选择' }))
+        } else setMsg({ err: '浏览器不支持剪贴板' })
+      }
+      const download = (markdown, label) => {
+        try {
+          const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = 'report-' + String(label).replace(/[^\w.\-]/g, '_') + '.md'
+          a.click()
+          URL.revokeObjectURL(url)
+          setMsg({ ok: '已下载：' + label })
+        } catch (e) { setMsg({ err: '下载失败：' + ((e && e.message) || e) }) }
+      }
+
+      const totals = (data && data.totals) || { targets: 0, vulns: 0, accesses: 0, credentials: 0, files: 0, filteredOut: 0 }
+      const groups = (data && data.groups) || []
+
+      const groupNodes = groups.map((g) => {
+        const closed = closedGroup[g.cidr] === true
+        const vulnSum = g.targets.reduce((n, t) => n + t.stats.vulns, 0)
+        const rows = []
+        rows.push(h('div', {
+          key: 'g' + g.cidr, className: 'rt-vrow', style: { gridTemplateColumns: '1fr auto auto', cursor: 'pointer', background: 'var(--dsw-alias-bg-layer-2)' },
+          onClick: () => setClosedGroup((o) => Object.assign({}, o, { [g.cidr]: !o[g.cidr] })),
+        },
+          h('span', { className: 'rt-mono', style: { fontWeight: 600 } }, (closed ? '▸ ' : '▾ ') + g.cidr),
+          h('span', { className: 'rt-tag' }, g.targets.length + ' 个目标'),
+          h('span', { className: 'rt-tag rt-sev-high', style: { color: '#fff' } }, '漏洞 ' + vulnSum)))
+        if (closed) return rows
+        for (const t of g.targets) {
+          const open = openTarget[t.key] === true
+          rows.push(h('div', {
+            key: 't' + t.key, className: 'rt-vrow', style: { gridTemplateColumns: '1fr auto auto auto' },
+            onClick: () => setOpenTarget((o) => Object.assign({}, o, { [t.key]: !o[t.key] })),
+          },
+            h('span', { className: 'rt-mono' }, (open ? '▾ ' : '▸ ') + t.label),
+            h('span', { className: 'rt-tag' }, '漏洞 ' + t.stats.vulns),
+            t.stats.accesses ? h('span', { className: 'rt-tag rt-tag-active' }, '已控 ' + t.stats.accesses) : null,
+            t.stats.files ? h('span', { className: 'rt-tag' }, '文件 ' + t.stats.files) : null))
+          if (!open) continue
+          rows.push(h('div', {
+            key: 'td' + t.key, className: 'rt-vrow', style: { cursor: 'default', gridTemplateColumns: '1fr' },
+          }, h('div', { className: 'rt-vdetail' },
+            h('div', { className: 'rt-actions', style: { marginTop: 0, marginBottom: 6 } },
+              h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); copy(t.markdown, t.label) } }, '复制'),
+              h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); download(t.markdown, t.label) } }, '下载 .md')),
+            h('pre', { className: 'rt-md', style: { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 6, maxHeight: '46vh', padding: '10px 12px' } }, t.markdown || '（无内容）'))))
+        }
+        return rows
+      })
+
+      return h('div', { className: 'rt-main' },
+        h('div', { className: 'rt-toolbar' },
+          h('span', { style: { fontWeight: 600 } }, '成果报告'),
+          h('span', { className: 'rt-tag' }, totals.targets + ' 个目标'),
+          h('span', { className: 'rt-tag' }, '漏洞 ' + totals.vulns),
+          h('div', { className: 'rt-spacer' }),
+          h('button', { className: 'rt-btn', disabled: busy, onClick: load }, busy ? '生成中…' : '重新生成'),
+          h('button', {
+            className: 'rt-btn rt-btn-primary',
+            onClick: () => {
+              const all = (data && data.targets) || []
+              const head = '# 攻防演练成果报告 — ' + ((data && data.engagement && data.engagement.name) || eng) + '\n\n'
+              download(head + all.map((t) => t.markdown).join('\n\n---\n\n'), '全部目标')
+            },
+          }, '下载全部')),
+        msg ? h('div', { className: msg.err ? 'rt-err' : 'rt-foot' }, msg.err || msg.ok) : null,
+        err ? h('div', { className: 'rt-err' }, err) : null,
+        h('div', { className: 'rt-table' },
+          groupNodes,
+          data && !groups.length ? h('div', { className: 'rt-empty' }, '暂无可交付的成果（只收录已验证/已利用且中危以上的漏洞）') : null),
+        h('div', { className: 'rt-foot' },
+          h('span', null, '口径：已验证/已利用且中危以上'),
+          h('span', null, '已控 ' + totals.accesses),
+          h('span', null, '凭据 ' + totals.credentials),
+          h('span', null, '攻击文件 ' + totals.files),
+          h('span', null, '已过滤 ' + totals.filteredOut)))
+    }
+
+    /* ---------------------------------------------------------- 攻击文件 */
+    const FILE_KIND = { poc: 'POC', exp: 'EXP', script: '脚本', wordlist: '字典', other: '其他' }
+
+    function AttackFilesTab(props) {
+      const eng = props.engagement
+      const refreshKey = props.refreshKey || 0
+      const [folders, setFolders] = React.useState([])
+      const [err, setErr] = React.useState(null)
+      const [busy, setBusy] = React.useState(false)
+      const [closed, setClosed] = React.useState({})
+      const [detail, setDetail] = React.useState(null)
+
+      const load = () => {
+        if (!eng) return
+        setBusy(true)
+        api({ op: 'attackFiles', engagement: eng }).then((r) => {
+          setBusy(false)
+          if (!r || r.ok === false) { setErr((r && r.error) || '读取失败'); return }
+          setErr(null)
+          setFolders(r.items || [])
+        }, (e) => { setBusy(false); setErr(String((e && e.message) || e)) })
+      }
+      React.useEffect(load, [eng, refreshKey])
+
+      const openFile = (f) => {
+        if (detail && detail.id === f.id) { setDetail(null); return }
+        setDetail(null)
+        api({ op: 'readAttackFile', engagement: eng, id: f.id }).then((r) => {
+          if (r && r.ok) setDetail(r)
+          else setErr((r && r.error) || '读取失败')
+        }, (e) => setErr(String((e && e.message) || e)))
+      }
+
+      const rows = []
+      for (const folder of folders) {
+        const isClosed = closed[folder.folder] === true
+        rows.push(h('div', {
+          key: 'f' + folder.folder, className: 'rt-vrow',
+          style: { gridTemplateColumns: '1fr auto', cursor: 'pointer', background: 'var(--dsw-alias-bg-layer-2)' },
+          onClick: () => setClosed((o) => Object.assign({}, o, { [folder.folder]: !o[folder.folder] })),
+        },
+          h('span', { className: 'rt-mono', style: { fontWeight: 600 } }, (isClosed ? '▸ ' : '▾ ') + folder.folder + '/'),
+          h('span', { className: 'rt-tag' }, folder.count + ' 个文件')))
+        if (isClosed) continue
+        for (const f of folder.files) {
+          rows.push(h('div', {
+            key: 'a' + f.id, className: 'rt-vrow', style: { gridTemplateColumns: '1.2fr 60px 1.6fr' },
+            onClick: () => openFile(f),
+          },
+            h('span', { className: 'rt-mono' }, (detail && detail.id === f.id ? '▾ ' : '▸ ') + f.name),
+            h('span', null, h('span', { className: 'rt-tag rt-tag-active' }, FILE_KIND[f.kind] || f.kind || '—')),
+            h('span', { style: { fontSize: 11.5, color: 'var(--dsw-alias-label-secondary)' }, title: f.description || '' }, f.description || '—')))
+          if (!detail || detail.id !== f.id) continue
+          rows.push(h('div', {
+            key: 'ad' + f.id, className: 'rt-vrow', style: { cursor: 'default', gridTemplateColumns: '1fr' },
+          }, h('div', { className: 'rt-vdetail' },
+            h('div', { className: 'rt-kv' }, h('b', null, '效果'), h('span', null, detail.evidence || '—')),
+            h('div', { className: 'rt-kv' }, h('b', null, '路径'), h('span', { className: 'rt-mono', style: { wordBreak: 'break-all' } }, detail.path)),
+            h('div', { className: 'rt-kv' }, h('b', null, '记录'), h('span', null, fmt(detail.created_at) + (detail.created_by ? ' · ' + detail.created_by : ''))),
+            h('pre', { className: 'rt-md', style: { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 6, maxHeight: '40vh', padding: '10px 12px' } }, detail.content || '（空）'))))
+        }
+      }
+
+      const total = folders.reduce((n, f) => n + f.count, 0)
+      return h('div', { className: 'rt-main' },
+        h('div', { className: 'rt-toolbar' },
+          h('span', { style: { fontWeight: 600 } }, '攻击文件'),
+          h('span', { className: 'rt-tag' }, folders.length + ' 个目标 / ' + total + ' 个文件'),
+          h('div', { className: 'rt-spacer' }),
+          h('button', { className: 'rt-btn', disabled: busy, onClick: load }, busy ? '刷新中…' : '刷新')),
+        err ? h('div', { className: 'rt-err' }, err) : null,
+        h('div', { className: 'rt-table' },
+          rows,
+          !folders.length ? h('div', { className: 'rt-empty' }, '暂无攻击文件（打通的脚本/POC/EXP 会按目标文件夹出现在这里）') : null),
+        h('div', { className: 'rt-foot' }, h('span', null, '目录：attack-files/<IP|URL主机|C段>/ ｜ 只收录实际生效的文件')))
+    }
+
+    /* ---------------------------------------------------------- 得分目标 */
+    function ScoreTab(props) {
+      const eng = props.engagement
+      const refreshKey = props.refreshKey || 0
+      const [data, setData] = React.useState(null)
+      const [err, setErr] = React.useState(null)
+      const [busy, setBusy] = React.useState(false)
+      const [openId, setOpenId] = React.useState(null)
+      const [form, setForm] = React.useState(null)
+      const [msg, setMsg] = React.useState(null)
+
+      const load = () => {
+        if (!eng) return
+        setBusy(true)
+        api({ op: 'scores', engagement: eng }).then((r) => {
+          setBusy(false)
+          if (!r || r.ok === false) { setErr((r && r.error) || '读取失败'); return }
+          setErr(null)
+          setData(r)
+        }, (e) => { setBusy(false); setErr(String((e && e.message) || e)) })
+      }
+      React.useEffect(load, [eng, refreshKey])
+
+      const startEdit = (p) => setForm({ id: p.id, name: p.name, category: p.category || '', points: p.points, description: p.description || '', enabled: p.enabled })
+      const startNew = () => { setForm({ name: '', category: '', points: 10, description: '', enabled: true }); setMsg(null) }
+      const setField = (k, v) => setForm((f) => Object.assign({}, f, { [k]: v }))
+
+      const save = () => {
+        if (!form || !form.name) { setMsg({ err: '名称不能为空' }); return }
+        setBusy(true)
+        setMsg(null)
+        api({ op: 'saveScorePoint', engagement: eng, point: form }).then((r) => {
+          setBusy(false)
+          if (!r || r.ok === false) { setMsg({ err: (r && r.error) || '保存失败' }); return }
+          setMsg({ ok: '已保存' })
+          setForm(null)
+          load()
+        }, (e) => { setBusy(false); setMsg({ err: String((e && e.message) || e) }) })
+      }
+      const remove = () => {
+        if (!form || !form.id) { setForm(null); return }
+        setBusy(true)
+        setMsg(null)
+        api({ op: 'deleteScorePoint', engagement: eng, id: form.id }).then((r) => {
+          setBusy(false)
+          if (!r || r.ok === false) { setMsg({ err: (r && r.error) || '删除失败' }); return }
+          setMsg({ ok: '已删除' })
+          setForm(null)
+          setOpenId(null)
+          load()
+        }, (e) => { setBusy(false); setMsg({ err: String((e && e.message) || e) }) })
+      }
+
+      const summary = (data && data.summary) || { totalPoints: 0, achievedPoints: 0, achievedCount: 0, pointCount: 0, hitCount: 0 }
+      const pct = summary.totalPoints > 0 ? Math.round((summary.achievedPoints / summary.totalPoints) * 100) : 0
+      const items = (data && data.items) || []
+
+      const rows = []
+      for (const p of items) {
+        const achieved = p.hits.length > 0
+        const open = openId === p.id
+        rows.push(h('div', {
+          key: 'sp' + p.id, className: 'rt-score-row',
+          onClick: () => setOpenId(open ? null : p.id),
+        },
+          h('span', null, h('span', {
+            className: achieved ? 'rt-pri rt-pri-high' : 'rt-pri rt-pri-low',
+            style: achieved ? {} : { background: 'var(--dsw-alias-bg-layer-2)', color: 'var(--dsw-alias-label-secondary)' },
+          }, p.points + '分')),
+          h('span', { title: p.description || '' }, (open ? '▾ ' : '▸ ') + p.name + (p.category ? '（' + p.category + '）' : '')),
+          h('span', null, achieved
+            ? h('span', { className: 'rt-tag rt-tag-live' }, '已拿下')
+            : h('span', { className: 'rt-tag' }, p.enabled ? '待争取' : '停用')),
+          h('span', null, p.hits.length ? h('span', { className: 'rt-tag rt-tag-active' }, '命中 ' + p.hits.length) : null)))
+        if (!open) continue
+        const hitNodes = p.hits.map((hh) => h('div', { key: 'h' + hh.id, className: 'rt-kv' },
+          h('b', null, fmt(hh.recorded_at)),
+          h('span', null, (hh.target ? hh.target + '：' : '') + (hh.evidence || '')),
+          h('span', { style: { marginLeft: 8, opacity: 0.7 } }, hh.recorded_by || '')))
+        rows.push(h('div', {
+          key: 'spd' + p.id, className: 'rt-score-row',
+          style: { cursor: 'default', gridTemplateColumns: '1fr' },
+        }, h('div', { className: 'rt-score-detail' },
+          p.description ? h('div', { className: 'rt-kv' }, h('b', null, '得分条件'), h('span', null, p.description)) : null,
+          h('div', { className: 'rt-kv' }, h('b', null, '状态'), h('span', null, (p.enabled ? '启用' : '停用') + ' · ' + p.points + ' 分 · 命中 ' + p.hits.length + ' 次')),
+          hitNodes.length ? h('div', null, h('div', { style: { fontWeight: 600, margin: '6px 0 3px' } }, '命中记录'), hitNodes) : null,
+          h('div', { className: 'rt-actions' },
+            h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); startEdit(p) } }, '编辑')))))
+      }
+
+      return h('div', { className: 'rt-main' },
+        h('div', { className: 'rt-toolbar' },
+          h('span', { style: { fontWeight: 600 } }, '得分目标'),
+          h('span', { className: 'rt-pri rt-pri-high' }, summary.achievedPoints + ' / ' + summary.totalPoints + ' 分'),
+          h('span', { className: 'rt-progress' }, h('i', { style: { width: pct + '%' } })),
+          h('span', null, pct + '%'),
+          h('span', { className: 'rt-tag' }, '已拿下 ' + summary.achievedCount + '/' + summary.pointCount),
+          h('div', { className: 'rt-spacer' }),
+          h('button', { className: 'rt-btn', onClick: startNew }, '+ 新增得分点'),
+          h('button', { className: 'rt-btn', disabled: busy, onClick: load }, busy ? '刷新中…' : '刷新')),
+        msg ? h('div', { className: msg.err ? 'rt-err' : 'rt-foot' }, msg.err || msg.ok) : null,
+        err ? h('div', { className: 'rt-err' }, err) : null,
+        form ? h('div', { className: 'rt-pane', style: { flex: 'none', borderBottom: '1px solid var(--dsw-alias-border-l1)' } },
+          h('div', { className: 'rt-score-form' },
+            h('input', { className: 'rt-input', placeholder: '名称（必填）', value: form.name, onChange: (e) => setField('name', e.target.value) }),
+            h('input', { className: 'rt-input', placeholder: '分类，如 账号权限', value: form.category, onChange: (e) => setField('category', e.target.value) }),
+            h('input', { className: 'rt-input', type: 'number', placeholder: '分值', value: form.points, onChange: (e) => setField('points', Number(e.target.value)) }),
+            h('select', { className: 'rt-input', value: form.enabled ? '1' : '0', onChange: (e) => setField('enabled', e.target.value === '1') },
+              h('option', { value: '1' }, '启用'),
+              h('option', { value: '0' }, '停用'))),
+          h('input', {
+            className: 'rt-input', style: { width: '100%', marginBottom: 6, boxSizing: 'border-box' },
+            placeholder: '得分条件说明', value: form.description, onChange: (e) => setField('description', e.target.value),
+          }),
+          h('div', { className: 'rt-actions' },
+            h('button', { className: 'rt-btn rt-btn-primary', disabled: busy, onClick: save }, '保存'),
+            form.id ? h('button', { className: 'rt-btn', disabled: busy, onClick: remove }, '删除') : null,
+            h('button', { className: 'rt-btn', onClick: () => setForm(null) }, '取消'))) : null,
+        h('div', { className: 'rt-table' },
+          h('div', { className: 'rt-score-row head' },
+            h('span', null, '分值'), h('span', null, '得分点'), h('span', null, '状态'), h('span', null, '命中')),
+          rows,
+          !items.length ? h('div', { className: 'rt-empty' }, '暂无得分点，点右上角「新增得分点」') : null),
+        h('div', { className: 'rt-foot' }, h('span', null, '得分点可编辑；智能体按分值优先级推进，拿下成果用 redteam_score_hit 记分')))
+    }
+
+    /* ---------------------------------------------------------- 错误边界 */
+    /**
+     * 单个页签渲染出错时只降级该页签，不拖垮整个面板：面板与侧栏按钮保持可用，
+     * 用户可一键回到资产测绘。（此前面板整块消失、按钮点不开就是缺了这层保护。）
+     */
+    class RtBoundary extends React.Component {
+      constructor(props) {
+        super(props)
+        this.state = { error: null }
+      }
+      static getDerivedStateFromError(error) {
+        return { error: error }
+      }
+      componentDidCatch(error) {
+        try { console.error('[redteam-ui] 页面渲染出错:', error) } catch (e) { /* ignore */ }
+      }
+      render() {
+        if (this.state.error) {
+          const msg = this.state.error && this.state.error.message ? this.state.error.message : String(this.state.error)
+          return h('div', { className: 'rt-pane' },
+            h('div', { className: 'rt-err' }, '该页面渲染出错：' + msg),
+            h('button', {
+              className: 'rt-btn',
+              onClick: () => { this.setState({ error: null }); setUI({ tab: 'assets' }) },
+            }, '回到资产测绘'))
+        }
+        return this.props.children
+      }
+    }
+
+    /* ---------------------------------------------------------- 常驻面板主体 */
+    function Panel() {
+      const st = useUI()
+      const [engagements, setEngagements] = React.useState([])
+      const [eng, setEng] = React.useState(null)
+      const [snapshot, setSnapshot] = React.useState(null)
+      const [err, setErr] = React.useState(null)
+      const [newName, setNewName] = React.useState('')
+      const [width, setWidth] = React.useState(620)
+      const [creating, setCreating] = React.useState(false)
+      const [refreshKey, setRefreshKey] = React.useState(0)
+
+      /* 面板宽度 → :root 自定义属性（frame 的 padding-right 依赖它） */
+      React.useEffect(() => { setDockWidth(width) }, [width])
+
+      const loadSnapshot = (id) => {
+        if (!id) { setSnapshot(null); return }
+        api({ op: 'snapshot', engagement: id }).then((r) => {
+          if (!r || r.ok === false) { setErr((r && r.error) || '加载失败'); return }
+          setErr(null)
+          setSnapshot(r)
+        }, (e) => setErr(String((e && e.message) || e)))
+      }
+
+      const refreshList = (selectId) => {
+        api({ op: 'bootstrap' }).then((b) => {
+          setEngagements((b && b.engagements) || [])
+          if (selectId) { setEng(selectId); loadSnapshot(selectId) }
+        }, () => {})
+      }
+
+      React.useEffect(() => {
+        api({ op: 'bootstrap' }).then((r) => {
+          if (!r || r.ok === false) { setErr((r && r.error) || '无法连接资产库'); return }
+          setEngagements(r.engagements || [])
+          const id = r.current || (r.engagements && r.engagements[0] && r.engagements[0].id) || null
+          if (id) { setEng(id); loadSnapshot(id) }
+        }, (e) => setErr(String((e && e.message) || e)))
+      }, [])
+
+      const openEngagement = (nameArg) => {
+        const name = String(nameArg || newName).trim()
+        if (!name) return
+        setCreating(true)
+        api({ op: 'openEngagement', name: name }).then((r) => {
+          setCreating(false)
+          if (!r || r.ok === false) { setErr((r && r.error) || '创建失败'); return }
+          setNewName('')
+          refreshList(r.engagement && r.engagement.id)
+        }, (e) => { setCreating(false); setErr(String((e && e.message) || e)) })
+      }
+
+      /** 刷新：重新拉取名册/快照，并让当前页签重新取数。 */
+      const refreshAll = () => {
+        setRefreshKey((k) => k + 1)
+        api({ op: 'bootstrap' }).then((b) => {
+          setEngagements((b && b.engagements) || [])
+          if (eng) loadSnapshot(eng)
+        }, () => { if (eng) loadSnapshot(eng) })
+      }
+
+      const startResize = (e) => {
+        e.preventDefault()
+        const startX = e.clientX
+        const startW = width
+        const move = (ev) => setWidth(Math.max(380, Math.min(900, startW + (startX - ev.clientX))))
+        const up = () => {
+          window.removeEventListener('mousemove', move)
+          window.removeEventListener('mouseup', up)
+        }
+        window.addEventListener('mousemove', move)
+        window.addEventListener('mouseup', up)
+      }
+
+      const stats = (snapshot && snapshot.stats) || {}
+      const tabs = [
+        ['assets', '资产测绘'], ['findings', '漏洞战果'], ['chain', '攻击链'],
+        ['scores', '得分目标'], ['report', '报告'], ['attackfiles', '攻击文件'],
+        ['prompts', '智能体提示词'], ['skills', '技能库'],
+      ]
+      const full = isFullWindow()
+      const openFull = () => {
+        try { window.open(window.location.href.split('#')[0] + '#redteam-full', '_blank', 'noopener') } catch (e) { setErr('无法打开新窗口：' + ((e && e.message) || e)) }
+      }
+      const exitFull = () => {
+        /* 优先关掉脚本打开的窗口；关不掉就退回带侧栏的普通界面 */
+        try { window.close() } catch (e) { /* 非脚本打开的窗口无法关闭 */ }
+        try {
+          if (window.location.hash) {
+            window.location.hash = ''
+            window.location.reload()
+          }
+        } catch (e) { /* ignore */ }
+      }
+      React.useEffect(() => {
+        if (!full) return undefined
+        const onKey = (e) => { if (e.key === 'Escape') exitFull() }
+        window.addEventListener('keydown', onKey)
+        return () => window.removeEventListener('keydown', onKey)
+      }, [full])
+
+      let body
+      if (err) body = h('div', { className: 'rt-err' }, err)
+      else if (!eng) {
+        body = h('div', { className: 'rt-pane' },
+          h('div', { className: 'rt-card' },
+            h('h4', null, '还没有靶标'),
+            h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)', marginBottom: 8 } },
+              '输入攻防演练靶标单位名称，创建演练并开始资产测绘。'),
+            h('div', { style: { display: 'flex', gap: 8 } },
+              h('input', {
+                className: 'rt-input', style: { flex: 1 }, placeholder: '例如：示例科技有限公司',
+                value: newName, onChange: (e) => setNewName(e.target.value),
+                onKeyDown: (e) => { if (e.key === 'Enter') openEngagement() },
+              }),
+              h('button', { className: 'rt-btn rt-btn-primary', disabled: creating, onClick: () => openEngagement() },
+                creating ? '创建中…' : '创建靶标'))))
+      } else if (st.tab === 'assets') body = h(AssetsTab, { engagement: eng, snapshot: snapshot, refreshKey: refreshKey, onRefresh: refreshAll, onData: () => loadSnapshot(eng) })
+      else if (st.tab === 'findings') body = h(FindingsTab, { engagement: eng, refreshKey: refreshKey })
+      else if (st.tab === 'chain') body = h(ChainTab, { engagement: eng, refreshKey: refreshKey })
+      else if (st.tab === 'report') body = h(ReportTab, { engagement: eng, refreshKey: refreshKey })
+      else if (st.tab === 'attackfiles') body = h(AttackFilesTab, { engagement: eng, refreshKey: refreshKey })
+      else if (st.tab === 'scores') body = h(ScoreTab, { engagement: eng, refreshKey: refreshKey })
+      else if (st.tab === 'prompts') body = h(PromptsTab, { engagement: eng, refreshKey: refreshKey })
+      else body = h(SkillsTab, { engagement: eng, refreshKey: refreshKey })
+
+      const shellProps = full
+        ? { className: 'rt-full', style: { display: 'flex' } }
+        : { className: 'rt-dock', 'data-open': st.open ? '1' : '0', style: { width: width + 'px', display: st.open ? 'flex' : 'none' } }
+
+      return h('div', shellProps,
+        full ? null : h('div', { className: 'rt-grip', onMouseDown: startResize }),
+        h('div', { className: 'rt-head' },
+          h('div', { className: 'rt-title' }, h('span', { className: 'rt-dot' }),
+            full ? 'RedTeam 全面浏览' : 'RedTeam 控制台',
+            full ? h('span', { className: 'rt-tag', style: { marginLeft: 6 } }, '独立窗口') : null),
+          h('select', {
+            className: 'rt-input', style: { maxWidth: '170px' }, value: eng || '',
+            onChange: (e) => {
+              setEng(e.target.value)
+              loadSnapshot(e.target.value)
+              /* 同步「当前靶标」：原生 skill 目录按它解析技能根 */
+              api({ op: 'activateEngagement', engagement: e.target.value }).catch(() => {})
+            },
+          }, engagements.map((x) => h('option', { key: x.id, value: x.id }, x.name))),
+          h('div', { className: 'rt-spacer' }),
+          full ? h('button', { className: 'rt-btn', title: '回到带侧栏的普通界面（或按 Esc）', onClick: exitFull }, '退出全面浏览') : null,
+          h('button', { className: 'rt-btn', title: '刷新名册、快照与当前页面数据', onClick: refreshAll }, '刷新'),
+          full ? null : h('button', { className: 'rt-btn', title: '在新浏览器窗口打开完整控制台', onClick: openFull }, '全面浏览'),
+          full ? null : h('button', { className: 'rt-btn', title: '收起面板（对话列恢复全宽）', onClick: () => setUI({ open: false }) }, '收起')),
+        h('div', { className: 'rt-tabs' }, tabs.map((t) => h('div', {
+          key: t[0], className: 'rt-tab' + (st.tab === t[0] ? ' on' : ''),
+          onClick: () => setUI({ tab: t[0] }),
+        }, t[1]))),
+        h('div', { className: 'rt-body' }, h(RtBoundary, { key: st.tab }, body)),
+        h('div', { className: 'rt-foot' },
+          h('span', null, 'C 段 ' + (stats.segments || 0)),
+          h('span', null, '资产 ' + (stats.assets || 0) + '（存活 ' + (stats.liveAssets || 0) + '）'),
+          h('span', null, '端口 ' + (stats.openPorts || 0)),
+          h('span', null, '指纹 ' + (stats.fingerprints || 0)),
+          h('span', null, '漏洞 ' + (stats.vulns || 0)),
+          h('span', null, '被动/主动 ' + (stats.passiveSignals || 0) + '/' + (stats.activeSignals || 0)),
+          h('div', { className: 'rt-spacer' }),
+          full ? h('span', null, '按 Esc 或点右上角「退出全面浏览」回到带侧栏的界面') : null,
+          h('span', null, 'SQLite · ' + (snapshot && snapshot.engagement ? snapshot.engagement.name : ''))))
+    }
+
+    /* ---------------------------------------------------------- 入口按钮 */
+    function SidebarButton(props) {
+      const st = useUI()
+      return h('button', {
+        className: 'rt-icon-btn' + (st.open ? ' on' : ''),
+        title: 'RedTeam 控制台（常驻右侧栏）',
+        onClick: () => setUI({ open: !st.open }),
+      }, h('span', { style: { fontSize: 14 } }, '⛨'), props.wide ? h('span', null, 'RedTeam') : null)
+    }
+
+    function HeaderButton() {
+      const st = useUI()
+      return h('button', {
+        className: 'rt-hbtn' + (st.open ? ' on' : ''),
+        title: 'RedTeam 控制台（常驻右侧栏）',
+        onClick: () => setUI({ open: !st.open }),
+      }, '⛨ RedTeam')
+    }
+
+    /** 侧栏「全面浏览」：在新浏览器窗口打开完整控制台（当前窗口不受影响）。 */
+    function FullButton(props) {
+      const open = () => {
+        try { window.open(window.location.href.split('#')[0] + '#redteam-full', '_blank', 'noopener') } catch { /* 被浏览器拦截 */ }
+      }
+      return h('button', {
+        className: 'rt-icon-btn',
+        title: '全面浏览：在新窗口打开完整控制台（当前窗口不受影响；新窗口内按 Esc 退出）',
+        onClick: open,
+      }, h('span', { style: { fontSize: 14 } }, '⛶'), props.wide ? h('span', null, '全面浏览') : null)
+    }
+
+    /* ---------------------------------------------------------- 插件入口 */
+    /** 唯一硬依赖：槽位注册表。 */
+    const inject = ['slots']
+
+    /**
+     * 注入样式 + 三处槽位。样式标签与宽度变量随 fiber 卸载一起移除。
+     * @param ctx - 客户端根上下文。
+     */
+    function apply(ctx) {
+      const styleTag = document.createElement('style')
+      styleTag.setAttribute('data-redteam-ui', '1')
+      styleTag.textContent = CSS
+      document.head.append(styleTag)
+
+      const widthTag = document.createElement('style')
+      widthTag.setAttribute('data-redteam-ui-width', '1')
+      widthTag.textContent = ':root{--rt-dock-w:620px}'
+      document.head.append(widthTag)
+      dockWidthTag = widthTag
+
+      ctx.effect(() => () => {
+        styleTag.remove()
+        widthTag.remove()
+        dockWidthTag = null
+      })
+
+      ctx.slots.inject('shell.overlay', () => ctx.slots.register(
+        { name: 'shell.overlay', id: 'redteam-console', order: 50 },
+        () => h(Panel),
+      ))
+      ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register(
+        { name: 'sidebar.footer.action', id: 'redteam-toggle', order: 50, label: 'RedTeam' },
+        (props) => h(SidebarButton, props),
+      ))
+      ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register(
+        { name: 'sidebar.footer.action', id: 'redteam-full', order: 51, label: '全面浏览' },
+        (props) => h(FullButton, props),
+      ))
+      ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register(
+        { name: 'conversation.session.header.utilities', id: 'redteam-header-toggle', order: 50, label: 'RedTeam' },
+        () => h(HeaderButton),
+      ))
+    }
+
+    exports.apply = apply
+    exports.inject = inject
+    return module.exports
+  },
+})
