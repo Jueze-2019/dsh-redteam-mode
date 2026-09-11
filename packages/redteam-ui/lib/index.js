@@ -3,6 +3,7 @@
  *
  * 职责：为浏览器半侧提供一条 Package 私有的 HTTP 桥接 `POST /redteam/api`：
  *   · 资产库相关 op 转交 `ctx.redteam`（dsh-redteam-store 发布的进程级服务）；
+ *   · 会话连通性 op（probeSessions）在 host 侧真实发起 TCP/HTTP 探测；
  *   · 技能目录 op（skillCatalog / skillRead）直接读 `ctx.skills`，按红队 preset
  *     的 standing scope 取目录——技能由 DSH 原生 skill 体系管理（$DSH_HOME/skills、
  *     项目 .dsh/skills、.agents/skills），控制台只做浏览。
@@ -11,7 +12,7 @@
  * （profile 下解析不到 node_modules），具名路由是最小且稳定的接缝。
  * 跨源请求由 Origin/Host 校验挡住（同源 POST 才放行）。
  */
-import { dispatch } from '../../redteam-store/lib/core.js'
+import { dispatch, dispatchAsync } from '../../redteam-store/lib/core.js'
 
 /** Cordis 插件名。 */
 export const name = 'redteam-ui'
@@ -129,7 +130,8 @@ export function apply(ctx) {
         const raw = await readBody(req)
         const request = raw.trim() ? JSON.parse(raw) : {}
         const skillResult = await handleSkillOp(ctx, request)
-        sendJson(res, 200, skillResult === undefined ? dispatch(store, request) : skillResult)
+        /* dispatchAsync 只多处理 probeSessions（连通性探测需要真实发起连接） */
+        sendJson(res, 200, skillResult === undefined ? await dispatchAsync(store, request) : skillResult)
       } catch (error) {
         sendJson(res, 400, { ok: false, error: error && error.message ? error.message : String(error) })
       }

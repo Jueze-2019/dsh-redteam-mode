@@ -387,11 +387,13 @@ export function apply(ctx) {
       severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low', 'info'] },
       evidence: { type: 'string' },
       confidence: { type: 'number' },
+      gained: { type: 'string', description: '通过这个漏洞拿到了什么权限/成果（得分口径短标签，多项用顿号分隔）' },
+      title: { type: 'string' },
     },
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
     async execute(args, exec) {
       const id = resolveEngagement(store, exec, args.engagement)
-      const result = store.updateVuln(id, args.id, { status: args.status, severity: args.severity, evidence: args.evidence, confidence: args.confidence })
+      const result = store.updateVuln(id, args.id, { status: args.status, severity: args.severity, evidence: args.evidence, confidence: args.confidence, gained: args.gained, title: args.title })
       return JSON.stringify({ ok: result.updated, engagement: id, ...result, stats: store.vulnStats(id) }, null, 2)
     },
   }))
@@ -470,6 +472,181 @@ export function apply(ctx) {
     async execute(args, exec) {
       const id = resolveEngagement(store, exec, args.engagement)
       return JSON.stringify({ ok: true, engagement: id, items: store.listAccess(id, { host: args.host }) }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_role_prompt_reset',
+    description: '把角色系统提示词恢复为内置默认（新版模板）。老靶标想用上最新版角色提示词时用它；省略 role 则四个角色全部重置。',
+    parameters: {
+      engagement: { type: 'string' },
+      role: { type: 'string', enum: ['recon', 'vuln-scan', 'exploit', 'internal'] },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      const result = store.resetPrompts(id, args.role)
+      return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
+    },
+  }))
+
+  /* ---------- WebShell 与内网隧道：打的过程中随时复用，避免"打到后面忘了还有入口" ---------- */
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_sessions',
+    description: '【每次决策前后都要看】一屏总览当前所有可复用入口：已上线的 WebShell、可用的内网隧道（含监听地址与可达网段）、凭据、访问会话，并给出在线/离线统计。打内网前先看这里，不要重复造轮子，也不要忘记已有的隧道。',
+    parameters: { engagement: { type: 'string' } },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      const summary = store.sessionSummary(id)
+      return JSON.stringify({
+        ok: true, engagement: id, totals: summary.totals,
+        webshells: summary.webshells.map((w) => ({
+          id: w.id, url: w.url, type: w.shell_type, pass_key: w.pass_key, privilege: w.privilege,
+          status: w.status, asset_ip: w.asset_ip, last_check: w.last_check, note: w.note,
+        })),
+        tunnels: summary.tunnels.map((t) => ({
+          id: t.id, kind: t.kind, listen: t.listen, entry: t.entry, reach: t.reach,
+          status: t.status, asset_ip: t.asset_ip, command: t.command, last_check: t.last_check, note: t.note,
+        })),
+        hint: '隧道 status=active 时可直接给扫描器用：-socks5 <listen> 或 --proxy socks5://<listen>；webshell status=online 时用对应客户端连接。',
+      }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_webshell_add',
+    description: '登记一个已上线的 WebShell（godzilla/behinder/antsword/other）。同一 url+pass_key 重复登记会合并刷新。登记后所有角色智能体都能复用它，不要重复打点。',
+    parameters: {
+      engagement: { type: 'string' },
+      url: { type: 'string', required: true, description: 'WebShell 完整 URL' },
+      shell_type: { type: 'string', description: 'godzilla | behinder | antsword | other' },
+      pass_key: { type: 'string', description: '连接密码 / 密钥' },
+      privilege: { type: 'string', description: '当前权限，例如 www-data / root / iis' },
+      secret_ref: { type: 'string', description: '凭据/证据引用，例如 runs/ws-10.0.0.5.txt（不要把明文口令写进库）' },
+      asset_id: { type: 'number' },
+      note: { type: 'string' },
+      found_by_agent: { type: 'string' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      const result = store.addWebshell(id, { ...args, engagement: undefined, status: 'online' })
+      return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_webshell_list',
+    description: '列出已登记的 WebShell（含在线状态与最后检查时间）。',
+    parameters: {
+      engagement: { type: 'string' },
+      status: { type: 'string', description: 'online | offline | unknown' },
+      asset_id: { type: 'number' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      return JSON.stringify({ ok: true, engagement: id, items: store.listWebshells(id, args) }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_webshell_update',
+    description: '更新 WebShell 状态（被删/掉线/权限变化）或补充说明。',
+    parameters: {
+      engagement: { type: 'string' },
+      id: { type: 'number', required: true, description: 'WebShell 记录 id' },
+      status: { type: 'string', description: 'online | offline | dead | unknown' },
+      privilege: { type: 'string' },
+      note: { type: 'string' },
+      check_note: { type: 'string' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const eng = resolveEngagement(store, exec, args.engagement)
+      const result = store.updateWebshell(eng, args.id, args)
+      return JSON.stringify({ ok: true, engagement: eng, ...result }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_tunnel_add',
+    description: '登记一条内网隧道。kind: suo5 | socks5 | ssh-r | frp | chisel | other。listen 写本机可用地址（如 127.0.0.1:1080），reach 写它能到达的网段。登记后扫描器可直接 -socks5 <listen>。',
+    parameters: {
+      engagement: { type: 'string' },
+      kind: { type: 'string', required: true },
+      listen: { type: 'string', required: true, description: '本地监听地址 host:port' },
+      entry: { type: 'string', description: '入口：WebShell URL / 跳板机 / 命令' },
+      reach: { type: 'string', description: '可达网段，例如 10.0.0.0/8' },
+      webshell_id: { type: 'number', description: '由哪个 WebShell 建立' },
+      asset_id: { type: 'number' },
+      command: { type: 'string', description: '建立命令，便于重建' },
+      pid: { type: 'string' },
+      note: { type: 'string' },
+      found_by_agent: { type: 'string' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      const result = store.addTunnel(id, { ...args, engagement: undefined, status: 'active' })
+      return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_tunnel_list',
+    description: '列出已登记的内网隧道（含状态、监听地址、可达网段）。',
+    parameters: {
+      engagement: { type: 'string' },
+      status: { type: 'string', description: 'active | down | unknown' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      return JSON.stringify({ ok: true, engagement: id, items: store.listTunnels(id, args) }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_tunnel_update',
+    description: '更新隧道状态（关闭/失效/更换监听地址）。用完隧道务必标为 down 并说明，避免后续误用。',
+    parameters: {
+      engagement: { type: 'string' },
+      id: { type: 'number', required: true },
+      status: { type: 'string', description: 'active | down | closed | unknown' },
+      listen: { type: 'string' },
+      reach: { type: 'string' },
+      note: { type: 'string' },
+      check_note: { type: 'string' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const eng = resolveEngagement(store, exec, args.engagement)
+      const result = store.updateTunnel(eng, args.id, args)
+      return JSON.stringify({ ok: true, engagement: eng, ...result }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_session_check',
+    description: '实测所有 WebShell 与隧道的连通性（由 host 侧真实发起 HTTP / TCP 连接），并把在线/离线状态回写数据库。开工前和长时间任务后各跑一次。',
+    parameters: {
+      engagement: { type: 'string' },
+      timeoutMs: { type: 'number', description: '单次探测超时，默认 6000ms' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      const result = await store.probeSessions(id, { timeoutMs: args.timeoutMs })
+      const online = result.webshells.filter((w) => w.status === 'online').length
+      const active = result.tunnels.filter((t) => t.status === 'active').length
+      return JSON.stringify({
+        ok: true, engagement: id, checked_at: result.checkedAt,
+        summary: `WebShell 在线 ${online}/${result.webshells.length}，隧道可用 ${active}/${result.tunnels.length}`,
+        webshells: result.webshells, tunnels: result.tunnels,
+      }, null, 2)
     },
   }))
 

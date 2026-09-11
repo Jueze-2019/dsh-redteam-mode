@@ -8,13 +8,13 @@ enabled: true
 
 # WebShell 工具包（已就位）
 
-目录 `$HOME/.dsh/redteam/toolkit/`，Java 25 已安装。
+目录 `$DSH_HOME/redteam/toolkit/`，Java 25 已安装。
 
 | 工具 | 启动命令 | 说明 |
 |---|---|---|
-| 冰蝎 Behinder v4.1 | `java -jar $HOME/.dsh/redteam/toolkit/Behinder/Behinder.jar` | AES 加密流量，JSP/PHP/ASPX |
-| 哥斯拉 Godzilla v4.0.1 | `java -jar $HOME/.dsh/redteam/toolkit/Godzilla/godzilla.jar` | 支持 JSP/PHP/ASPX 全加密 payload |
-| 中国蚁剑 AntSword | `$HOME/.dsh/redteam/toolkit/AntSword/AntSword-Loader-v4.0.3-linux-x64/AntSword` | 首次启动选择源码目录 `antSword-2.1.16` |
+| 冰蝎 Behinder v4.1 | `java -jar $DSH_HOME/redteam/toolkit/Behinder/Behinder.jar` | AES 加密流量，JSP/PHP/ASPX |
+| 哥斯拉 Godzilla v4.0.1 | `java -jar $DSH_HOME/redteam/toolkit/Godzilla/godzilla.jar` | 支持 JSP/PHP/ASPX 全加密 payload |
+| 中国蚁剑 AntSword | `$DSH_HOME/redteam/toolkit/AntSword/AntSword-Loader-v4.0.3-linux-x64/AntSword` | 首次启动选择源码目录 `antSword-2.1.16` |
 | suo5 隧道 | `./suo5-linux-amd64` | 见技能 `suo5-tunnel` |
 
 ## 典型流程（授权演练）

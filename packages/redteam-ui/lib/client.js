@@ -60,7 +60,7 @@ window.__ModuleLoader__.load({
   border-radius:6px;padding:4px 8px;font-size:12px;font-family:inherit;outline:none;min-width:0}
 .rt-input:focus{border-color:var(--dsw-alias-brand-primary)}
 .rt-table{flex:1;overflow:auto}
-.rt-row{display:grid;grid-template-columns:112px 52px 78px 54px 1fr 1fr 96px;gap:8px;padding:6px 10px;
+.rt-row{display:grid;grid-template-columns:132px 52px 78px 54px 1fr 1fr 96px;gap:8px;padding:6px 10px;
   border-bottom:1px solid var(--dsw-alias-border-l1);align-items:center;cursor:pointer;font-size:12.5px}
 .rt-row:hover{background:var(--dsw-alias-bg-layer-2)}
 .rt-row.head{cursor:default;color:var(--dsw-alias-label-secondary);font-size:11.5px;font-weight:600;position:sticky;top:0;
@@ -107,12 +107,6 @@ window.__ModuleLoader__.load({
   padding:2px 8px;font-size:12px;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:5px}
 .rt-hbtn:hover{background:var(--dsw-alias-bg-layer-2)}
 .rt-hbtn.on{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary)}
-.rt-sev{display:inline-block;padding:0 5px;border-radius:4px;font-size:11px;font-weight:600;color:#fff}
-.rt-sev-critical{background:#ef4444}
-.rt-sev-high{background:#f97316}
-.rt-sev-medium{background:#f59e0b}
-.rt-sev-low{background:#3b82f6}
-.rt-sev-info{background:#94a3b8}
 .rt-test{display:inline-block;padding:0 5px;border-radius:4px;font-size:11px;white-space:nowrap;
   border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary)}
 .rt-test-testing{color:#f59e0b;border-color:#f59e0b55;background:#f59e0b1a}
@@ -134,7 +128,7 @@ window.__ModuleLoader__.load({
 .rt-score-detail{grid-column:1/-1;padding:8px 4px 10px;font-size:12px;color:var(--dsw-alias-label-secondary)}
 .rt-score-form{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px}
 .rt-score-form input,.rt-score-form select{width:100%;box-sizing:border-box}
-.rt-vrow{display:grid;grid-template-columns:62px 1fr 118px 76px 54px;gap:8px;padding:6px 10px;
+.rt-vrow{display:grid;grid-template-columns:62px minmax(0,1fr) 132px 108px 74px 52px;gap:8px;padding:6px 10px;
   border-bottom:1px solid var(--dsw-alias-border-l1);align-items:center;font-size:12.5px;cursor:pointer}
 .rt-vrow:hover{background:var(--dsw-alias-bg-layer-2)}
 .rt-vrow.head{cursor:default;color:var(--dsw-alias-label-secondary);font-size:11.5px;font-weight:600;
@@ -153,7 +147,7 @@ window.__ModuleLoader__.load({
 .rt-full .rt-side{width:260px}
 .rt-full .rt-list{width:280px}
 .rt-full .rt-row{grid-template-columns:150px 64px 100px 62px 1.2fr 1.2fr 120px}
-.rt-full .rt-vrow{grid-template-columns:80px 1.4fr 1.4fr 90px 70px}
+.rt-full .rt-vrow{grid-template-columns:80px minmax(0,1.6fr) 200px 150px 90px 64px}
 .rt-full .rt-pane{padding:18px}
 .rt-full .rt-textarea{min-height:60vh}
 .rt-full .rt-foot{padding:10px 18px;font-size:12px}
@@ -173,6 +167,48 @@ window.__ModuleLoader__.load({
 .rt-stage-pivot{background:#8b5cf6}
 .rt-stage-data{background:#0ea5e9}
 .rt-stage-other{background:#64748b}
+.rt-step-head{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.rt-step-time{font-size:11px;color:var(--dsw-alias-label-secondary);margin-left:auto;white-space:nowrap}
+.rt-step-detail{font-size:12px;margin-top:5px;white-space:pre-wrap;word-break:break-word;
+  border-left:2px solid var(--dsw-alias-border-l1);padding:2px 0 2px 9px;line-height:1.6}
+.rt-chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:1px 7px;border-radius:5px;
+  border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);margin:4px 5px 0 0;max-width:100%}
+.rt-chip>i{font-style:normal;color:var(--dsw-alias-label-secondary);font-size:10.5px}
+.rt-chip>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
+.rt-stage-tag{display:inline-block;padding:0 6px;border-radius:4px;font-size:11px;color:#fff;font-weight:600}
+.rt-st-recon{background:#6366f1}.rt-st-vuln{background:#f59e0b}.rt-st-exploit{background:#ef4444}
+.rt-st-access{background:#10b981}.rt-st-pivot{background:#8b5cf6}.rt-st-data{background:#0ea5e9}.rt-st-other{background:#64748b}
+.rt-sev{display:inline-block;padding:0 6px;border-radius:4px;font-size:11px;font-weight:600;border:1px solid transparent}
+.rt-sev-critical{color:#fff;background:#b91c1c}.rt-sev-high{color:#fff;background:#ef4444}
+.rt-sev-medium{color:#7c2d12;background:#fdba74}.rt-sev-low{color:#1e3a8a;background:#bfdbfe}
+.rt-sev-info{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-border-l1)}
+.rt-dot-on{display:inline-block;width:7px;height:7px;border-radius:50%;background:#10b981;box-shadow:0 0 0 3px #10b98133}
+.rt-dot-off{display:inline-block;width:7px;height:7px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 3px #ef444433}
+.rt-dot-unk{display:inline-block;width:7px;height:7px;border-radius:50%;background:#94a3b8;box-shadow:0 0 0 3px #94a3b833}
+.rt-sess-grid{display:grid;grid-template-columns:1fr;gap:8px;padding:10px 12px}
+.rt-sess{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:9px 10px;background:var(--dsw-alias-bg-layer-2)}
+.rt-sess-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.rt-sess-title{font-weight:600;font-size:12.5px;font-family:ui-monospace,Menlo,monospace;word-break:break-all}
+.rt-sess-sub{font-size:11.5px;color:var(--dsw-alias-label-secondary);margin-top:3px;word-break:break-word}
+.rt-code{font-family:ui-monospace,Menlo,monospace;font-size:11px;background:var(--dsw-alias-bg-base);
+  border:1px solid var(--dsw-alias-border-l1);border-radius:4px;padding:1px 5px;cursor:pointer;word-break:break-all}
+.rt-code:hover{border-color:var(--dsw-alias-brand-primary)}
+.rt-evi{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;overflow:hidden;margin-top:8px}
+.rt-evi-head{display:flex;align-items:center;gap:8px;padding:5px 9px;background:var(--dsw-alias-bg-layer-2);
+  font-size:11.5px;font-weight:600;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.rt-evi-body{margin:0;padding:9px 11px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.6;
+  white-space:pre-wrap;word-break:break-word;max-height:340px;overflow:auto;background:var(--dsw-alias-bg-base)}
+.rt-evi-body.req{max-height:220px}
+.rt-hl-req{color:#10b981;font-weight:600}
+.rt-hl-res{color:#0ea5e9;font-weight:600}
+.rt-gain{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:12px;
+  color:#065f46;background:#a7f3d0;border:1px solid #10b98155}
+.rt-total{font-size:20px;font-weight:700;font-family:ui-monospace,Menlo,monospace}
+.rt-sidehead{padding:7px 8px 2px;font-size:11px;font-weight:600;color:var(--dsw-alias-label-secondary);
+  display:flex;align-items:center;gap:5px}
+.rt-scope{display:inline-block;padding:0 4px;border-radius:3px;font-size:10px;font-weight:700;line-height:15px;flex:none}
+.rt-scope-internal{color:#0e7490;background:#a5f3fc}
+.rt-scope-external{color:#9a3412;background:#fed7aa}
 .rt-md{flex:1;overflow:auto;margin:0;padding:14px 16px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;
   line-height:1.65;white-space:pre-wrap;word-break:break-word;background:var(--dsw-alias-bg-base)}
 .rt-weblink{display:block;font-size:11.5px;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -249,6 +285,7 @@ window.__ModuleLoader__.load({
       const [prov, setProv] = React.useState('')
       const [testStatus, setTestStatus] = React.useState('')
       const [priority, setPriority] = React.useState('')
+      const [scope, setScope] = React.useState('')
       const [state, setState] = React.useState({ loading: false, error: null, total: 0, items: [] })
       const [graphState, setGraphState] = React.useState({ loading: false, data: null, error: null })
       const [domains, setDomains] = React.useState(null)
@@ -266,7 +303,7 @@ window.__ModuleLoader__.load({
           op: 'assets', engagement: eng, cidr: cidr || undefined, q: qApplied || undefined,
           service: service || undefined, port: port || undefined,
           provenance: prov || undefined, test_status: testStatus || undefined,
-          priority: priority || undefined, limit: 400,
+          priority: priority || undefined, scope: scope || undefined, limit: 400,
         }).then((r) => {
           if (my !== seq.current) return
           if (!r || r.ok === false) {
@@ -279,7 +316,7 @@ window.__ModuleLoader__.load({
         }, (e) => {
           if (my === seq.current) setState({ loading: false, error: String((e && e.message) || e), total: 0, items: [] })
         })
-      }, [eng, cidr, qApplied, service, port, prov, testStatus, priority, refreshKey])
+      }, [eng, cidr, qApplied, service, port, prov, testStatus, priority, scope, refreshKey])
 
       React.useEffect(() => {
         if (!eng || view !== 'domain') return
@@ -324,17 +361,32 @@ window.__ModuleLoader__.load({
       },
         h('div', { className: 'rt-seg-cidr' }, '全部 C 段'),
         h('div', { className: 'rt-seg-meta' }, segs.length + ' 个网段')))
-      for (const s of segs) {
-        sideChildren.push(h('div', {
-          key: s.cidr, className: 'rt-seg' + (cidr === s.cidr ? ' on' : ''),
-          onClick: () => setCidr(s.cidr),
-        },
-          h('div', { className: 'rt-seg-cidr' }, s.cidr),
-          h('div', { className: 'rt-seg-meta' }, (s.org || '未知归属') + ' · ' + s.assets + ' 资产 · ' + s.open_ports + ' 端口'),
-          h('div', { className: 'rt-seg-meta' },
-            h('span', { className: 'rt-tag rt-tag-passive' }, '被动 ' + s.passive_ports),
-            h('span', { className: 'rt-tag rt-tag-active' }, '主动 ' + s.active_ports))))
+      /* C 段按内外网分组：先外网（互联网可达，通常是入口）再内网（打进去之后才看得到） */
+      const segBlock = (title, list, kind) => {
+        const out = [h('div', { key: 'h' + kind, className: 'rt-sidehead' },
+          h('span', { className: 'rt-scope rt-scope-' + kind }, kind === 'internal' ? '内网' : '外网'),
+          h('span', null, title + ' · ' + list.length + ' 个 C 段'),
+          h('span', { className: 'rt-spacer' }),
+          h('span', { style: { fontWeight: 400 } }, list.reduce((n, x) => n + (x.assets || 0), 0) + ' 资产'))]
+        for (const s of list) {
+          out.push(h('div', {
+            key: s.cidr, className: 'rt-seg' + (cidr === s.cidr ? ' on' : ''),
+            onClick: () => setCidr(s.cidr),
+          },
+            h('div', { className: 'rt-seg-cidr' },
+              h('span', { className: 'rt-scope rt-scope-' + kind, style: { marginRight: 5 } }, kind === 'internal' ? '内' : '外'),
+              s.cidr),
+            h('div', { className: 'rt-seg-meta' }, (s.org || '未知归属') + ' · ' + s.assets + ' 资产 · ' + s.open_ports + ' 端口'),
+            h('div', { className: 'rt-seg-meta' },
+              h('span', { className: 'rt-tag rt-tag-passive' }, '被动 ' + s.passive_ports),
+              h('span', { className: 'rt-tag rt-tag-active' }, '主动 ' + s.active_ports))))
+        }
+        return out
       }
+      const segExternal = segs.filter((x) => x.scope !== 'internal')
+      const segInternal = segs.filter((x) => x.scope === 'internal')
+      if (segExternal.length) sideChildren.push(...segBlock('外网资产', segExternal, 'external'))
+      if (segInternal.length) sideChildren.push(...segBlock('内网资产', segInternal, 'internal'))
       const side = h('div', { className: 'rt-side' }, sideChildren)
 
       const toolbar = h('div', { className: 'rt-toolbar' },
@@ -352,6 +404,10 @@ window.__ModuleLoader__.load({
           className: 'rt-input', style: { width: '60px' }, placeholder: '端口',
           value: port, onChange: (e) => setPort(e.target.value),
         }),
+        h('select', { className: 'rt-input', value: scope, onChange: (e) => setScope(e.target.value) },
+          h('option', { value: '' }, '内外网不限'),
+          h('option', { value: 'external' }, '仅外网资产'),
+          h('option', { value: 'internal' }, '仅内网资产')),
         h('select', { className: 'rt-input', value: prov, onChange: (e) => setProv(e.target.value) },
           h('option', { value: '' }, '来源不限'),
           h('option', { value: 'passive' }, '仅被动'),
@@ -388,7 +444,10 @@ window.__ModuleLoader__.load({
         rowNodes.push(h('div', {
           key: 'r' + it.id, className: 'rt-row', onClick: () => toggleRow(it.id),
         },
-          h('span', { className: 'rt-mono' }, it.ip),
+          h('span', { className: 'rt-mono' },
+            h('span', { className: 'rt-scope rt-scope-' + (it.scope === 'internal' ? 'internal' : 'external') },
+              it.scope === 'internal' ? '内' : '外'),
+            it.ip),
           h('span', null, h('span', {
             className: 'rt-tag rt-tag-' + (it.state === 'live' ? 'live' : 'dead'),
           }, it.state === 'live' ? '存活' : it.state)),
@@ -432,6 +491,12 @@ window.__ModuleLoader__.load({
           ? h('div', null,
               h('div', { className: 'rt-kv' }, h('b', null, '主机名'), h('span', null, (d.names || []).map((n) => n.name).join(', ') || '—')),
               h('div', { className: 'rt-kv' }, h('b', null, 'C 段'), h('span', null, d.segment_cidr)),
+              h('div', { className: 'rt-kv' }, h('b', null, '归属'),
+                h('span', null,
+                  h('span', { className: 'rt-scope rt-scope-' + (d.scope === 'internal' ? 'internal' : 'external'), style: { marginRight: 6 } },
+                    d.scope === 'internal' ? '内网资产' : '外网资产'),
+                  h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } },
+                    d.scope === 'internal' ? '私网地址段，需经隧道/跳板可达' : '互联网可直接访问'))),
               h('div', { className: 'rt-kv' }, h('b', null, '时间'), h('span', null, '首见 ' + fmt(d.first_seen) + ' · 末见 ' + fmt(d.last_seen))),
               h('div', { className: 'rt-kv' }, h('b', null, '测试'), h('span', null,
                 h(TestTag, { s: d.test_status }),
@@ -668,6 +733,23 @@ window.__ModuleLoader__.load({
         }, (e) => { setBusy(false); setMsg({ err: String((e && e.message) || e) }) })
       }
 
+      /* 老靶标的提示词是旧版模板；这里可以把当前角色（或全部）恢复成内置最新版 */
+      const reset = (all) => {
+        setBusy(true); setMsg(null)
+        api({ op: 'resetPrompts', engagement: eng, role: all ? undefined : active }).then((r) => {
+          setBusy(false)
+          if (!r || r.ok === false) { setMsg({ err: (r && r.error) || '恢复失败' }); return }
+          setMsg({ ok: '已恢复内置默认：' + (r.reset || []).join('、') })
+          api({ op: 'prompts', engagement: eng }).then((rr) => {
+            if (rr && rr.ok) {
+              setRoles(rr.roles || [])
+              const cur2 = (rr.roles || []).find((x) => x.role === active)
+              if (cur2) setDraft(cur2.content || '')
+            }
+          }, () => {})
+        }, (e) => { setBusy(false); setMsg({ err: String((e && e.message) || e) }) })
+      }
+
       const cur = roles.find((x) => x.role === active)
       const items = roles.map((r) => h('div', {
         key: r.role, className: 'rt-item' + (active === r.role ? ' on' : ''),
@@ -683,6 +765,14 @@ window.__ModuleLoader__.load({
             h('span', { style: { fontWeight: 600 } }, cur ? cur.title : '提示词'),
             h('span', { className: 'rt-tag' }, '更新 ' + fmt(cur && cur.updated_at)),
             h('div', { className: 'rt-spacer' }),
+            h('button', {
+              className: 'rt-btn', disabled: busy || !active, title: '把当前角色恢复成内置最新版提示词',
+              onClick: () => reset(false),
+            }, '恢复默认为当前'),
+            h('button', {
+              className: 'rt-btn', disabled: busy, title: '四个角色全部恢复成内置最新版提示词',
+              onClick: () => reset(true),
+            }, '全部恢复默认'),
             h('button', { className: 'rt-btn rt-btn-primary', disabled: busy || !active, onClick: save }, busy ? '保存中…' : '保存')),
           msg ? h('div', { className: msg.err ? 'rt-err' : 'rt-foot' }, msg.err || msg.ok) : null,
           h('div', { className: 'rt-pane' },
@@ -781,6 +871,65 @@ window.__ModuleLoader__.load({
     const STATUS_LABEL = { candidate: '待验证', confirmed: '已确认', 'false-positive': '误报', exploited: '已利用', fixed: '已修复' }
     const sevClass = (s) => 'rt-sev rt-sev-' + (SEV_LABEL[s] ? s : 'info')
 
+
+    /* ---------------------------------------------------------- 证据渲染 */
+    /** 把一段原始 HTTP 报文按「请求行/状态行 + 头 + 体」着色，便于人眼扫读。 */
+    function HttpBlock(props) {
+      const text = String(props.text || '')
+      if (!text) return null
+      const lines = text.split(/\r?\n/)
+      const nodes = lines.map((ln, i) => {
+        let cls = null
+        if (i === 0 && /^(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE)\s/.test(ln)) cls = 'rt-hl-req'
+        else if (i === 0 && /^HTTP\//.test(ln)) cls = 'rt-hl-res'
+        else if (/^[A-Za-z0-9-]+:/.test(ln)) {
+          const name = ln.split(':')[0].toLowerCase()
+          if (name === 'host' || name === 'cookie' || name === 'authorization' || name === 'content-type') cls = 'rt-hl-req'
+        }
+        return h('div', { key: 'l' + i, className: cls || undefined }, ln === '' ? '\u00a0' : ln)
+      })
+      return h('pre', { className: 'rt-evi-body' + (props.compact ? ' req' : '') }, nodes)
+    }
+
+    /** 漏洞详情里的证据区：结构化证据文本 + 该漏洞的原始 HTTP 请求/响应记录。 */
+    function detailEvidence(v) {
+      const evi = String(v.evidence || '').trim()
+      const looksHttp = /^(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|HTTP\/)/m.test(evi) || /\n[A-Za-z-]+: /.test(evi)
+      const blocks = []
+      if (evi) {
+        blocks.push(h('div', { key: 'ev', className: 'rt-evi' },
+          h('div', { className: 'rt-evi-head' }, '证据摘要',
+            h('span', { className: 'rt-tag' }, looksHttp ? '原始报文' : '文本'),
+            h('div', { className: 'rt-spacer' }),
+            h('button', {
+              className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
+              onClick: (e) => { e.stopPropagation(); try { navigator.clipboard.writeText(evi) } catch (err) { /* ignore */ } },
+            }, '复制')),
+          looksHttp ? h(HttpBlock, { text: evi }) : h('pre', { className: 'rt-evi-body' }, evi)))
+      }
+      const http = v.http_evidence || []
+      for (const e of http) {
+        blocks.push(h('div', { key: 'h' + e.id, className: 'rt-evi' },
+          h('div', { className: 'rt-evi-head' },
+            e.label || 'HTTP 证据',
+            h('span', { className: 'rt-tag' }, (e.method || '') + ' ' + (e.status === null || e.status === undefined ? '' : e.status)),
+            h('div', { className: 'rt-spacer' }),
+            h('span', { style: { fontWeight: 400, color: 'var(--dsw-alias-label-secondary)' } }, fmt(e.captured_at))),
+          e.request ? h('div', null,
+            h('div', { className: 'rt-evi-head', style: { borderTop: 'none' } }, '▸ 请求（可直接粘进 Burp Repeater）'),
+            h(HttpBlock, { text: e.request, compact: true })) : null,
+          e.response ? h('div', null,
+            h('div', { className: 'rt-evi-head' }, '▸ 响应'),
+            h(HttpBlock, { text: e.response })) : null,
+          e.note ? h('pre', { className: 'rt-evi-body', style: { maxHeight: 80 } }, e.note) : null))
+      }
+      if (blocks.length === 0) {
+        blocks.push(h('div', { key: 'none', className: 'rt-kv' }, h('b', null, '证据'),
+          h('span', { style: { color: 'var(--dsw-alias-state-error-primary)' } }, '缺失 —— 未验证/无证据的漏洞不计入报告，请补 redteam_http_evidence_add')))
+      }
+      return h('div', { key: 'eviwrap' }, blocks)
+    }
+
     function FindingsTab(props) {
       const eng = props.engagement
       const refreshKey = props.refreshKey || 0
@@ -825,17 +974,23 @@ window.__ModuleLoader__.load({
 
       const head = h('div', { className: 'rt-vrow head' },
         h('span', null, '等级'), h('span', null, '漏洞 / 编号'), h('span', null, '目标'),
-        h('span', null, '状态'), h('span', null, '置信'))
+        h('span', null, '拿到什么'), h('span', null, '状态'), h('span', null, '置信'))
 
       const rows = []
       for (const v of state.items) {
+        const gainedList = String(v.gained || '').split(/[、,;，；]/).map((x) => x.trim()).filter(Boolean)
         rows.push(h('div', {
           key: 'v' + v.id, className: 'rt-vrow',
+          style: { cursor: 'pointer' },
           onClick: () => setOpenId(openId === v.id ? null : v.id),
         },
           h('span', null, h('span', { className: sevClass(v.severity) }, SEV_LABEL[v.severity] || v.severity)),
           h('span', { title: v.title || '' }, (v.cve ? v.cve + ' ' : '') + (v.title || '')),
           h('span', { className: 'rt-mono', title: v.target || '' }, v.target || v.asset_ip || '—'),
+          h('span', { title: v.gained || '' },
+            gainedList.length
+              ? h('span', { className: 'rt-gain', style: { maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' } }, gainedList[0] + (gainedList.length > 1 ? ' +' + (gainedList.length - 1) : ''))
+              : h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, '—')),
           h('span', null, h('span', { className: 'rt-tag' }, STATUS_LABEL[v.status] || v.status)),
           h('span', null, v.confidence === null || v.confidence === undefined ? '—' : Math.round(v.confidence * 100) + '%')))
         if (openId !== v.id) continue
@@ -843,9 +998,14 @@ window.__ModuleLoader__.load({
           key: 'vd' + v.id, className: 'rt-vrow',
           style: { cursor: 'default', gridTemplateColumns: '1fr' },
         }, h('div', { className: 'rt-vdetail' },
+          h('div', { className: 'rt-kv' }, h('b', null, '拿到什么'),
+            gainedList.length
+              ? h('span', null, gainedList.map((g, gi) => h('span', { key: 'g' + gi, className: 'rt-gain', style: { marginRight: 6 } }, g)))
+              : h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } },
+                  '未记录 —— 拿到权限/成果后请用 redteam_vuln_update 补 gained（例：服务器权限、内网隧道、后台管理员账号）')),
           h('div', { className: 'rt-kv' }, h('b', null, '资产'), h('span', null, (v.asset_ip || '—') + ' · ' + (v.segment_cidr || ''))),
           h('div', { className: 'rt-kv' }, h('b', null, '来源'), h('span', null, (v.source || '—') + ' · ' + (v.found_by_agent || '—') + ' · ' + fmt(v.found_at))),
-          h('div', { className: 'rt-kv' }, h('b', null, '证据'), h('span', null, v.evidence || '—')),
+          detailEvidence(v),
           h('div', { className: 'rt-actions' },
             h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); setVulnStatus(v.id, 'confirmed') } }, '确认'),
             h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); setVulnStatus(v.id, 'exploited') } }, '已利用'),
@@ -925,8 +1085,8 @@ window.__ModuleLoader__.load({
       const [items, setItems] = React.useState([])
       const [err, setErr] = React.useState(null)
       const [loading, setLoading] = React.useState(false)
-      /* 展示顺序：正序（按 seq 升序）或倒序（最新在前） */
-      const [desc, setDesc] = React.useState(false)
+      /* 展示顺序：默认倒序（最新的一步在最上面），可切换为正序 */
+      const [desc, setDesc] = React.useState(true)
 
       const load = () => {
         if (!eng) return
@@ -941,19 +1101,29 @@ window.__ModuleLoader__.load({
       React.useEffect(load, [eng, refreshKey])
 
       const ordered = desc ? items.slice().reverse() : items
-      const steps = ordered.map((s, i) => h('div', { key: 's' + s.id, className: 'rt-step' },
-        h('div', { className: 'rt-step-dot rt-stage-' + (STAGE_LABEL[s.stage] ? s.stage : 'other') }, String(s.seq === null || s.seq === undefined ? i + 1 : s.seq)),
-        h('div', { className: 'rt-step-body' },
-          h('div', { className: 'rt-step-title' }, s.title || '—',
-            h('span', { className: 'rt-tag', style: { marginLeft: 8 } }, STAGE_LABEL[s.stage] || s.stage)),
-          (s.asset_ip || s.vuln_title || s.detail)
-            ? h('div', { className: 'rt-step-meta' },
-                [s.asset_ip ? '资产 ' + s.asset_ip : null,
-                  (s.vuln_cve || s.vuln_title) ? '漏洞 ' + (s.vuln_cve ? s.vuln_cve + ' ' : '') + (s.vuln_title || '') : null,
-                  s.detail].filter(Boolean).join(' · '))
-            : null,
-          s.evidence_ref ? h('div', { className: 'rt-step-meta' }, '证据：' + s.evidence_ref) : null,
-          h('div', { className: 'rt-step-meta' }, fmt(s.recorded_at) + (s.recorded_by ? ' · ' + s.recorded_by : '')))))
+      /* 一步 = 序号圆点 + 标题行（阶段/严重级徽标 + 时间）+ 详情块 + 结构化 chip */
+      const steps = ordered.map((s, i) => {
+        const stageKey = STAGE_LABEL[s.stage] ? s.stage : 'other'
+        const chips = []
+        if (s.asset_ip) chips.push(h('span', { key: 'ip', className: 'rt-chip' }, h('i', null, '资产'), h('span', { className: 'rt-mono' }, s.asset_ip)))
+        if (s.vuln_cve || s.vuln_title) {
+          chips.push(h('span', { key: 'vuln', className: 'rt-chip' },
+            h('i', null, '漏洞'),
+            h('span', null, [s.vuln_cve, s.vuln_title].filter(Boolean).join(' '))))
+        }
+        if (s.evidence_ref) chips.push(h('span', { key: 'evi', className: 'rt-chip' }, h('i', null, '证据'), h('span', null, s.evidence_ref)))
+        if (s.recorded_by) chips.push(h('span', { key: 'by', className: 'rt-chip' }, h('i', null, '记录'), h('span', null, s.recorded_by)))
+        return h('div', { key: 's' + s.id, className: 'rt-step' },
+          h('div', { className: 'rt-step-dot rt-stage-' + stageKey }, String(s.seq === null || s.seq === undefined ? i + 1 : s.seq)),
+          h('div', { className: 'rt-step-body', style: { flex: 1 } },
+            h('div', { className: 'rt-step-head' },
+              h('span', { className: 'rt-step-title' }, s.title || '（未命名步骤）'),
+              h('span', { className: 'rt-stage-tag rt-st-' + stageKey }, STAGE_LABEL[s.stage] || s.stage || '其他'),
+              s.vuln_severity ? h('span', { className: 'rt-sev rt-sev-' + s.vuln_severity }, s.vuln_severity) : null,
+              h('span', { className: 'rt-step-time' }, fmt(s.recorded_at))),
+            s.detail ? h('div', { className: 'rt-step-detail' }, s.detail) : null,
+            chips.length ? h('div', null, chips) : null))
+      })
 
       return h('div', { className: 'rt-main' },
         h('div', { className: 'rt-toolbar' },
@@ -962,9 +1132,9 @@ window.__ModuleLoader__.load({
           h('div', { className: 'rt-spacer' }),
           h('button', {
             className: 'rt-btn',
-            title: desc ? '当前：最新在前，点击切换为正序（从第 1 步开始）' : '当前：从第 1 步开始，点击切换为倒序（最新在前）',
+            title: desc ? '当前：最新的一步在最上面（默认），点击切换为正序' : '当前：从第 1 步开始，点击切换为倒序',
             onClick: () => setDesc((d) => !d),
-          }, desc ? '倒序 ↓' : '正序 ↑'),
+          }, desc ? '倒序（最新在前）↓' : '正序（第 1 步在前）↑'),
           h('button', { className: 'rt-btn', disabled: loading, onClick: load }, loading ? '加载中…' : '刷新')),
         err ? h('div', { className: 'rt-err' }, err) : null,
         h('div', { className: 'rt-chain' },
@@ -1250,10 +1420,11 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'rt-main' },
         h('div', { className: 'rt-toolbar' },
           h('span', { style: { fontWeight: 600 } }, '得分目标'),
-          h('span', { className: 'rt-pri rt-pri-high' }, summary.achievedPoints + ' / ' + summary.totalPoints + ' 分'),
+          /* 目标得分：直接给「已得总分 / 满分」，不显示百分比 */
+          h('span', { className: 'rt-total' }, String(summary.achievedPoints)),
+          h('span', { style: { fontSize: 13, color: 'var(--dsw-alias-label-secondary)' } }, '/ ' + summary.totalPoints + ' 分'),
           h('span', { className: 'rt-progress' }, h('i', { style: { width: pct + '%' } })),
-          h('span', null, pct + '%'),
-          h('span', { className: 'rt-tag' }, '已拿下 ' + summary.achievedCount + '/' + summary.pointCount),
+          h('span', { className: 'rt-tag' }, '已拿下 ' + summary.achievedCount + '/' + summary.pointCount + ' 项'),
           h('div', { className: 'rt-spacer' }),
           h('button', { className: 'rt-btn', onClick: startNew }, '+ 新增得分点'),
           h('button', { className: 'rt-btn', disabled: busy, onClick: load }, busy ? '刷新中…' : '刷新')),
@@ -1281,6 +1452,160 @@ window.__ModuleLoader__.load({
           rows,
           !items.length ? h('div', { className: 'rt-empty' }, '暂无得分点，点右上角「新增得分点」') : null),
         h('div', { className: 'rt-foot' }, h('span', null, '得分点可编辑；智能体按分值优先级推进，拿下成果用 redteam_score_hit 记分')))
+    }
+
+    /* ---------------------------------------------------------- 会话与入口（WebShell / 隧道） */
+    /**
+     * 打内网最容易出的问题：拿到 WebShell 或隧道之后忘了登记，过一会儿就"忘了还有入口可用"。
+     * 这个页签把事实库里的 WebShell 与隧道集中展示，带连通状态，并可一键让 host 侧实测。
+     */
+    function SessionTab(props) {
+      const eng = props.engagement
+      const refreshKey = props.refreshKey || 0
+      const [data, setData] = React.useState(null)
+      const [err, setErr] = React.useState(null)
+      const [busy, setBusy] = React.useState(false)
+      const [msg, setMsg] = React.useState(null)
+      const [copied, setCopied] = React.useState(null)
+
+      const load = () => {
+        if (!eng) return
+        api({ op: 'sessions', engagement: eng }).then((r) => {
+          if (!r || r.ok === false) { setErr((r && r.error) || '读取失败'); return }
+          setErr(null)
+          setData(r)
+        }, (e) => setErr(String((e && e.message) || e)))
+      }
+      React.useEffect(load, [eng, refreshKey])
+
+      const probe = () => {
+        setBusy(true); setMsg(null)
+        api({ op: 'probeSessions', engagement: eng, timeoutMs: 6000 }).then((r) => {
+          setBusy(false)
+          if (!r || r.ok === false) { setMsg({ err: (r && r.error) || '检测失败' }); load(); return }
+          const on = (r.webshells || []).filter((x) => x.status === 'online').length
+          const act = (r.tunnels || []).filter((x) => x.status === 'active').length
+          setMsg({ ok: '检测完成：WebShell 在线 ' + on + '/' + (r.webshells || []).length + '，隧道可用 ' + act + '/' + (r.tunnels || []).length })
+          load()
+        }, (e) => { setBusy(false); setMsg({ err: String((e && e.message) || e) }) })
+      }
+
+      const copy = (key, text) => {
+        try {
+          navigator.clipboard.writeText(text)
+          setCopied(key)
+          setTimeout(() => setCopied((c) => (c === key ? null : c)), 1500)
+        } catch (e) { setMsg({ err: '复制失败，请手动选择' }) }
+      }
+
+      const markTunnel = (t, status) => {
+        setMsg(null)
+        api({ op: 'updateTunnel', engagement: eng, id: t.id, patch: { status: status, check_note: '界面手动标记' } })
+          .then(() => load(), (e) => setMsg({ err: String((e && e.message) || e) }))
+      }
+      const markShell = (w, status) => {
+        setMsg(null)
+        api({ op: 'updateWebshell', engagement: eng, id: w.id, patch: { status: status, check_note: '界面手动标记' } })
+          .then(() => load(), (e) => setMsg({ err: String((e && e.message) || e) }))
+      }
+
+      const totals = (data && data.totals) || {}
+      const shells = (data && data.webshells) || []
+      const tunnels = (data && data.tunnels) || []
+      const statusDot = (s) => h('span', { className: s === 'online' || s === 'active' ? 'rt-dot-on' : (s === 'unknown' || !s ? 'rt-dot-unk' : 'rt-dot-off') })
+
+      const shellCards = shells.map((w) => h('div', { key: 'w' + w.id, className: 'rt-sess' },
+        h('div', { className: 'rt-sess-head' },
+          statusDot(w.status),
+          h('span', { className: 'rt-sess-title' }, w.url),
+          h('span', { className: 'rt-tag rt-tag-active' }, w.shell_type || 'webshell'),
+          w.privilege ? h('span', { className: 'rt-tag' }, w.privilege) : null,
+          h('div', { className: 'rt-spacer' }),
+          copied === 'cmd' + w.id
+            ? h('span', { className: 'rt-tag', style: { color: '#10b981' } }, '已复制')
+            : h('button', {
+                className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
+                onClick: () => copy('cmd' + w.id, 'curl -s "' + w.url + '"'),
+              }, '复制 URL'),
+          h('button', {
+            className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
+            onClick: () => markShell(w, 'offline'),
+          }, '标记失效')),
+        h('div', { className: 'rt-sess-sub' },
+          [w.pass_key ? '密码 ' + w.pass_key : null,
+            w.asset_ip ? '资产 ' + w.asset_ip : null,
+            w.secret_ref ? '凭据引用 ' + w.secret_ref : null,
+            '最后检测 ' + (w.last_check ? fmt(w.last_check) : '未检测'),
+            w.latency_ms !== null && w.latency_ms !== undefined ? w.latency_ms + 'ms' : null,
+            w.check_note || null].filter(Boolean).join(' · ')),
+        w.note ? h('div', { className: 'rt-sess-sub' }, '备注：' + w.note) : null))
+
+      const tunnelCards = tunnels.map((t) => {
+        const proxy = t.listen ? 'socks5://' + t.listen : ''
+        const gogoCmd = t.listen ? './gogo -i <内网CIDR> -m ss --ping -p top2,win,db --proxy ' + proxy : ''
+        const fscanCmd = t.listen ? './fscan -h <内网CIDR> -np -nobr -nopoc -socks5 ' + t.listen + ' -o intranet.txt' : ''
+        return h('div', { key: 't' + t.id, className: 'rt-sess' },
+          h('div', { className: 'rt-sess-head' },
+            statusDot(t.status),
+            h('span', { className: 'rt-sess-title' }, t.listen || '(未填监听地址)'),
+            h('span', { className: 'rt-tag rt-tag-passive' }, t.kind || 'tunnel'),
+            t.reach ? h('span', { className: 'rt-tag' }, '可达 ' + t.reach) : null,
+            h('div', { className: 'rt-spacer' }),
+            h('button', {
+              className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
+              onClick: () => copy('sock' + t.id, t.listen || ''),
+            }, copied === 'sock' + t.id ? '已复制' : '复制地址'),
+            t.status === 'active'
+              ? h('button', { className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 }, onClick: () => markTunnel(t, 'down') }, '标记失效')
+              : h('button', { className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 }, onClick: () => markTunnel(t, 'active') }, '标记可用')),
+          h('div', { className: 'rt-sess-sub' },
+            [t.entry ? '入口 ' + t.entry : null,
+              t.asset_ip ? '资产 ' + t.asset_ip : null,
+              '最后检测 ' + (t.last_check ? fmt(t.last_check) : '未检测'),
+              t.latency_ms !== null && t.latency_ms !== undefined ? t.latency_ms + 'ms' : null,
+              t.check_note || null].filter(Boolean).join(' · ')),
+          t.status === 'active' && t.listen
+            ? h('div', { style: { marginTop: 6 } },
+                h('div', { className: 'rt-sess-sub' }, '走隧道扫描（技能 gogo-intranet / fscan-intranet）：'),
+                h('div', { className: 'rt-code', title: '点击复制', onClick: () => copy('g' + t.id, gogoCmd) },
+                  copied === 'g' + t.id ? '已复制' : gogoCmd),
+                h('div', { className: 'rt-code', style: { display: 'block', marginTop: 3 }, title: '点击复制', onClick: () => copy('f' + t.id, fscanCmd) },
+                  copied === 'f' + t.id ? '已复制' : fscanCmd))
+            : null,
+          t.command ? h('div', { className: 'rt-sess-sub' }, '建立命令：' + t.command) : null,
+          t.note ? h('div', { className: 'rt-sess-sub' }, '备注：' + t.note) : null)
+      })
+
+      return h('div', { className: 'rt-main' },
+        h('div', { className: 'rt-toolbar' },
+          h('span', { style: { fontWeight: 600 } }, '会话与入口'),
+          h('span', { className: 'rt-tag' }, 'WebShell ' + (totals.webshellsOnline || 0) + '/' + (totals.webshells || 0) + ' 在线'),
+          h('span', { className: 'rt-tag' }, '隧道 ' + (totals.tunnelsActive || 0) + '/' + (totals.tunnels || 0) + ' 可用'),
+          h('span', { className: 'rt-tag' }, '凭据 ' + (totals.credentials || 0)),
+          h('span', { className: 'rt-tag' }, '访问会话 ' + (totals.access || 0)),
+          h('div', { className: 'rt-spacer' }),
+          h('button', { className: 'rt-btn rt-btn-primary', disabled: busy, onClick: probe }, busy ? '检测中…' : '检测连通性'),
+          h('button', { className: 'rt-btn', onClick: load }, '刷新')),
+        msg ? h('div', { className: msg.err ? 'rt-err' : 'rt-foot' }, msg.err || msg.ok) : null,
+        err ? h('div', { className: 'rt-err' }, err) : null,
+        h('div', { className: 'rt-body', style: { overflow: 'auto' } },
+          !shells.length && !tunnels.length
+            ? h('div', { className: 'rt-empty' },
+                h('div', null, '还没有登记任何 WebShell 或隧道。'),
+                h('div', { style: { marginTop: 6, fontSize: 12 } },
+                  '拿到 WebShell 用 redteam_webshell_add；建好隧道用 redteam_tunnel_add（suo5 / socks5 / ssh -R）；之后智能体用 redteam_sessions 就能看到。'))
+            : null,
+          shells.length
+            ? h('div', null,
+                h('div', { className: 'rt-section' }, 'WebShell（已上线的可控入口）· ' + shells.length),
+                h('div', { className: 'rt-sess-grid' }, shellCards))
+            : null,
+          tunnels.length
+            ? h('div', null,
+                h('div', { className: 'rt-section' }, '内网隧道（可直接给扫描器当代理用）· ' + tunnels.length),
+                h('div', { className: 'rt-sess-grid' }, tunnelCards))
+            : null))
+
     }
 
     /* ---------------------------------------------------------- 错误边界 */
@@ -1389,9 +1714,9 @@ window.__ModuleLoader__.load({
 
       const stats = (snapshot && snapshot.stats) || {}
       const tabs = [
-        ['assets', '资产测绘'], ['findings', '漏洞战果'], ['chain', '攻击链'],
-        ['scores', '得分目标'], ['report', '报告'], ['attackfiles', '攻击文件'],
-        ['prompts', '智能体提示词'], ['skills', '技能库'],
+        ['assets', '资产测绘'], ['sessions', '会话隧道'], ['findings', '漏洞战果'],
+        ['chain', '攻击链'], ['scores', '得分目标'], ['report', '报告'],
+        ['attackfiles', '攻击文件'], ['prompts', '智能体提示词'], ['skills', '技能库'],
       ]
       const full = isFullWindow()
       const openFull = () => {
@@ -1431,6 +1756,7 @@ window.__ModuleLoader__.load({
               h('button', { className: 'rt-btn rt-btn-primary', disabled: creating, onClick: () => openEngagement() },
                 creating ? '创建中…' : '创建靶标'))))
       } else if (st.tab === 'assets') body = h(AssetsTab, { engagement: eng, snapshot: snapshot, refreshKey: refreshKey, onRefresh: refreshAll, onData: () => loadSnapshot(eng) })
+      else if (st.tab === 'sessions') body = h(SessionTab, { engagement: eng, refreshKey: refreshKey })
       else if (st.tab === 'findings') body = h(FindingsTab, { engagement: eng, refreshKey: refreshKey })
       else if (st.tab === 'chain') body = h(ChainTab, { engagement: eng, refreshKey: refreshKey })
       else if (st.tab === 'report') body = h(ReportTab, { engagement: eng, refreshKey: refreshKey })

