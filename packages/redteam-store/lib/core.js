@@ -153,10 +153,12 @@ CREATE TABLE IF NOT EXISTS score_hit (
   recorded_by TEXT, recorded_at TEXT
 );
 
-/* 凭据：只存引用与线索，不存明文口令（secret_ref 指向 runs/ 下的证据文件或凭据库条目） */
+/* 凭据：secret_value 存明文口令/密钥（面板直接显示，便于随时复用），secret_ref 指向 runs/ 下的证据文件。
+   注意：本库只在本机，禁止把库文件或导出内容提交到任何仓库。 */
 CREATE TABLE IF NOT EXISTS credential (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  asset_id INTEGER, host TEXT, username TEXT, secret_type TEXT, secret_ref TEXT,
+  asset_id INTEGER, host TEXT, username TEXT, secret_type TEXT,
+  secret_value TEXT, secret_ref TEXT,
   privilege TEXT, source TEXT, tool TEXT, note TEXT,
   found_by_agent TEXT, found_at TEXT,
   UNIQUE(host, username, secret_type)
@@ -313,6 +315,8 @@ function migrate(db) {
   ensure('asset', 'scope', 'TEXT')
   /* 通过这个漏洞拿到了什么：账号权限 / 服务器权限 / 内网隧道 / 得分点等 */
   ensure('vuln', 'gained', 'TEXT')
+  /* 凭据明文：面板要直接显示口令，不再只存引用（库在本机，禁止导出/提交） */
+  ensure('credential', 'secret_value', 'TEXT')
   /* 老库回填：按 IP 归属自动区分内外网 */
   try {
     db.exec(`UPDATE asset SET scope = (${SCOPE_SQL}) WHERE scope IS NULL OR scope = ''`)
@@ -512,7 +516,7 @@ Nday 打不通或已覆盖，转接口：
 5. **内网突破** → 拿到一台机器后立即建隧道 + 收集凭据，转交内网渗透。
 
 ## 落库（强制）
-- 利用成功的漏洞置 \`exploited\`（\`redteam_vuln_update\`）；\`redteam_access_add\` 记录会话；\`redteam_credential_add\` 记录凭据（只写引用）。
+- 利用成功的漏洞置 \`exploited\`（\`redteam_vuln_update\`）；\`redteam_access_add\` 记录会话；\`redteam_credential_add\` 记录凭据（**明文写 secret_value**，同时给 secret_ref 证据引用）。
 - \`redteam_http_evidence_add\` 保存利用请求；\`redteam_chain_add\` 写 exploit/access/pivot/data 步骤。
 - 打通用的脚本/POC/EXP 用 \`redteam_attack_file_add\` 存进对应目标文件夹（只有**真正生效**的才存）。
 - 每拿下一样成果立即 \`redteam_score_hit\`。
@@ -1185,18 +1189,22 @@ export class RedteamStore {
     return { total: Object.values(bySeverity).reduce((a, b) => a + b, 0), bySeverity, byStatus }
   }
 
-  /** 凭据：只记录引用（secret_ref），明文口令不入库。 */
+  /** 凭据：明文写 secret_value（面板直接显示），同时保留 secret_ref 指向证据文件。 */
   addCredential(id, c = {}) {
     const db = this.db(id)
     if (!c.host) throw new Error('credential.host required')
-    db.prepare(`INSERT INTO credential(asset_id, host, username, secret_type, secret_ref, privilege, source, tool, note, found_by_agent, found_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?)
+    /* 明文凭据：secret_value 为准，兼容 secret / password / value 等别名 */
+    const value = c.secret_value ?? c.secret ?? c.password ?? c.value ?? null
+    db.prepare(`INSERT INTO credential(asset_id, host, username, secret_type, secret_value, secret_ref, privilege, source, tool, note, found_by_agent, found_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(host, username, secret_type) DO UPDATE SET
+        secret_value = COALESCE(excluded.secret_value, credential.secret_value),
         secret_ref = COALESCE(excluded.secret_ref, credential.secret_ref),
         privilege = COALESCE(excluded.privilege, credential.privilege),
         note = COALESCE(excluded.note, credential.note),
         found_at = excluded.found_at`).run(
       c.asset_id ?? null, c.host, c.username ?? '', c.secret_type ?? 'password',
+      value === null || value === undefined ? null : String(value),
       c.secret_ref ?? null, c.privilege ?? null, c.source ?? null, c.tool ?? null,
       c.note ?? null, c.found_by_agent ?? null, nowIso(),
     )
@@ -1211,6 +1219,7 @@ export class RedteamStore {
     const args = []
     if (f.host) { where.push('host = ?'); args.push(f.host) }
     if (f.username) { where.push('username = ?'); args.push(f.username) }
+    if (f.withValue === true) where.push("COALESCE(secret_value,'') <> ''")
     const clause = where.length ? 'WHERE ' + where.join(' AND ') : ''
     const limit = Math.min(Number(f.limit) || 200, 1000)
     return db.prepare(`SELECT * FROM credential ${clause} ORDER BY id DESC LIMIT ?`).all(...args, limit)

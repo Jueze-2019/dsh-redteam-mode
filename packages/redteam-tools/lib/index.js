@@ -402,13 +402,14 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'redteam_credential_add',
-    description: '记录一条凭据线索（漏洞利用/内网渗透角色）。安全要求：数据库只存引用，不存明文口令——secret_ref 指向 runs/ 下的证据文件或凭据库条目。',
+    description: '记录一条凭据（漏洞利用/内网渗透角色）。**必须把口令/密钥明文写进 secret_value**——面板要直接显示明文供随时复用；同时用 secret_ref 指向 runs/ 下的证据文件。注意：本库只在本机，禁止把库文件或导出内容提交到任何仓库。',
     parameters: {
       engagement: { type: 'string' },
       host: { type: 'string', required: true, description: '所属主机（IP 或域名）' },
       username: { type: 'string' },
       secret_type: { type: 'string', description: 'password | hash | key | token | connection-string，默认 password' },
-      secret_ref: { type: 'string', description: '密文/凭据引用路径，例如 runs/cred-vnc-10.0.0.5.txt' },
+      secret_value: { type: 'string', description: '【必填】凭据明文：口令 / Hash / 私钥 / Token / 连接串' },
+      secret_ref: { type: 'string', description: '证据引用路径，例如 runs/cred-vnc-10.0.0.5.txt' },
       privilege: { type: 'string', description: '该凭据的权限级别，如 admin / user / db-read' },
       asset_id: { type: 'number' },
       source: { type: 'string', description: '来源：exploit / dump / config-leak …' },
@@ -426,7 +427,7 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'redteam_credential_list',
-    description: '列出已收集的凭据线索（不含明文），用于规划横向移动。',
+    description: '列出已收集的凭据（含明文 secret_value），用于凭据复用与横向移动。',
     parameters: {
       engagement: { type: 'string' },
       host: { type: 'string' },

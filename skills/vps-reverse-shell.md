@@ -162,7 +162,7 @@ WebShell 场景配合技能 `suo5-tunnel`：把 suo5 客户端放本机，服务
 
 1. **端口纪律**：只用 9000-9999，开监听前先 `$VPS port` 或 `$VPS status` 确认空闲；**绝不占用/杀掉 9001、9007、9009 与 `cap/sh/up/www` 会话**。
 2. **每次用完必须 `$VPS kill <port>`**，不要留下裸监听（既是资源占用也是痕迹）。
-3. **不留明文凭据**：目标上抓到的口令/哈希按库里的规矩只存引用，产物落 `runs/`，不要写在 VPS 家目录。
+3. **凭据落库、不留 VPS**：目标上抓到的口令/哈希用 `redteam_credential_add` 写进本机资产库（明文 `secret_value`），产物落本机 `runs/`；**不要把凭据写进 VPS 家目录**。
 4. **VPS IP 对目标可见**：它属于本次演练的基础设施，不要在目标上留下包含它之外的额外个人信息。
 5. **落库**：每次成功拿到 shell 用 `redteam_access_add` 记录（host/账号/方式/权限/会话引用），每条凭据用 `redteam_credential_add` 记录，攻击脚本用 `redteam_attack_file_add` 归档。
 6. **`send` 出去的每条命令都要能从 `read` 的输出里拿到证据**，重要输出先重定向到文件再 `get` 回来，避免 tmux 回滚缓冲被刷掉。

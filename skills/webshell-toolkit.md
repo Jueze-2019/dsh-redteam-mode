@@ -43,5 +43,5 @@ curl -s "https://target.example.com/upload/x.jsp?cmd=id"
 ## 注意事项
 - 生成的 shell 只能上传到**本次授权演练的目标**；用完按需清理（删除文件、恢复原状）。
 - 工具 GUI 需要图形会话（`DISPLAY=:10.0` 可用）。
-- 不要在 shell 里保存明文口令；凭据写 `runs/`，库里用 `redteam_credential_add` 记引用。
+- 凭据用 `redteam_credential_add` 落库：**明文写 `secret_value`**（面板直接显示，便于复用），同时把证据文件写 `runs/` 并在 `secret_ref` 里引用。资产库只在本机，别把库或导出内容带走。
 - 目标可能有 EDR/查杀：先测试 shell 是否存活，避免反复落地触发告警。

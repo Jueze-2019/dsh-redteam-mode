@@ -132,7 +132,7 @@ redteam_domain_index             按域名维度聚合（域名 → 子域 → I
 redteam_web_list                 Web 资产清单（URL + 标题，可点击）
 redteam_vuln_add/query/update    漏洞记录与状态流转；gained 记录「通过它拿到了什么权限」
 redteam_http_evidence_add        原始 HTTP 证据（供报告复现）
-redteam_credential_add/list      凭据线索（只存引用，不存明文口令）
+redteam_credential_add/list      凭据（明文 secret_value + 证据引用 secret_ref）
 redteam_access_add/list          已获得的访问会话
 redteam_sessions                 【每次派任务前先看】WebShell / 隧道 / 凭据 / 会话一屏总览
 redteam_webshell_add/list/update 已上线 WebShell 的登记与状态维护
@@ -173,7 +173,7 @@ redteam_report_targets / redteam_report 报告（按目标分组 / 汇总）
 ## 6. 数据与隐私
 
 * 所有演练数据只写在**本机** `$DSH_HOME/redteam/engagements/<靶标>/`：SQLite 事实库、`runs/` 证据、按目标分目录的攻击文件。本项目不含任何遥测、上报或云端同步代码。
-* **口令与密钥只存引用**：`credential` 表落的是 `secret_ref`（指向 `runs/` 下的证据文件或凭据库条目），不存明文。
+* **凭据明文入库、但只在本机**：`credential.secret_value` 存口令/Hash/密钥原文（「漏洞战果」页直接显示，便于随时复用），同时用 `secret_ref` 指向 `runs/` 下的证据文件。**这个库文件是最高敏感度的资产**，不要复制、导出或提交到任何仓库/聊天工具；`.gitignore` 已排除 `engagements/`、`*.db` 等路径。
 * 界面与工具的所有写操作都要求证据引用，避免"无证据的成果"。
 * `.gitignore` 默认排除 `engagements/`、`runs/`、`*.db`、`*.jsonl`、凭据与密钥文件，避免误提交演练数据。
 

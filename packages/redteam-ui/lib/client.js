@@ -118,8 +118,6 @@ window.__ModuleLoader__.load({
 .rt-pri-high{color:#fff;background:#ef4444}
 .rt-pri-medium{color:#fff;background:#f59e0b}
 .rt-pri-low{color:#fff;background:#94a3b8}
-.rt-progress{height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-2);overflow:hidden;flex:1;min-width:60px;max-width:160px}
-.rt-progress>i{display:block;height:100%;background:var(--dsw-alias-brand-primary)}
 .rt-score-row{display:grid;grid-template-columns:56px 1fr 90px 64px;gap:8px;padding:7px 10px;
   border-bottom:1px solid var(--dsw-alias-border-l1);align-items:center;font-size:12.5px;cursor:pointer}
 .rt-score-row:hover{background:var(--dsw-alias-bg-layer-2)}
@@ -209,6 +207,27 @@ window.__ModuleLoader__.load({
 .rt-scope{display:inline-block;padding:0 4px;border-radius:3px;font-size:10px;font-weight:700;line-height:15px;flex:none}
 .rt-scope-internal{color:#0e7490;background:#a5f3fc}
 .rt-scope-external{color:#9a3412;background:#fed7aa}
+.rt-hits{display:flex;flex-direction:column;gap:6px;margin-top:7px}
+.rt-hit{border:1px solid var(--dsw-alias-border-l1);border-left:3px solid #10b981;border-radius:6px;
+  padding:7px 9px;background:var(--dsw-alias-bg-layer-2)}
+.rt-hit-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.rt-hit-idx{width:16px;height:16px;border-radius:50%;background:#10b981;color:#fff;font-size:10.5px;font-weight:700;
+  display:inline-flex;align-items:center;justify-content:center;flex:none}
+.rt-hit-target{font-family:ui-monospace,Menlo,monospace;font-weight:600;font-size:12px;word-break:break-all}
+.rt-hit-time{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-secondary);white-space:nowrap}
+.rt-hit-evi{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word;
+  background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l1);border-radius:5px;padding:6px 8px;margin-top:5px}
+.rt-hit-note{font-size:11.5px;color:var(--dsw-alias-label-secondary);margin-top:4px}
+.rt-cred{border:1px solid var(--dsw-alias-border-l1);border-left:3px solid #f59e0b;border-radius:6px;
+  padding:8px 10px;background:var(--dsw-alias-bg-layer-2);margin-bottom:7px}
+.rt-cred-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.rt-cred-host{font-family:ui-monospace,Menlo,monospace;font-weight:600;font-size:12.5px;word-break:break-all}
+.rt-secret{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.6;background:#fef3c7;color:#78350f;
+  border:1px solid #f59e0b66;border-radius:5px;padding:6px 9px;margin-top:6px;white-space:pre-wrap;word-break:break-all;
+  user-select:all;cursor:text}
+.rt-secret-none{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--dsw-alias-state-error-primary);
+  border:1px dashed var(--dsw-alias-state-error-primary);border-radius:5px;padding:5px 9px;margin-top:6px}
+.rt-cred-meta{font-size:11.5px;color:var(--dsw-alias-label-secondary);margin-top:5px;word-break:break-word}
 .rt-md{flex:1;overflow:auto;margin:0;padding:14px 16px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;
   line-height:1.65;white-space:pre-wrap;word-break:break-word;background:var(--dsw-alias-bg-base)}
 .rt-weblink{display:block;font-size:11.5px;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1046,14 +1065,33 @@ window.__ModuleLoader__.load({
         h('span', null, '误报 ' + ((stats.byStatus && stats.byStatus['false-positive']) || 0)))
 
       const credSection = h('div', null,
-        h('div', { className: 'rt-section' }, '凭据线索（仅引用，不含明文）· ' + creds.length),
+        h('div', { className: 'rt-section' }, '凭据 · ' + creds.length + (creds.length ? '（明文直显，注意屏幕分享/录屏）' : '')),
         creds.length
-          ? creds.map((c) => h('div', { key: 'c' + c.id, className: 'rt-vrow', style: { cursor: 'default', gridTemplateColumns: '1fr 110px 90px 1fr' } },
-              h('span', { className: 'rt-mono' }, c.host),
-              h('span', null, c.username || '—'),
-              h('span', null, h('span', { className: 'rt-tag' }, c.secret_type || 'password')),
-              h('span', { className: 'rt-mono', title: c.secret_ref || '' }, c.secret_ref || '—')))
-          : h('div', { className: 'rt-empty' }, '暂无'))
+          ? h('div', { style: { padding: '4px 10px 0' } }, creds.map((c) => h('div', { key: 'c' + c.id, className: 'rt-cred' },
+              h('div', { className: 'rt-cred-head' },
+                h('span', { className: 'rt-cred-host' }, c.host),
+                c.username ? h('span', { className: 'rt-tag' }, c.username) : null,
+                h('span', { className: 'rt-tag rt-tag-passive' }, c.secret_type || 'password'),
+                c.privilege ? h('span', { className: 'rt-tag rt-tag-active' }, c.privilege) : null,
+                h('div', { className: 'rt-spacer' }),
+                h('button', {
+                  className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
+                  onClick: (e) => {
+                    e.stopPropagation()
+                    try { navigator.clipboard.writeText(String(c.secret_value || '')) } catch (err) { /* ignore */ }
+                  },
+                }, '复制')),
+              c.secret_value
+                ? h('div', { className: 'rt-secret', title: '点击可全选' }, c.secret_value)
+                : h('div', { className: 'rt-secret-none' }, '未记明文 —— 请用 redteam_credential_add 的 secret_value 补上，面板才能直显'),
+              h('div', { className: 'rt-cred-meta' },
+                [c.source ? '来源 ' + c.source : null,
+                  c.tool ? '工具 ' + c.tool : null,
+                  c.secret_ref ? '证据 ' + c.secret_ref : null,
+                  c.found_by_agent ? 'by ' + c.found_by_agent : null,
+                  c.found_at ? fmt(c.found_at) : null].filter(Boolean).join(' · ')),
+              c.note ? h('div', { className: 'rt-cred-meta' }, '备注：' + c.note) : null)))
+          : h('div', { className: 'rt-empty' }, '暂无凭据（拿到口令/密钥/Hash 后用 redteam_credential_add 落库，秒级可复用）'))
 
       const accessSection = h('div', null,
         h('div', { className: 'rt-section' }, '已获得访问会话 · ' + accesses.length),
@@ -1381,7 +1419,6 @@ window.__ModuleLoader__.load({
       }
 
       const summary = (data && data.summary) || { totalPoints: 0, achievedPoints: 0, achievedCount: 0, pointCount: 0, hitCount: 0 }
-      const pct = summary.totalPoints > 0 ? Math.round((summary.achievedPoints / summary.totalPoints) * 100) : 0
       const items = (data && data.items) || []
 
       const rows = []
@@ -1402,17 +1439,41 @@ window.__ModuleLoader__.load({
             : h('span', { className: 'rt-tag' }, p.enabled ? '待争取' : '停用')),
           h('span', null, p.hits.length ? h('span', { className: 'rt-tag rt-tag-active' }, '命中 ' + p.hits.length) : null)))
         if (!open) continue
-        const hitNodes = p.hits.map((hh) => h('div', { key: 'h' + hh.id, className: 'rt-kv' },
-          h('b', null, fmt(hh.recorded_at)),
-          h('span', null, (hh.target ? hh.target + '：' : '') + (hh.evidence || '')),
-          h('span', { style: { marginLeft: 8, opacity: 0.7 } }, hh.recorded_by || '')))
+        /* 命中记录：每条一张卡片 —— 序号 / 目标 / 记录人 / 时间 / 证据正文 */
+        const hitNodes = p.hits.map((hh, hi) => h('div', { key: 'h' + hh.id, className: 'rt-hit' },
+          h('div', { className: 'rt-hit-head' },
+            h('span', { className: 'rt-hit-idx' }, String(hi + 1)),
+            h('span', { className: 'rt-hit-target' }, hh.target || '未指定目标'),
+            hh.note ? h('span', { className: 'rt-tag' }, hh.note) : null,
+            hh.recorded_by ? h('span', { className: 'rt-tag rt-tag-active' }, hh.recorded_by) : null,
+            h('span', { className: 'rt-hit-time' }, fmt(hh.recorded_at))),
+          hh.evidence
+            ? h('div', { className: 'rt-hit-evi' }, hh.evidence)
+            : h('div', { className: 'rt-hit-note', style: { color: 'var(--dsw-alias-state-error-primary)' } },
+                '没有填证据 —— 记分必须写明可核对的证据（回显、命令、数据条数、路径）'),
+          h('div', { style: { marginTop: 5 } },
+            hh.asset_id ? h('span', { className: 'rt-chip' }, h('i', null, '资产'), h('span', { className: 'rt-mono' }, '#' + hh.asset_id)) : null,
+            h('button', {
+              className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
+              onClick: (e) => {
+                e.stopPropagation()
+                try { navigator.clipboard.writeText(String(hh.evidence || '')) } catch (err) { /* ignore */ }
+              },
+            }, '复制证据'))))
         rows.push(h('div', {
           key: 'spd' + p.id, className: 'rt-score-row',
           style: { cursor: 'default', gridTemplateColumns: '1fr' },
         }, h('div', { className: 'rt-score-detail' },
           p.description ? h('div', { className: 'rt-kv' }, h('b', null, '得分条件'), h('span', null, p.description)) : null,
-          h('div', { className: 'rt-kv' }, h('b', null, '状态'), h('span', null, (p.enabled ? '启用' : '停用') + ' · ' + p.points + ' 分 · 命中 ' + p.hits.length + ' 次')),
-          hitNodes.length ? h('div', null, h('div', { style: { fontWeight: 600, margin: '6px 0 3px' } }, '命中记录'), hitNodes) : null,
+          h('div', { className: 'rt-kv' }, h('b', null, '状态'),
+            h('span', null, (p.enabled ? '启用' : '停用') + ' · ' + p.points + ' 分/次 · 命中 ' + p.hits.length + ' 次')),
+          p.hits.length
+            ? h('div', null,
+                h('div', { className: 'rt-section', style: { padding: '6px 0 0' } }, '命中记录 · ' + p.hits.length),
+                h('div', { className: 'rt-hits' }, hitNodes))
+            : h('div', { className: 'rt-kv' }, h('b', null, '命中记录'),
+                h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } },
+                  '还没有 —— 拿下成果后用 redteam_score_hit 记分（target + evidence 必填）')),
           h('div', { className: 'rt-actions' },
             h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); startEdit(p) } }, '编辑')))))
       }
@@ -1420,10 +1481,10 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'rt-main' },
         h('div', { className: 'rt-toolbar' },
           h('span', { style: { fontWeight: 600 } }, '得分目标'),
-          /* 目标得分：直接给「已得总分 / 满分」，不显示百分比 */
+          /* 只显示已拿下的总分，不显示目标分数、不显示进度条 */
+          h('span', { style: { fontSize: 13, color: 'var(--dsw-alias-label-secondary)', marginLeft: 4 } }, '总分'),
           h('span', { className: 'rt-total' }, String(summary.achievedPoints)),
-          h('span', { style: { fontSize: 13, color: 'var(--dsw-alias-label-secondary)' } }, '/ ' + summary.totalPoints + ' 分'),
-          h('span', { className: 'rt-progress' }, h('i', { style: { width: pct + '%' } })),
+          h('span', { style: { fontSize: 13, color: 'var(--dsw-alias-label-secondary)' } }, '分'),
           h('span', { className: 'rt-tag' }, '已拿下 ' + summary.achievedCount + '/' + summary.pointCount + ' 项'),
           h('div', { className: 'rt-spacer' }),
           h('button', { className: 'rt-btn', onClick: startNew }, '+ 新增得分点'),
