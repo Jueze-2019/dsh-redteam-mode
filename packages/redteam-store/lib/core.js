@@ -1453,12 +1453,19 @@ export class RedteamStore {
     const testing = db.prepare(`${select} FROM asset a
       WHERE COALESCE(a.test_status, 'untested') = 'testing'
       ORDER BY a.test_updated_at DESC, a.id DESC LIMIT ?`).all(limit)
+    /* 最近动过：排除正在测的，避免两个区块重复 */
     const recent = db.prepare(`${select} FROM asset a
-      WHERE a.test_updated_at IS NOT NULL
+      WHERE a.test_updated_at IS NOT NULL AND COALESCE(a.test_status, 'untested') <> 'testing'
       ORDER BY a.test_updated_at DESC LIMIT ?`).all(limit)
+    /* 待测队列：还没动的，按易打性 + 端口数排出先打哪几台 */
+    const queue = db.prepare(`${select} FROM asset a
+      WHERE COALESCE(a.test_status, 'untested') = 'untested'
+      ORDER BY CASE COALESCE(a.priority, '') WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN 'low' THEN 2 ELSE 3 END,
+        (SELECT COUNT(*) FROM port p WHERE p.asset_id = a.id AND p.state = 'open') DESC, a.ip_int
+      LIMIT ?`).all(limit)
     const untested = db.prepare(`SELECT COUNT(*) AS n FROM asset a
       WHERE COALESCE(a.test_status, 'untested') = 'untested'`).get().n
-    return { testing, recent, stats: this.testStats(id), untested, at: nowIso() }
+    return { testing, recent, queue, stats: this.testStats(id), untested, at: nowIso() }
   }
 
   /**

@@ -43,7 +43,7 @@ window.__ModuleLoader__.load({
 .rt-btn-primary{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);color:#fff}
 .rt-btn-primary:hover{opacity:.9}
 .rt-btn:disabled{opacity:.5;cursor:default}
-.rt-tabs{display:flex;gap:4px;padding:8px 12px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.rt-tabs{display:flex;flex-wrap:wrap;gap:4px;padding:8px 12px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
 .rt-tab{padding:6px 12px;border-radius:6px 6px 0 0;cursor:pointer;font-size:12.5px;color:var(--dsw-alias-label-secondary)}
 .rt-tab.on{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);font-weight:600}
 .rt-body{flex:1;min-height:0;display:flex;flex-direction:column}
@@ -1323,75 +1323,6 @@ window.__ModuleLoader__.load({
         }, (e) => setErr(String((e && e.message) || e)))
       }, [eng, mode, refreshKey])
 
-      /* ── 当前正在测的资产：每 5 秒自动拉一次，实时反映 agent 正在打哪台 —— */
-      const TEST_STATUS = {
-        untested: '未测试', testing: '测试中', tested: '已测试',
-        blocked: '被封禁', abandoned: '已放弃', no_surface: '无攻击面',
-      }
-      const [live, setLive] = React.useState(null)
-      const [liveErr, setLiveErr] = React.useState(null)
-      const [liveAt, setLiveAt] = React.useState(null)
-      const [auto, setAuto] = React.useState(true)
-      const loadLive = () => {
-        if (!eng) return
-        api({ op: 'activeTests', engagement: eng, limit: 6 }).then((r) => {
-          if (!r || r.ok === false) { setLiveErr((r && r.error) || '读取失败'); return }
-          setLiveErr(null); setLive(r); setLiveAt(new Date())
-        }, (e) => setLiveErr(String((e && e.message) || e)))
-      }
-      React.useEffect(loadLive, [eng, refreshKey])
-      React.useEffect(() => {
-        if (!eng || !auto) return undefined
-        const timer = setInterval(loadLive, 5000)
-        return () => clearInterval(timer)
-      }, [eng, auto, refreshKey])
-
-      const activeList = (live && live.testing) || []
-      const recentList = (live && live.recent) || []
-      const shown = activeList.length ? activeList : recentList.slice(0, 3)
-      const atestCard = (a, past) => {
-        const chips = []
-        chips.push(h('span', { key: 'sc', className: 'rt-scope rt-scope-' + (a.scope === 'internal' ? 'internal' : 'external') },
-          a.scope === 'internal' ? '内网' : '外网'))
-        if (a.segment_cidr) chips.push(h('span', { key: 'seg', className: 'rt-tag' }, a.segment_cidr))
-        if (a.open_ports) chips.push(h('span', { key: 'p', className: 'rt-tag rt-tag-active' }, '开放 ' + a.open_ports + ' 端口'))
-        if (a.vulns) chips.push(h('span', { key: 'v', className: 'rt-tag rt-tag-live' }, '已确认漏洞 ' + a.vulns))
-        if (a.webshells) chips.push(h('span', { key: 'w', className: 'rt-tag rt-tag-passive' }, 'WebShell ' + a.webshells))
-        if (a.tunnels) chips.push(h('span', { key: 't', className: 'rt-tag rt-tag-passive' }, '隧道 ' + a.tunnels))
-        if (a.priority) chips.push(h('span', { key: 'pr', className: 'rt-tag' }, '易打 ' + a.priority))
-        if (a.blocked_count) chips.push(h('span', { key: 'b', className: 'rt-tag', style: { color: '#ef4444', borderColor: '#ef444455' } }, '被封 ' + a.blocked_count + ' 次'))
-        return h('div', { key: 'at' + a.id, className: 'rt-atest' + (past ? ' past' : '') },
-          h('div', { className: 'rt-atest-head' },
-            past ? null : h('span', { className: 'rt-live-dot' }),
-            h('span', { className: 'rt-atest-ip' }, a.ip),
-            h('span', { className: 'rt-tag ' + (a.test_status === 'testing' ? 'rt-tag-live' : '') }, TEST_STATUS[a.test_status] || a.test_status),
-            h('div', { className: 'rt-spacer' }),
-            h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)' } },
-              fmt(a.test_updated_at) + (a.test_updated_by ? ' · ' + a.test_updated_by : ''))),
-          chips.length ? h('div', null, chips) : null,
-          a.test_surface ? h('div', { className: 'rt-atest-meta' }, '测试面：' + a.test_surface) : null,
-          a.potential ? h('div', { className: 'rt-atest-meta' }, '预期得分：' + a.potential) : null,
-          a.test_notes
-            ? h('div', { className: 'rt-atest-notes' },
-                String(a.test_notes).split('\n').slice(-3)
-                  .map((l) => (l.length > 240 ? l.slice(0, 240) + ' …' : l)).join('\n'))
-            : null)
-      }
-
-      const liveBar = h('div', { className: 'rt-livebar' },
-        h('span', { className: 'rt-live-dot' + (activeList.length ? '' : ' idle') }),
-        h('span', { style: { fontWeight: 600, fontSize: 12.5 } }, activeList.length ? '当前正在测' : '当前没有资产处于「测试中」'),
-        activeList.length ? h('span', { className: 'rt-tag rt-tag-live' }, activeList.length + ' 台') : null,
-        live ? h('span', { className: 'rt-tag' }, '剩余未测 ' + (live.untested || 0) + ' 台') : null,
-        live && live.stats ? h('span', { className: 'rt-tag' }, '已测 ' + (live.stats.tested || 0) + ' · 测试中 ' + (live.stats.testing || 0) + ' · 放弃 ' + ((live.stats.abandoned || 0) + (live.stats.blocked || 0))) : null,
-        h('div', { className: 'rt-spacer' }),
-        liveAt ? h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)' } }, '更新于 ' + liveAt.toLocaleTimeString('zh-CN', { hour12: false })) : null,
-        h('button', {
-          className: 'rt-btn' + (auto ? ' rt-btn-primary' : ''), style: { padding: '0 7px', fontSize: 11 },
-          title: '每 5 秒自动刷新当前测试状态', onClick: () => setAuto((x) => !x),
-        }, auto ? '实时 · 5s' : '已暂停'),
-        h('button', { className: 'rt-btn', style: { padding: '0 7px', fontSize: 11 }, onClick: loadLive }, '刷新'))
-
       const ordered = desc ? items.slice().reverse() : items
       /* 一步默认只占一行（序号 + 标题 + 阶段 + 时间），点开才看详情与结构化 chip */
       const stepNode = (s, i) => {
@@ -1504,14 +1435,6 @@ window.__ModuleLoader__.load({
           }, desc ? '倒序 ↓' : '正序 ↑'),
           h('button', { className: 'rt-btn', disabled: loading, onClick: load }, loading ? '加载中…' : '刷新')),
         err ? h('div', { className: 'rt-err' }, err) : null,
-        liveBar,
-        liveErr ? h('div', { className: 'rt-err' }, liveErr) : null,
-        shown.length
-          ? h('div', { className: 'rt-live-body' },
-              activeList.length ? null : h('div', { className: 'rt-atest-meta', style: { marginBottom: 5 } },
-                '最近动过的资产（agent 正在打哪台会在这里实时出现）：'),
-              shown.map((a) => atestCard(a, activeList.length === 0)))
-          : null,
         isScore
           ? h('div', { className: 'rt-chain' },
               scoreSteps.length
@@ -1858,6 +1781,136 @@ window.__ModuleLoader__.load({
         h('div', { className: 'rt-foot' }, h('span', null, '得分点可编辑；智能体按分值优先级推进，拿下成果用 redteam_score_hit 记分')))
     }
 
+    /* ---------------------------------------------------------- 当前测试（实时） */
+    const TEST_STATUS_LABEL = {
+      untested: '未测试', testing: '测试中', tested: '已测试',
+      blocked: '被封禁', abandoned: '已放弃', no_surface: '无攻击面',
+    }
+
+    /**
+     * 当前测试页：agent 正在打哪台、打到哪一步、还有什么在排队。
+     * 5 秒轮询自动刷新；三个区块可折叠，其中「正在测」始终完整展开。
+     */
+    function TestingTab(props) {
+      const eng = props.engagement
+      const refreshKey = props.refreshKey || 0
+      const [data, setData] = React.useState(null)
+      const [err, setErr] = React.useState(null)
+      const [at, setAt] = React.useState(null)
+      const [auto, setAuto] = React.useState(true)
+      /* 折叠状态：正在测不参与折叠 */
+      const [closed, setClosed] = React.useState({ recent: true, queue: true })
+
+      const load = () => {
+        if (!eng) return
+        api({ op: 'activeTests', engagement: eng, limit: 20 }).then((r) => {
+          if (!r || r.ok === false) { setErr((r && r.error) || '读取失败'); return }
+          setErr(null); setData(r); setAt(new Date())
+        }, (e) => setErr(String((e && e.message) || e)))
+      }
+      React.useEffect(load, [eng, refreshKey])
+      React.useEffect(() => {
+        if (!eng || !auto) return undefined
+        const timer = setInterval(load, 5000)
+        return () => clearInterval(timer)
+      }, [eng, auto, refreshKey])
+
+      const testing = (data && data.testing) || []
+      const recent = (data && data.recent) || []
+      const queue = (data && data.queue) || []
+      const stats = (data && data.stats) || {}
+
+      /* 一台资产一张卡：一眼看清"打的是谁、打到哪、拿到什么" */
+      const card = (a, past) => {
+        const chips = []
+        chips.push(h('span', { key: 'sc', className: 'rt-scope rt-scope-' + (a.scope === 'internal' ? 'internal' : 'external') },
+          a.scope === 'internal' ? '内网' : '外网'))
+        if (a.segment_cidr) chips.push(h('span', { key: 'seg', className: 'rt-tag' }, a.segment_cidr))
+        if (a.open_ports) chips.push(h('span', { key: 'p', className: 'rt-tag rt-tag-active' }, '开放 ' + a.open_ports + ' 端口'))
+        if (a.vulns) chips.push(h('span', { key: 'v', className: 'rt-tag rt-tag-live' }, '已确认漏洞 ' + a.vulns))
+        if (a.webshells) chips.push(h('span', { key: 'w', className: 'rt-tag rt-tag-passive' }, 'WebShell ' + a.webshells))
+        if (a.tunnels) chips.push(h('span', { key: 't', className: 'rt-tag rt-tag-passive' }, '隧道 ' + a.tunnels))
+        if (a.priority) chips.push(h('span', { key: 'pr', className: 'rt-tag' }, '易打 ' + a.priority))
+        if (a.blocked_count) chips.push(h('span', { key: 'b', className: 'rt-tag', style: { color: '#ef4444', borderColor: '#ef444455' } }, '被封 ' + a.blocked_count + ' 次'))
+        const noteLines = a.test_notes
+          ? String(a.test_notes).split('\n').slice(-3).map((l) => (l.length > 240 ? l.slice(0, 240) + ' …' : l))
+          : []
+        return h('div', { key: 'at' + a.id, className: 'rt-atest' + (past ? ' past' : '') },
+          h('div', { className: 'rt-atest-head' },
+            past ? null : h('span', { className: 'rt-live-dot' }),
+            h('span', { className: 'rt-atest-ip' }, a.ip),
+            h('span', { className: 'rt-tag ' + (a.test_status === 'testing' ? 'rt-tag-live' : '') }, TEST_STATUS_LABEL[a.test_status] || a.test_status),
+            h('div', { className: 'rt-spacer' }),
+            h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)' } },
+              fmt(a.test_updated_at) + (a.test_updated_by ? ' · ' + a.test_updated_by : ''))),
+          chips.length ? h('div', null, chips) : null,
+          a.test_surface ? h('div', { className: 'rt-atest-meta' }, '测试面：' + a.test_surface) : null,
+          a.potential ? h('div', { className: 'rt-atest-meta' }, '预期得分：' + a.potential) : null,
+          noteLines.length ? h('div', { className: 'rt-atest-notes' }, noteLines.join('\n')) : null)
+      }
+
+      const section = (key, title, n, tone, hint) => {
+        const isClosed = closed[key] === true
+        return h('div', {
+          key: 'sec' + key, className: 'rt-stagegrp',
+          onClick: () => setClosed((o) => Object.assign({}, o, { [key]: !o[key] })),
+        },
+          h('span', { className: 'rt-stage-tag rt-st-' + tone }, title),
+          h('span', { className: 'rt-grp-n' }, n + ' 台'),
+          hint ? h('span', { className: 'rt-grp-n', style: { marginLeft: 10, fontWeight: 400 } }, hint) : null,
+          h('div', { className: 'rt-spacer' }),
+          h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, isClosed ? '▸' : '▾'))
+      }
+
+      const concl = (label, value, tone) => h('span', { key: label, className: 'rt-concl-i', style: { cursor: 'default' } },
+        h('b', null, String(value || 0)), h('span', null, label))
+      const conclusion = h('div', { className: 'rt-concl' },
+        concl('测试中', stats.testing, 'live'),
+        concl('待测', stats.untested, ''),
+        concl('已测', stats.tested, ''),
+        concl('放弃', (stats.abandoned || 0) + (stats.blocked || 0), ''),
+        concl('无攻击面', stats.no_surface, ''),
+        h('div', { className: 'rt-spacer' }),
+        at ? h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)' } },
+          '更新于 ' + at.toLocaleTimeString('zh-CN', { hour12: false })) : null,
+        h('button', {
+          className: 'rt-btn' + (auto ? ' rt-btn-primary' : ''), style: { padding: '0 7px', fontSize: 11 },
+          title: '每 5 秒自动刷新', onClick: () => setAuto((x) => !x),
+        }, auto ? '实时 · 5s' : '已暂停'),
+        h('button', { className: 'rt-btn', style: { padding: '0 7px', fontSize: 11 }, onClick: load }, '刷新'))
+
+      const body = []
+      /* 正在测：不折叠，完整展开 */
+      body.push(section('testing', '正在测', testing.length, 'access',
+        testing.length ? null : '（agent 开始测某台资产后会实时出现在这里）'))
+      if (testing.length) body.push(h('div', { key: 'testingList', className: 'rt-live-body', style: { borderBottom: 'none', paddingTop: 6 } }, testing.map((a) => card(a, false))))
+      else body.push(h('div', { key: 'testingEmpty', className: 'rt-empty', style: { padding: 14 } },
+        '当前没有资产处于「测试中」。下面是最近动过的与待测队列。'))
+
+      /* 最近动过（默认折叠） */
+      body.push(section('recent', '最近动过', recent.length, 'data'))
+      if (closed.recent !== true && recent.length) {
+        body.push(h('div', { key: 'recentList', className: 'rt-live-body', style: { borderBottom: 'none', paddingTop: 6 } }, recent.map((a) => card(a, true))))
+      }
+
+      /* 待测队列（默认折叠） */
+      body.push(section('queue', '待测队列', data ? (data.untested || 0) : 0, 'other',
+        queue.length ? '按易打性与端口数排出先打哪几台' : null))
+      if (closed.queue !== true && queue.length) {
+        body.push(h('div', { key: 'queueList', className: 'rt-live-body', style: { borderBottom: 'none', paddingTop: 6 } },
+          queue.map((a) => card(a, true)),
+          h('div', { key: 'queueHint', className: 'rt-atest-meta', style: { padding: '4px 2px 10px' } },
+            '完整清单（含筛选与排序）见「资产测绘」页')))
+      }
+
+      return h('div', { className: 'rt-main' },
+        conclusion,
+        err ? h('div', { className: 'rt-err' }, err) : null,
+        data === null && !err ? h('div', { className: 'rt-empty' }, '加载中…') : null,
+        h('div', { className: 'rt-body', style: { overflow: 'auto' } },
+          h('div', { style: { padding: '6px 12px 14px' } }, body)))
+    }
+
     /* ---------------------------------------------------------- 会话与入口（WebShell / 隧道） */
     /**
      * 打内网最容易出的问题：拿到 WebShell 或隧道之后忘了登记，过一会儿就"忘了还有入口可用"。
@@ -2118,7 +2171,7 @@ window.__ModuleLoader__.load({
 
       const stats = (snapshot && snapshot.stats) || {}
       const tabs = [
-        ['assets', '资产测绘'], ['sessions', '会话隧道'], ['findings', '漏洞战果'],
+        ['assets', '资产测绘'], ['testing', '当前测试'], ['sessions', '会话隧道'], ['findings', '漏洞战果'],
         ['chain', '攻击链'], ['scores', '得分目标'], ['report', '报告'],
         ['attackfiles', '攻击文件'], ['prompts', '智能体提示词'], ['skills', '技能库'],
       ]
@@ -2160,6 +2213,7 @@ window.__ModuleLoader__.load({
               h('button', { className: 'rt-btn rt-btn-primary', disabled: creating, onClick: () => openEngagement() },
                 creating ? '创建中…' : '创建靶标'))))
       } else if (st.tab === 'assets') body = h(AssetsTab, { engagement: eng, snapshot: snapshot, refreshKey: refreshKey, onRefresh: refreshAll, onData: () => loadSnapshot(eng) })
+      else if (st.tab === 'testing') body = h(TestingTab, { engagement: eng, refreshKey: refreshKey })
       else if (st.tab === 'sessions') body = h(SessionTab, { engagement: eng, refreshKey: refreshKey })
       else if (st.tab === 'findings') body = h(FindingsTab, { engagement: eng, refreshKey: refreshKey })
       else if (st.tab === 'chain') body = h(ChainTab, { engagement: eng, refreshKey: refreshKey })
