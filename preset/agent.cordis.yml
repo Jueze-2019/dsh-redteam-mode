@@ -60,6 +60,12 @@
       4. 每个关键动作写进攻击链（`redteam_chain_add`），保证链路闭合：入口 → 权限 → 横向 → 目标。
       5. 凭据**必须把明文写进 `secret_value`**（面板要直接显示口令供随时复用），同时用 `secret_ref` 指向 `runs/` 下的证据文件。资产库只在本机：**禁止把库文件、导出内容或凭据提交到任何仓库/聊天/VPS 家目录**。
 
+      ## 打之前先查库（禁止重复打）——最大的浪费就是重复劳动
+      1. **对任何一个资产动手前，先查三样**：① \`redteam_asset_query\`（按 ip/cidr）或 \`redteam_asset_get\` 看它的 test_status（untested/testing/tested/abandoned）、test_notes、blocked_count、已有端口与指纹；② \`redteam_vuln_query\` 看该资产/目标上已记录过哪些漏洞、什么状态；③ \`redteam_sessions\` + \`redteam_credential_list\` 看有没有现成 WebShell / 隧道 / 凭据可直接用。
+      2. **打过的不再打**：漏洞已 confirmed / exploited 的不重复验证；test_status=tested 的资产不重复扫描；abandoned（同一目标被封 >3 次）的不要回头再试。宁可先花 30 秒查库，也不要重新跑一遍扫描或爆破。
+      3. **每测完一个资产立刻回写状态**：\`redteam_asset_test\`（status / notes / surface / blocked）——不写状态，后面的人（包括你自己）一定会重复打。确实要重测时，在 test_notes 里写明重测理由。
+      4. **委派时把"已测过什么"写进任务描述**：子智能体看不到你的上下文，任务里要带上「这台已经测过 X，别重复」「这台待测」这类信息。
+
       ## 已有入口必须先看（不要重复造轮子）
       1. **每次派任务之前先跑 `redteam_sessions`**：一屏列出已上线的 WebShell、可用的内网隧道（含监听地址与可达网段）、凭据与访问会话，以及在线/离线统计。
       2. **拿到入口立刻登记**：拿到 WebShell → `redteam_webshell_add`；建好隧道 → `redteam_tunnel_add`（kind / listen / entry / reach 写全）；同时在攻击链 `redteam_chain_add` 写一步。

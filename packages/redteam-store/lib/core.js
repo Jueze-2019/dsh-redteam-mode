@@ -428,6 +428,16 @@ export const DEFAULT_PROMPTS = {
 - **不要手搓 HTTP 爆破循环或端口扫描脚本**；现成工具确实不适用时才写，并说明理由。
 - 开工前先 \`redteam_sessions\` 看有没有现成 WebShell / 隧道 / 凭据可直接复用。
 
+## 打之前先查库（禁止重复打）
+动手测任何一个目标之前，先花 30 秒查三样东西，确认没人打过：
+1. \`redteam_asset_query\`（或 \`redteam_asset_get\`）——看该资产的 test_status（untested/testing/tested/abandoned）、test_notes、blocked_count、已有端口与指纹；
+2. \`redteam_vuln_query\`——看这个资产/目标上已经记录过哪些漏洞、什么状态（candidate/confirmed/exploited/false-positive）；
+3. \`redteam_sessions\` / \`redteam_credential_list\`——看有没有现成 WebShell、隧道、凭据可以直接用。
+规则：
+- 已经 confirmed / exploited 的漏洞不要重复验证；test_status=tested 的资产不要重复扫；abandoned（被封 >3 次）的直接跳过。
+- **每测完一个资产立刻 \`redteam_asset_test\` 回写状态**（status/notes/surface/blocked）——不写状态，后面的人（包括你自己）一定会重复打。
+- 确实需要重测时，在 test_notes 里写清为什么重测。
+
 ## 常规采集（别漏）
 域名 / 子域、IP 与 C 段、端口 / 服务 / 版本 / 指纹、Web 的 URL 与页面标题，标注被动 / 主动来源。
 
@@ -471,6 +481,16 @@ export const DEFAULT_PROMPTS = {
 - **不要手搓 HTTP 爆破循环或端口扫描脚本**；现成工具确实不适用时才写，并说明理由。
 - 开工前先 \`redteam_sessions\` 看有没有现成 WebShell / 隧道 / 凭据可直接复用。
 
+## 打之前先查库（禁止重复打）
+动手测任何一个目标之前，先花 30 秒查三样东西，确认没人打过：
+1. \`redteam_asset_query\`（或 \`redteam_asset_get\`）——看该资产的 test_status（untested/testing/tested/abandoned）、test_notes、blocked_count、已有端口与指纹；
+2. \`redteam_vuln_query\`——看这个资产/目标上已经记录过哪些漏洞、什么状态（candidate/confirmed/exploited/false-positive）；
+3. \`redteam_sessions\` / \`redteam_credential_list\`——看有没有现成 WebShell、隧道、凭据可以直接用。
+规则：
+- 已经 confirmed / exploited 的漏洞不要重复验证；test_status=tested 的资产不要重复扫；abandoned（被封 >3 次）的直接跳过。
+- **每测完一个资产立刻 \`redteam_asset_test\` 回写状态**（status/notes/surface/blocked）——不写状态，后面的人（包括你自己）一定会重复打。
+- 确实需要重测时，在 test_notes 里写清为什么重测。
+
 ## 其次：接口与逻辑漏洞（拿账号/数据）
 Nday 打不通或已覆盖，转接口：
 1. **抓接口**：前端 JS（axios/fetch 路径、webpack chunk）、swagger/openapi.json、actuator、druid、graphql、小程序/APP 抓包。
@@ -502,6 +522,16 @@ Nday 打不通或已覆盖，转接口：
 3. 把命中的功能点串成 **getshell 链**（例如：后台 → 上传点 → 绕过 → Shell → 命令执行）；成功后用冰蝎/哥斯拉/蚁剑维持访问（技能 \`webshell-toolkit\`）。
 4. **拿到服务器权限后**：收集凭据与配置 → 用 \`suo5-tunnel\` 建隧道打内网 → 转交内网渗透角色。
 5. 每一步成果**立刻记分**：\`redteam_score_hit\`（webshell / server-shell / web-account-admin / rce / db-access / sensitive-data …）。
+
+## 打之前先查库（禁止重复打）
+动手测任何一个目标之前，先花 30 秒查三样东西，确认没人打过：
+1. \`redteam_asset_query\`（或 \`redteam_asset_get\`）——看该资产的 test_status（untested/testing/tested/abandoned）、test_notes、blocked_count、已有端口与指纹；
+2. \`redteam_vuln_query\`——看这个资产/目标上已经记录过哪些漏洞、什么状态（candidate/confirmed/exploited/false-positive）；
+3. \`redteam_sessions\` / \`redteam_credential_list\`——看有没有现成 WebShell、隧道、凭据可以直接用。
+规则：
+- 已经 confirmed / exploited 的漏洞不要重复验证；test_status=tested 的资产不要重复扫；abandoned（被封 >3 次）的直接跳过。
+- **每测完一个资产立刻 \`redteam_asset_test\` 回写状态**（status/notes/surface/blocked）——不写状态，后面的人（包括你自己）一定会重复打。
+- 确实需要重测时，在 test_notes 里写清为什么重测。
 
 ## 拿到 WebShell / 隧道后必须登记（否则等于没拿到）
 - 上线 WebShell → 立刻 \`redteam_webshell_add\`（url / shell_type / pass_key / privilege / secret_ref）。
@@ -627,6 +657,8 @@ export function dispatch(store, req = {}) {
     if (op === 'saveScorePoint') return Object.assign({ ok: true }, store.saveScorePoint(id, req.point || req))
     if (op === 'deleteScorePoint') return Object.assign({ ok: true }, store.deleteScorePoint(id, req.id))
     if (op === 'addScoreHit') return Object.assign({ ok: true }, store.addScoreHit(id, req.hit || req))
+    if (op === 'scoreChain') return Object.assign({ ok: true }, store.scoreChain(id, req))
+    if (op === 'activeTests') return Object.assign({ ok: true }, store.activeTests(id, req))
     if (op === 'testStats') return { ok: true, stats: store.testStats(id) }
     if (op === 'reportTargets') return Object.assign({ ok: true }, store.reportTargets(id, req))
     if (op === 'attackFiles') return { ok: true, items: store.attackFileTree(id) }
@@ -1348,6 +1380,66 @@ export class RedteamStore {
     const result = db.prepare(`UPDATE tunnel SET ${sets.join(', ')} WHERE id = ?`).run(...args, tId)
     if (result.changes === 0) throw new Error('tunnel not found')
     return { updated: true }
+  }
+
+  /**
+   * 当前测试面板：正在测的资产 + 最近动过的资产（带各自已确认漏洞数/端口数/入口数）。
+   * 攻击链页面的「当前正在测」区块用它，客户端每隔几秒轮询一次实现实时更新。
+   */
+  activeTests(id, f = {}) {
+    const db = this.db(id)
+    const limit = Math.min(Number(f.limit) || 8, 50)
+    const select = `SELECT a.id, a.ip, a.segment_cidr, COALESCE(a.scope, (${SCOPE_SQL})) AS scope, a.state,
+        COALESCE(a.test_status, 'untested') AS test_status, a.test_notes, a.test_surface,
+        a.test_updated_at, a.test_updated_by, COALESCE(a.blocked_count, 0) AS blocked_count,
+        a.priority, a.potential,
+        (SELECT COUNT(*) FROM port p WHERE p.asset_id = a.id AND p.state = 'open') AS open_ports,
+        (SELECT COUNT(*) FROM vuln v WHERE v.asset_id = a.id AND v.status IN ('confirmed','exploited')) AS vulns,
+        (SELECT COUNT(*) FROM webshell w WHERE w.asset_id = a.id) AS webshells,
+        (SELECT COUNT(*) FROM tunnel t WHERE t.asset_id = a.id) AS tunnels`
+    const testing = db.prepare(`${select} FROM asset a
+      WHERE COALESCE(a.test_status, 'untested') = 'testing'
+      ORDER BY a.test_updated_at DESC, a.id DESC LIMIT ?`).all(limit)
+    const recent = db.prepare(`${select} FROM asset a
+      WHERE a.test_updated_at IS NOT NULL
+      ORDER BY a.test_updated_at DESC LIMIT ?`).all(limit)
+    const untested = db.prepare(`SELECT COUNT(*) AS n FROM asset a
+      WHERE COALESCE(a.test_status, 'untested') = 'untested'`).get().n
+    return { testing, recent, stats: this.testStats(id), untested, at: nowIso() }
+  }
+
+  /**
+   * 得分链路：把 score_hit 按时间拉平成一条链，只含"得分"相关的东西，不掺任何信息收集流水账。
+   * 攻击链页面的「得分链路」视图用它。
+   */
+  scoreChain(id, f = {}) {
+    const db = this.db(id)
+    const limit = Math.min(Number(f.limit) || 500, 2000)
+    const items = db.prepare(`SELECT h.id, h.point_id, h.asset_id, h.target, h.evidence, h.note,
+        h.recorded_by, h.recorded_at,
+        p.code, p.name AS point_name, p.category, p.points, p.enabled,
+        a.ip AS asset_ip
+      FROM score_hit h
+      LEFT JOIN score_point p ON p.id = h.point_id
+      LEFT JOIN asset a ON a.id = h.asset_id
+      ORDER BY h.recorded_at, h.id LIMIT ?`).all(limit)
+    /* 按得分点聚合出"哪些还没拿下"，方便一眼看出缺口 */
+    const points = db.prepare('SELECT id, code, name, category, points, enabled FROM score_point ORDER BY sort_order, id').all()
+    const hitPointIds = new Set(items.map((x) => x.point_id))
+    const achieved = points.filter((p) => hitPointIds.has(p.id) && p.enabled === 1)
+    const missing = points.filter((p) => !hitPointIds.has(p.id) && p.enabled === 1)
+    return {
+      items,
+      achieved,
+      missing,
+      summary: {
+        hits: items.length,
+        points: items.reduce((n, x) => n + (x.points || 0), 0),
+        achievedCount: achieved.length,
+        missingCount: missing.length,
+        missingPoints: missing.reduce((n, p) => n + (p.points || 0), 0),
+      },
+    }
   }
 
   /** 会话总览：给界面和提示词用的一屏摘要（含在线/离线统计）。 */
