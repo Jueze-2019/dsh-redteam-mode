@@ -146,6 +146,22 @@ CREATE TABLE IF NOT EXISTS score_point (
 );
 
 /* 得分记录：某个得分点在某个目标上被拿下 */
+/* 作战阶段：全链路攻击路径图的五个阶段（内容可编辑） */
+CREATE TABLE IF NOT EXISTS stage (
+  code TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  subtitle TEXT,
+  color TEXT,
+  goal TEXT,
+  sections TEXT,
+  tools TEXT,
+  attck TEXT,
+  blue_team TEXT,
+  transition TEXT,
+  sort_order INTEGER DEFAULT 0,
+  updated_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS score_hit (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   point_id INTEGER NOT NULL,
@@ -333,6 +349,19 @@ function migrate(db) {
   ensure('score_hit', 'vuln_id', 'INTEGER')
   ensure('score_hit', 'step_id', 'INTEGER')
   ensure('attack_step', 'point_id', 'INTEGER')
+  /* 阶段归属：得分点与攻击步骤各自挂在哪个作战阶段（刚加列时按默认映射回填一次） */
+  if (ensure('score_point', 'stage_code', 'TEXT')) {
+    try {
+      const stmt = db.prepare('UPDATE score_point SET stage_code = ? WHERE code = ?')
+      for (const [code, stage] of Object.entries(DEFAULT_POINT_STAGE)) stmt.run(stage, code)
+    } catch { /* 忽略 */ }
+  }
+  if (ensure('attack_step', 'stage_code', 'TEXT')) {
+    try {
+      const stmt = db.prepare('UPDATE attack_step SET stage_code = ? WHERE stage = ?')
+      for (const [legacy, code] of Object.entries(LEGACY_STAGE_MAP)) stmt.run(code, legacy)
+    } catch { /* 忽略 */ }
+  }
   /* 老库回填：按 IP 归属自动区分内外网 */
   try {
     db.exec(`UPDATE asset SET scope = (${SCOPE_SQL}) WHERE scope IS NULL OR scope = ''`)
@@ -353,6 +382,14 @@ export function targetKey(target, fallbackIp) {
     return t
   }
   return fallbackIp || '(未指定目标)'
+}
+
+/** 安全解析 JSON 列（坏数据回退默认值）。 */
+const parseJson = (value, fallback) => {
+  try {
+    const parsed = JSON.parse(value)
+    return parsed === null || parsed === undefined ? fallback : parsed
+  } catch { return fallback }
 }
 
 /** 把「通过这个漏洞拿到了什么」规范化成一行短标签：数组或分隔串 → 「A、B」。 */
@@ -435,6 +472,111 @@ export const DEFAULT_SCORE_POINTS = [
 ]
 
 /* ------------------------------------------------------------------ 默认内容 */
+
+/* ------------------------------------------------------------------ 作战阶段 */
+
+/**
+ * 全链路攻击路径的五个作战阶段（默认内容，可在界面里改）。
+ * 阶段结构：阶段目标 + 手段分组 + 常用工具 + ATT&CK 技术号 + 蓝队检测视角 + 进入下一阶段的过渡语。
+ */
+export const DEFAULT_STAGES = [
+  {
+    code: 'external', name: '外网打点', subtitle: 'RECON & EXPOSURE MAPPING', color: '#06b6d4',
+    goal: '摸清暴露面，锁定成功率高、噪声低的突破缺口',
+    sections: [
+      { label: '资产测绘', items: ['子域名、C 段、端口指纹', 'FOFA / Shodan / Hunter', '被动 / 主动扫描'] },
+      { label: '情报收集', items: ['历史泄露口令、员工画像、邮箱命名规则', 'GitHub / 网盘密码泄露'] },
+      { label: '暴露面排查', items: ['VPN、堡垒机、OA、邮件网关', '对外 API / 小程序、第三方供应链入口'] },
+      { label: '突破口排序', items: ['漏洞类 → 未授权访问 → N-day / 1day → 钓鱼', '按成功概率与风险排序'] },
+      { label: '边界识别', items: ['WAF / CDN 识别判定、防护策略与封禁阈值探测', '备用入口与旁站寻找'] },
+    ],
+    tools: 'ARL / 灯塔、fscan、OneForAll、ENScan、Goby、Burp、Nuclei',
+    attck: 'T1590 T1596 T1595 T1593 T1594 T1592',
+    blue_team: '测绘扫描告警、敏感端口暴露、泄露凭据入库比对、钓鱼邮件附件关联',
+    transition: '锁定突破口',
+  },
+  {
+    code: 'foothold', name: '撕破口子', subtitle: 'INITIAL ACCESS & FOOTHOLD', color: '#ef4444',
+    goal: '在边界主机拿到执行权限，建立可稳定访问的立足点',
+    sections: [
+      { label: '初始访问', items: ['Web RCE / 反序列化 / 文件上传 / SSRF', '弱口令 / 邮件钓鱼 / 钓鱼附件上线'] },
+      { label: '权限落地', items: ['Webshell、内存马', 'Beacon 上线（Cobalt Strike / Sliver / Havoc）'] },
+      { label: '本地提权', items: ['内核 EXP、服务与计划任务缺陷', 'SUDO 配置错误、xp_cmdshell'] },
+      { label: '痕迹对抗', items: ['杀软卸载、EDR 绕过', '日志清理、时间戳伪造、合法进程回归'] },
+      { label: '立足点固化', items: ['计划任务 / 服务 / 账号 / WMI 持久化', '保证断线后可回'] },
+    ],
+    tools: '蚁剑 / 冰蝎 / 哥斯拉、sqlmap、Nuclei、Cobalt Strike / Sliver / Havoc、内核 EXP',
+    attck: 'T1190 T1133 T1505.003 T1059 T1543 T1068 T1070',
+    blue_team: 'Webshell / 内存马查杀、异常子进程、EDR 告警、计划任务与服务创建',
+    transition: '获得稳定立足点 → 建立隧道出口',
+  },
+  {
+    code: 'tunnel', name: '隧道搭建 · 内网漫游', subtitle: 'TUNNELING & INTERNAL ROAMING', color: '#f59e0b',
+    goal: '打通内网链路，把外网控制能力延伸到内网核心区域',
+    sections: [
+      { label: '隧道代理', items: ['frp / Stowaway / Neo-reGeorg / Venom / GOST', '多级级联、socks5 落地'] },
+      { label: '出网通道', items: ['域名前置、CDN 隐藏、云函数转发', 'DNS / ICMP / 443 隐蔽信道'] },
+      { label: '内网穿透', items: ['DMZ → 办公网 → 核心区生产区', '代理链 + 流量中转'] },
+      { label: '内网测绘', items: ['存活探测、端口服务、共享目录', '数据库 / 中间件 / 备份系统指纹'] },
+      { label: '内网情报', items: ['BloodHound 攻击路径、LDAP 查询', '会话与凭据位置定位'] },
+    ],
+    tools: 'frp / Stowaway / Neo-reGeorg / Venom / GOST、gogo / fscan、BloodHound、proxychains、suo5',
+    attck: 'T1572 T1090 T1095 T1021 T1018 T1046 T1087 T1082',
+    blue_team: '异常长连接与心跳、DNS 隧道特征、代理工具指纹、内网大范围扫描行为',
+    transition: '横向移动提权',
+  },
+  {
+    code: 'privilege', name: '拿下资产权限', subtitle: 'LATERAL MOVEMENT & PRIVILEGE', color: '#8b5cf6',
+    goal: '拿下关键资产最高权限，形成对核心业务的控制能力',
+    sections: [
+      { label: '凭据窃取', items: ['Mimikatz / LaZagne、LSASS 转储', '配置文件与浏览器口令、数据库凭据'] },
+      { label: '横向移动', items: ['PsExec / WMIExec / SMBExec / Impacket', 'RDP / SSH / 远程计划任务'] },
+      { label: '权限跃迁', items: ['普通主机 → 本地管理员', '运维 / 域管 → 虚拟化与控制台'] },
+      { label: '核心资产', items: ['数据库、文件服务器、堡垒机', 'CI/CD、备份与监控平台'] },
+      { label: '路径复用', items: ['以已控主机为跳板持续扩展控制面', '保持攻击路径可回滚'] },
+    ],
+    tools: 'Mimikatz / LaZagne、Impacket（PsExec / WMIExec / SMBExec）、RDP / SSH、BloodHound',
+    attck: 'T1003 T1550 T1558 T1021.002 T1078.002 T1482',
+    blue_team: 'LSASS 访问审计、异常登录与票据异常、非办公时段提权、特权账号使用偏离',
+    transition: '靶标系统优先',
+  },
+  {
+    code: 'target', name: '靶标系统权限', subtitle: 'TARGET SYSTEM & COMMAND', color: '#10b981',
+    goal: '攻陷靶标系统，并按演练规则固化成果与证据',
+    sections: [
+      { label: '靶标定位', items: ['按演练规则确认靶标系统 / 服务器范围', '明确"得分判定口径"'] },
+      { label: '最终权限', items: ['root / SYSTEM / 管理员 / 云 AK', '掌握业务数据读写与配置变更能力'] },
+      { label: '成果取证', items: ['配置文件、业务数据、主机信息', '终端截图，形成可校验证据链'] },
+      { label: '影响评估', items: ['数据范围与影响范围、边界可绕过', '可造成业务影响的最小范围'] },
+      { label: '成果固化', items: ['权限维持、攻击时间线回顾', '证据链归档与报告输出'] },
+      { label: '复盘输出', items: ['攻击路径、利用点、权限边界', '加固建议汇总成演练报告'] },
+    ],
+    tools: '证据链归档与报告（截图 / 配置文件 / 业务数据取证）',
+    attck: 'T1078 T1098 T1560 T1005 T1082 T1119',
+    blue_team: '特权操作审计、批量数据访问、核心配置变更、主机完整性校验与告警',
+    transition: '',
+  },
+]
+
+/** 得分点 → 阶段 的默认归属（可在「得分目标」面板改）。 */
+export const DEFAULT_POINT_STAGE = {
+  'web-account-user': 'foothold',
+  'web-account-admin': 'foothold',
+  webshell: 'foothold',
+  rce: 'foothold',
+  boundary: 'tunnel',
+  'server-shell': 'privilege',
+  'db-access': 'privilege',
+  'sensitive-data': 'privilege',
+  'internal-pivot': 'privilege',
+  'core-system': 'target',
+}
+
+/** 旧攻击链 stage → 新阶段 code 的兜底映射。 */
+export const LEGACY_STAGE_MAP = {
+  recon: 'external', vuln: 'foothold', exploit: 'foothold',
+  access: 'privilege', pivot: 'tunnel', data: 'privilege', other: 'tunnel',
+}
 
 export const DEFAULT_PROMPTS = {
   recon: `# 信息收集智能体（Recon）
@@ -717,6 +859,8 @@ export function dispatch(store, req = {}) {
     if (op === 'scoreReport') return Object.assign({ ok: true }, store.scoreReport(id, req))
     if (op === 'activeTests') return Object.assign({ ok: true }, store.activeTests(id, req))
     if (op === 'testStats') return { ok: true, stats: store.testStats(id) }
+    if (op === 'stages') return { ok: true, items: store.listStages(id) }
+    if (op === 'saveStage') return Object.assign({ ok: true }, store.saveStage(id, req.stage || req))
     if (op === 'reportTargets') return Object.assign({ ok: true }, store.reportTargets(id, req))
     if (op === 'attackFiles') return { ok: true, items: store.attackFileTree(id) }
     if (op === 'addAttackFile') return Object.assign({ ok: true }, store.addAttackFile(id, req.file || req))
@@ -1047,15 +1191,68 @@ export class RedteamStore {
   /* ---------- 得分目标（攻防演练得分点 + 得分记录） ---------- */
 
   /** 首次打开靶标时播种默认得分点（已有则不动）。 */
+  /** 作战阶段：首次读取时补种默认五阶段（与得分点同策略，老靶标自动获得）。 */
+  seedStages(id) {
+    const db = this.db(id)
+    if (db.prepare('SELECT COUNT(*) AS n FROM stage').get().n > 0) return { seeded: 0 }
+    let order = 0
+    const stmt = db.prepare(`INSERT INTO stage(code, name, subtitle, color, goal, sections, tools, attck, blue_team, transition, sort_order, updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
+    for (const st of DEFAULT_STAGES) {
+      stmt.run(st.code, st.name, st.subtitle, st.color, st.goal, JSON.stringify(st.sections),
+        st.tools, st.attck, st.blue_team, st.transition, order++, nowIso())
+    }
+    return { seeded: DEFAULT_STAGES.length }
+  }
+
+  listStages(id) {
+    const db = this.db(id)
+    if (db.prepare('SELECT COUNT(*) AS n FROM stage').get().n === 0) this.seedStages(id)
+    return db.prepare('SELECT * FROM stage ORDER BY sort_order, code').all().map((r) => ({
+      code: r.code, name: r.name, subtitle: r.subtitle || '', color: r.color || '#64748b',
+      goal: r.goal || '', sections: parseJson(r.sections, []), tools: r.tools || '',
+      attck: r.attck || '', blue_team: r.blue_team || '', transition: r.transition || '',
+      updated_at: r.updated_at || null,
+    }))
+  }
+
+  /** 编辑阶段内容（名称/目标/手段分组/工具/ATT&CK/蓝队视角/过渡语）。 */
+  saveStage(id, patch = {}) {
+    const db = this.db(id)
+    if (!patch.code) throw new Error('stage.code required')
+    const cur = db.prepare('SELECT * FROM stage WHERE code = ?').get(String(patch.code))
+    db.prepare(`INSERT INTO stage(code, name, subtitle, color, goal, sections, tools, attck, blue_team, transition, sort_order, updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(code) DO UPDATE SET
+        name = excluded.name, subtitle = excluded.subtitle, color = excluded.color, goal = excluded.goal,
+        sections = excluded.sections, tools = excluded.tools, attck = excluded.attck,
+        blue_team = excluded.blue_team, transition = excluded.transition, updated_at = excluded.updated_at`).run(
+      String(patch.code),
+      patch.name ?? (cur ? cur.name : String(patch.code)),
+      patch.subtitle ?? (cur ? cur.subtitle : ''),
+      patch.color ?? (cur ? cur.color : '#64748b'),
+      patch.goal ?? (cur ? cur.goal : ''),
+      patch.sections !== undefined ? JSON.stringify(patch.sections) : (cur ? cur.sections : '[]'),
+      patch.tools ?? (cur ? cur.tools : ''),
+      patch.attck ?? (cur ? cur.attck : ''),
+      patch.blue_team ?? (cur ? cur.blue_team : ''),
+      patch.transition ?? (cur ? cur.transition : ''),
+      patch.sort_order ?? (cur ? cur.sort_order : 0),
+      nowIso(),
+    )
+    return { code: String(patch.code), updated: true }
+  }
+
   seedScorePoints(id) {
     const db = this.db(id)
     const n = db.prepare('SELECT COUNT(*) AS n FROM score_point').get().n
     if (n > 0) return { seeded: 0 }
     let order = 0
     for (const point of DEFAULT_SCORE_POINTS) {
-      db.prepare(`INSERT INTO score_point(code, name, category, points, max_hits, description, enabled, sort_order, created_at, updated_at)
-        VALUES(?,?,?,?,?,?,1,?,?,?)`).run(
-        point.code, point.name, point.category, point.points, point.max_hits || 1, point.description, order++, nowIso(), nowIso(),
+      db.prepare(`INSERT INTO score_point(code, name, category, points, max_hits, description, enabled, stage_code, sort_order, created_at, updated_at)
+        VALUES(?,?,?,?,?,?,1,?,?,?,?)`).run(
+        point.code, point.name, point.category, point.points, point.max_hits || 1, point.description,
+        DEFAULT_POINT_STAGE[point.code] || 'foothold', order++, nowIso(), nowIso(),
       )
     }
     return { seeded: DEFAULT_SCORE_POINTS.length }
@@ -1085,6 +1282,7 @@ export class RedteamStore {
         const counted = Math.min(list.length, maxHits)
         return {
           id: r.id, code: r.code, name: r.name, category: r.category, points: r.points,
+          stage_code: r.stage_code || DEFAULT_POINT_STAGE[r.code] || null,
           max_hits: maxHits, counted: counted, earned: counted * r.points,
           potential: maxHits * r.points,
           description: r.description || '', enabled: r.enabled === 1, sort_order: r.sort_order,
@@ -1114,15 +1312,19 @@ export class RedteamStore {
     const points = Number.isFinite(Number(point.points)) ? Number(point.points) : 0
     const enabled = point.enabled === false ? 0 : 1
     const maxHits = Math.max(1, Number.isFinite(Number(point.max_hits)) ? Number(point.max_hits) : 1)
+    const stageCode = point.stage_code ?? null
     if (point.id !== undefined && point.id !== null && Number(point.id) > 0) {
-      db.prepare(`UPDATE score_point SET name = ?, category = ?, points = ?, max_hits = ?, description = ?, enabled = ?, sort_order = COALESCE(?, sort_order), updated_at = ? WHERE id = ?`)
-        .run(name, point.category ?? null, points, maxHits, point.description ?? null, enabled, point.sort_order ?? null, nowIso(), Number(point.id))
+      db.prepare(`UPDATE score_point SET name = ?, category = ?, points = ?, max_hits = ?, description = ?, enabled = ?,
+          stage_code = COALESCE(?, stage_code), sort_order = COALESCE(?, sort_order), updated_at = ? WHERE id = ?`)
+        .run(name, point.category ?? null, points, maxHits, point.description ?? null, enabled,
+          stageCode, point.sort_order ?? null, nowIso(), Number(point.id))
       return { id: Number(point.id), updated: true }
     }
     const next = db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM score_point').get().n
-    const r = db.prepare(`INSERT INTO score_point(code, name, category, points, max_hits, description, enabled, sort_order, created_at, updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?)`).run(
-      point.code ?? null, name, point.category ?? null, points, maxHits, point.description ?? null, enabled, next, nowIso(), nowIso(),
+    const r = db.prepare(`INSERT INTO score_point(code, name, category, points, max_hits, description, enabled, stage_code, sort_order, created_at, updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(
+      point.code ?? null, name, point.category ?? null, points, maxHits, point.description ?? null, enabled,
+      stageCode ?? DEFAULT_POINT_STAGE[point.code] ?? 'foothold', next, nowIso(), nowIso(),
     )
     return { id: Number(r.lastInsertRowid), updated: false }
   }
@@ -1676,7 +1878,7 @@ export class RedteamStore {
     const limit = Math.min(Number(f.limit) || 500, 2000)
     const items = db.prepare(`SELECT h.id, h.point_id, h.asset_id, h.vuln_id, h.step_id, h.target,
         h.evidence, h.note, h.recorded_by, h.recorded_at,
-        p.code, p.name AS point_name, p.category, p.points, p.enabled,
+        p.code, p.name AS point_name, p.category, p.points, p.enabled, p.stage_code,
         a.ip AS asset_ip, v.title AS vuln_title, v.cve AS vuln_cve
       FROM score_hit h
       LEFT JOIN score_point p ON p.id = h.point_id
@@ -1720,9 +1922,33 @@ export class RedteamStore {
     const hitPointIds = new Set(items.map((x) => x.point_id))
     const achieved = points.filter((p) => hitPointIds.has(p.id) && p.enabled === 1)
     const missing = points.filter((p) => !hitPointIds.has(p.id) && p.enabled === 1)
+    /* ── 按五个作战阶段组织：阶段目标 + 本阶段实际战果 + 手段/工具/ATT&CK/蓝队视角 ── */
+    const stages = this.listStages(id).map((st) => {
+      const sItems = items.filter((x) => (x.stage_code || 'external') === st.code)
+      return Object.assign({}, st, {
+        items: sItems,
+        hits: sItems.length,
+        counted: sItems.filter((x) => x.counted).length,
+        points: sItems.reduce((n, x) => n + (x.counted ? (x.points || 0) : 0), 0),
+        span: sItems.length > 0
+          ? { from: sItems[0].recorded_at || null, to: sItems[sItems.length - 1].recorded_at || null }
+          : null,
+      })
+    })
+    /* 攻击步骤按阶段归位（新数据用 stage_code，老数据按 legacy stage 映射） */
+    const stepsByStage = new Map()
+    for (const row of db.prepare(`SELECT id, seq, stage, stage_code, title, detail, asset_id, point_id, recorded_at
+        FROM attack_step ORDER BY seq, id LIMIT 2000`).all()) {
+      const code = row.stage_code || LEGACY_STAGE_MAP[row.stage] || 'external'
+      if (!stepsByStage.has(code)) stepsByStage.set(code, [])
+      stepsByStage.get(code).push({ id: row.id, seq: row.seq, title: row.title, detail: row.detail, recorded_at: row.recorded_at })
+    }
+    for (const st of stages) st.steps = stepsByStage.get(st.code) || []
+
     const scores = this.listScorePoints(id)
     return {
       items,
+      stages,
       achieved,
       missing,
       summary: {
@@ -1957,9 +2183,11 @@ export class RedteamStore {
       if (row !== undefined) pointId = row.id
     }
     const seq = s.seq ?? next
-    const result = db.prepare(`INSERT INTO attack_step(seq, stage, title, detail, asset_id, vuln_id, access_id, point_id, evidence_ref, recorded_by, recorded_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(
-      seq, s.stage ?? 'other', s.title ?? '', s.detail ?? null,
+    const legacyStage = s.stage ?? 'other'
+    const stageCode = s.stage_code ?? LEGACY_STAGE_MAP[legacyStage] ?? 'external'
+    const result = db.prepare(`INSERT INTO attack_step(seq, stage, stage_code, title, detail, asset_id, vuln_id, access_id, point_id, evidence_ref, recorded_by, recorded_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      seq, legacyStage, stageCode, s.title ?? '', s.detail ?? null,
       s.asset_id ?? null, s.vuln_id ?? null, s.access_id ?? null, pointId, s.evidence_ref ?? null,
       s.recorded_by ?? null, nowIso(),
     )
@@ -1974,7 +2202,7 @@ export class RedteamStore {
         })
       } catch (error) { /* 记分失败不影响步骤入库 */ }
     }
-    return { id: stepId, seq: seq, point_id: pointId, hit: hit }
+    return { id: stepId, seq: seq, stage_code: stageCode, point_id: pointId, hit: hit }
   }
 
   listChain(id) {

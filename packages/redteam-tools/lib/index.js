@@ -845,6 +845,7 @@ export function apply(ctx) {
       evidence_ref: { type: 'string', description: '证据文件/会话引用，例如 runs/session-vnc.md' },
       recorded_by: { type: 'string' },
       point_code: { type: 'string', description: '【这一步拿了分就填】得分点 code，服务端会自动记一次分并把步骤与得分互相挂上' },
+      stage_code: { type: 'string', description: '所属作战阶段：external(外网打点) | foothold(撕破口子) | tunnel(隧道搭建·内网漫游) | privilege(拿下资产权限) | target(靶标系统权限)' },
       evidence: { type: 'string', description: '配合 point_code 使用：这一分拿到了什么（目标资产 + 账号/权限/数据量）' },
       target: { type: 'string', description: '配合 point_code 使用：目标资产' },
       seq: { type: 'number', description: '不填则自动追加到链尾' },
@@ -922,6 +923,30 @@ export function apply(ctx) {
       return JSON.stringify({
         ok: true, engagement: id, generated_at: result.generated_at, totals: result.totals,
         targets: picked.map((t) => ({ key: t.key, label: t.label, segment: t.segment, stats: t.stats })),
+      }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_stages',
+    description: '全链路攻击路径的五个作战阶段（外网打点 → 撕破口子 → 隧道搭建·内网漫游 → 拿下资产权限 → 靶标系统权限）：每阶段的目标、手段、常用工具、ATT&CK 技术号、蓝队检测视角，以及**本阶段实际拿到的分与命中**。开工前看它明确"现在在哪一阶段、下一步该打哪一阶段"，汇报时按阶段给结论。',
+    parameters: { engagement: { type: 'string' } },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      const chain = store.scoreChain(id)
+      return JSON.stringify({
+        ok: true, engagement: id,
+        totals: { points: chain.summary.points, totalPoints: chain.summary.totalPoints, hits: chain.summary.hits },
+        stages: (chain.stages || []).map((st) => ({
+          code: st.code, name: st.name, goal: st.goal,
+          points: st.points, counted: st.counted, hits: st.hits,
+          tools: st.tools, attck: st.attck, blue_team: st.blue_team,
+          methods: (st.sections || []).map((x) => x.label + '：' + (x.items || []).join('、')),
+          scored: st.items.map((x) => ({ point: x.point_name, points: x.points, counted: x.counted, target: x.target })),
+          steps: st.steps.length,
+        })),
+        hint: '拿到的分要归属到正确的阶段：记分时给得分点设 stage_code，写攻击链时给步骤带 stage_code，路径图才能对上。',
       }, null, 2)
     },
   }))

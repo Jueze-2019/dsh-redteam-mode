@@ -355,6 +355,75 @@ window.__ModuleLoader__.load({
   background:var(--dsw-alias-bg-layer-1);border-bottom:1px solid var(--dsw-alias-border-l1)}
 .rt-rep-http{margin:0;padding:8px 10px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.6;
   white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto;background:var(--dsw-alias-bg-base)}
+/* ── 全链路攻击路径图 ─────────────────────────────────────────────── */
+.rt-ap{padding:10px 12px 18px;overflow:auto}
+.rt-ap-stage{margin-bottom:2px}
+.rt-ap-head{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--dsw-alias-bg-layer-2);
+  border-left:4px solid #64748b;border-top:1px solid var(--dsw-alias-border-l1);border-radius:6px 6px 0 0}
+.rt-ap-no{width:20px;height:20px;border-radius:5px;color:#fff;font-size:11px;font-weight:700;flex:none;
+  display:inline-flex;align-items:center;justify-content:center}
+.rt-ap-name{font-weight:700;font-size:13.5px}
+.rt-ap-en{font-size:10px;color:var(--dsw-alias-label-secondary);letter-spacing:.3px}
+.rt-ap-phase{font-size:10.5px;color:var(--dsw-alias-label-secondary);white-space:nowrap}
+.rt-ap-goal{display:flex;align-items:baseline;gap:8px;padding:6px 10px 6px 9px;font-size:12px;
+  border-left:4px solid #64748b;background:var(--dsw-alias-bg-layer-1)}
+.rt-ap-goal-tag{font-size:10.5px;font-weight:700;border:1px solid;border-radius:4px;padding:0 5px;white-space:nowrap;flex:none}
+.rt-ap-result{padding:7px 10px 3px;border-left:4px solid transparent}
+.rt-ap-result-head{display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap}
+.rt-ap-pts{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;font-weight:700;color:#065f46;background:#a7f3d0;
+  border:1px solid #10b98155;border-radius:10px;padding:0 7px;white-space:nowrap}
+.rt-ap-pts.off{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1);border-color:var(--dsw-alias-border-l1)}
+.rt-ap-nth{font-size:10.5px;color:var(--dsw-alias-label-secondary);white-space:nowrap}
+.rt-ap-hit{border:1px solid var(--dsw-alias-border-l1);border-left:3px solid #10b981;border-radius:6px;
+  padding:6px 9px;margin-bottom:5px;background:var(--dsw-alias-bg-layer-2);cursor:pointer;outline:none}
+.rt-ap-hit:hover{border-color:var(--dsw-alias-border-l2)}
+.rt-ap-hit:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.rt-ap-hit.overflow{border-left-color:#94a3b8;opacity:.75}
+.rt-ap-hit-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.rt-ap-hit-name{font-weight:600;font-size:12.5px}
+.rt-ap-hit-target{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--dsw-alias-label-secondary);
+  margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%}
+.rt-ap-act{font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:3px}
+.rt-ap-act.inferred{font-style:italic;opacity:.75}
+.rt-ap-none{font-size:11.5px;color:var(--dsw-alias-label-secondary);padding:2px 0 4px}
+.rt-ap-method-toggle{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dsw-alias-label-secondary);
+  padding:3px 10px;cursor:pointer;outline:none}
+.rt-ap-method-toggle:hover{color:var(--dsw-alias-label-primary)}
+.rt-ap-method{padding:2px 10px 6px 22px;border-left:4px solid transparent}
+.rt-ap-sec{display:flex;gap:8px;font-size:11.5px;margin-bottom:2px;align-items:baseline}
+.rt-ap-sec-label{flex:none;min-width:52px;font-weight:600;color:var(--dsw-alias-label-primary)}
+.rt-ap-sec-items{color:var(--dsw-alias-label-secondary);word-break:break-word}
+.rt-ap-meta{font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:3px}
+.rt-ap-meta b{color:var(--dsw-alias-label-primary);font-weight:600}
+.rt-ap-blue{font-size:11px;margin-top:4px;padding:4px 8px;border-radius:5px;background:var(--dsw-alias-bg-layer-2);
+  border:1px dashed var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary)}
+.rt-ap-blue b{color:#0ea5e9;font-weight:600}
+.rt-ap-trans{display:flex;align-items:center;gap:7px;padding:2px 0 2px 14px}
+.rt-ap-trans-t{font-size:11px;color:var(--dsw-alias-label-secondary)}
+/* 横向路径图 */
+.rt-ap-h{display:flex;align-items:stretch;padding:10px 12px 14px;overflow-x:auto;flex:1;min-height:0}
+.rt-ap-col{display:flex;align-items:stretch;flex:none}
+.rt-ap-col-arrow{align-self:center;color:var(--dsw-alias-border-l2);padding:0 6px;font-size:12px;flex:none}
+.rt-hcol{width:228px;display:flex;flex-direction:column;border:1px solid var(--dsw-alias-border-l1);
+  border-top:3px solid #64748b;border-radius:7px;background:var(--dsw-alias-bg-layer-1);overflow:hidden}
+.rt-hcol-goal{font-size:11px;color:var(--dsw-alias-label-secondary);padding:5px 8px;line-height:1.45;
+  border-bottom:1px solid var(--dsw-alias-border-l1);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.rt-hcol-body{padding:6px 8px;flex:1;min-height:0;overflow:auto}
+.rt-hcol-hit{display:flex;align-items:center;gap:5px;font-size:11px;margin-bottom:3px}
+.rt-hcol-hit.off{opacity:.6}
+.rt-hcol-pts{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;font-weight:700;color:#065f46;background:#a7f3d0;
+  border-radius:7px;padding:0 5px;flex:none}
+.rt-hcol-hit.off .rt-hcol-pts{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2)}
+.rt-hcol-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rt-hcol-none{font-size:11px;color:var(--dsw-alias-label-secondary)}
+.rt-hcol-secs{display:flex;flex-wrap:wrap;gap:3px;margin-top:6px}
+.rt-hcol-sec{font-size:10px;color:var(--dsw-alias-label-secondary);border:1px solid var(--dsw-alias-border-l1);
+  border-radius:4px;padding:0 4px}
+.rt-hcol-attck{font-family:ui-monospace,Menlo,monospace;font-size:9.5px;color:var(--dsw-alias-label-secondary);
+  padding:4px 8px;border-top:1px solid var(--dsw-alias-border-l1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rt-hcol-blue{font-size:10.5px;color:var(--dsw-alias-label-secondary);padding:5px 8px;margin-top:4px;
+  border-top:1px dashed var(--dsw-alias-border-l1);width:228px}
+.rt-hcol-blue b{color:#0ea5e9;font-weight:600}
 .rt-md{flex:1;overflow:auto;margin:0;padding:14px 16px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;
   line-height:1.65;white-space:pre-wrap;word-break:break-word;background:var(--dsw-alias-bg-base)}
 .rt-weblink{display:block;font-size:11.5px;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1383,11 +1452,11 @@ window.__ModuleLoader__.load({
     /* ---------------------------------------------------------- 攻击链 */
     const STAGE_LABEL = { recon: '信息收集', vuln: '漏洞发现', exploit: '漏洞利用', access: '获得权限', pivot: '内网突破', data: '敏感数据', other: '其他' }
 
-    /* ---------------------------------------------------------- 攻击得分链路（流程图） */
+    /* ---------------------------------------------------------- 攻击得分链路（全链路攻击路径图） */
     /**
-     * 只画"拿到分"的链路：每个节点是一次得分，连线上的灰字是"靠什么动作拿到的"。
-     * 与得分无关的漏洞与攻击步骤一律不出现。
-     * A = 竖向流程条（详细）；B = 横向流程带（简洁）。
+     * 按五个作战阶段组织：外网打点 → 撕破口子 → 隧道搭建·内网漫游 → 拿下资产权限 → 靶标系统权限。
+     * 每个阶段 = 阶段目标 + 本阶段实际战果（得分节点）+ 手段 / 常用工具 / ATT&CK / 蓝队检测视角。
+     * A = 竖向路径图（逐阶段向下，带阶段过渡语）；B = 横向路径图（五列并排，简洁）。
      */
     function ChainTab(props) {
       const eng = props.engagement
@@ -1397,6 +1466,8 @@ window.__ModuleLoader__.load({
       const [loading, setLoading] = React.useState(false)
       const [view, setView] = React.useState('A')
       const [openId, setOpenId] = React.useState(null)
+      const [method, setMethod] = React.useState(true)
+      const collapse = useCollapse('path:' + eng)
 
       const load = () => {
         if (!eng) return
@@ -1409,12 +1480,14 @@ window.__ModuleLoader__.load({
       }
       React.useEffect(load, [eng, refreshKey])
 
+      const stages = (data && data.stages) || []
       const items = (data && data.items) || []
       const summary = (data && data.summary) || null
       const toggle = (id) => setOpenId((cur) => (cur === id ? null : id))
+      const CIRCLED = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮']
 
-      /* 单次命中的详情（两个视图共用） */
-      const detail = (x) => h('div', { className: 'rt-flow-detail' },
+      /* 单次得分的详情 */
+      const hitDetail = (x) => h('div', { className: 'rt-flow-detail' },
         h('div', { className: 'rt-kv' }, h('b', null, '目标'), h('span', { className: 'rt-mono', style: { wordBreak: 'break-all' } }, x.target || '—')),
         x.asset_ip ? h('div', { className: 'rt-kv' }, h('b', null, '资产'), h('span', { className: 'rt-mono' }, x.asset_ip)) : null,
         x.vuln_title ? h('div', { className: 'rt-kv' }, h('b', null, '利用漏洞'), h('span', null, [x.vuln_cve, x.vuln_title].filter(Boolean).join(' '))) : null,
@@ -1423,99 +1496,116 @@ window.__ModuleLoader__.load({
         h('div', { className: 'rt-kv' }, h('b', null, '记录'), h('span', null, fmt(x.recorded_at) + (x.recorded_by ? ' · ' + x.recorded_by : ''))),
         x.evidence ? h(Clip, { label: '结果与证据', text: x.evidence }) : null)
 
-      /* ── A：竖向流程条 ─────────────────────────────────────────── */
-      const nodeA = (x, i) => {
-        const open = openId === x.id
-        return h('div', { key: 'n' + x.id },
-          /* 起点只在最上面出现一次 */
-          i === 0 ? h('div', { className: 'rt-flow-start' }, '起点：授权靶标 · ' + (x.asset_ip || x.target || '—')) : null,
-          /* 每个节点上方的连线：带"靠什么动作拿到的"灰字（第一个节点也要显示） */
-          i > 0 || x.action
-            ? h('div', { className: 'rt-flow-link' },
-                h('span', { className: 'rt-flow-arrow' }, '▼'),
-                x.action
-                  ? h('span', {
-                      className: 'rt-flow-action' + (x.action_inferred ? ' inferred' : ''),
-                      title: x.action_inferred ? '按资产与时间推断，未显式关联' : '来自攻击链步骤 #' + x.action.id,
-                    }, '靠什么动作：' + (x.action.title || '（未命名步骤）') + (x.action_inferred ? '（推断）' : ''))
-                  : h('span', { className: 'rt-flow-action', style: { opacity: .6 } },
-                      '（未记录动作 —— 写攻击链时带上 point_code 即可显示）'))
-            : null,
+      /* 一条得分（阶段内） */
+      const hitRow = (x, i) => h('div', {
+        key: 'h' + x.id,
+        className: 'rt-ap-hit' + (x.counted ? '' : ' overflow') + (openId === x.id ? ' open' : ''),
+        role: 'button', tabIndex: 0,
+        onClick: () => toggle(x.id),
+        onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(x.id) } },
+      },
+        h('div', { className: 'rt-ap-hit-head' },
+          h('span', { className: 'rt-ap-pts' + (x.counted ? '' : ' off') }, (x.counted ? '+' : '') + (x.points || 0)),
+          h('span', { className: 'rt-ap-hit-name' }, x.point_name),
+          x.nth_of_point > 1 ? h('span', { className: 'rt-ap-nth' }, '第 ' + x.nth_of_point + ' 次') : null,
+          h('span', { className: 'rt-ap-hit-target' }, x.target || x.asset_ip || '—')),
+        x.action
+          ? h('div', { className: 'rt-ap-act' + (x.action_inferred ? ' inferred' : '') },
+              '动作：' + (x.action.title || '（未命名步骤）') + (x.action_inferred ? '（推断）' : ''))
+          : null,
+        openId === x.id ? hitDetail(x) : null)
+
+      /* 阶段的方法论部分（手段 / 工具 / ATT&CK / 蓝队视角） */
+      const stageMethod = (st) => [
+        h('div', { key: 'secs', className: 'rt-ap-secs' },
+          (st.sections || []).map((sec, si) => h('div', { key: 's' + si, className: 'rt-ap-sec' },
+            h('span', { className: 'rt-ap-sec-label' }, sec.label),
+            h('span', { className: 'rt-ap-sec-items' }, (sec.items || []).join(' · '))))),
+        st.tools ? h('div', { key: 'tools', className: 'rt-ap-meta' }, h('b', null, '常用工具 '), h('span', null, st.tools)) : null,
+        st.attck ? h('div', { key: 'attck', className: 'rt-ap-meta' }, h('b', null, 'ATT&CK '), h('span', { className: 'rt-mono' }, st.attck)) : null,
+        st.blue_team ? h('div', { key: 'blue', className: 'rt-ap-blue' }, h('b', null, '蓝队检测视角 '), h('span', null, st.blue_team)) : null,
+      ]
+
+      /* ── A：竖向路径图 ─────────────────────────────────────────── */
+      const stageBlockA = (st, i) => {
+        const openMethod = collapse.isOpen('m:' + st.code, true)
+        return h('div', { key: 'st' + st.code, className: 'rt-ap-stage' },
+          h('div', { className: 'rt-ap-head', style: { borderLeftColor: st.color } },
+            h('span', { className: 'rt-ap-no', style: { background: st.color } }, ('0' + (i + 1)).slice(-2)),
+            h('span', { className: 'rt-ap-name' }, st.name),
+            st.subtitle ? h('span', { className: 'rt-ap-en' }, st.subtitle) : null,
+            h('div', { className: 'rt-spacer' }),
+            h('span', { className: 'rt-ap-phase' }, '阶段 ' + (i + 1) + '/' + stages.length)),
+          h('div', { className: 'rt-ap-goal', style: { borderLeftColor: st.color } },
+            h('span', { className: 'rt-ap-goal-tag', style: { color: st.color, borderColor: st.color + '66' } }, '阶段目标'),
+            h('span', null, st.goal)),
+          /* 实际战果 */
+          h('div', { className: 'rt-ap-result' },
+            h('div', { className: 'rt-ap-result-head' },
+              h('span', { style: { fontWeight: 600, fontSize: 12.5 } }, '实际战果'),
+              st.points > 0 ? h('span', { className: 'rt-ap-pts', style: { background: st.color + '22', color: st.color, borderColor: st.color + '66' } }, '+' + st.points + ' 分') : null,
+              h('span', { className: 'rt-ap-nth' }, st.counted + ' 次计入 / ' + st.hits + ' 次命中'),
+              st.steps.length ? h('span', { className: 'rt-ap-nth' }, '攻击步骤 ' + st.steps.length + ' 步') : null),
+            st.items.length
+              ? st.items.map(hitRow)
+              : h('div', { className: 'rt-ap-none' }, '本阶段无直接得分')),
+          /* 手段 */
           h('div', {
-            className: 'rt-flow-node' + (x.counted ? ' scored' : ' overflow') + (open ? ' open' : ''),
-            role: 'button', tabIndex: 0,
-            onClick: () => toggle(x.id),
-            onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(x.id) } },
-          },
-            h('div', { className: 'rt-flow-head' },
-              h('span', { className: 'rt-flow-idx' }, String(i + 1)),
-              h('span', { className: 'rt-flow-name' }, x.point_name),
-              h('span', { className: 'rt-flow-pts' + (x.counted ? '' : ' off') },
-                (x.counted ? '+' : '') + (x.points || 0) + ' 分'),
-              x.nth_of_point > 1 ? h('span', { className: 'rt-flow-times' }, '第 ' + x.nth_of_point + ' 次') : null),
-            h('div', { className: 'rt-flow-target' }, x.target || x.asset_ip || '—'),
-            x.evidence ? h('div', { className: 'rt-flow-gain' }, String(x.evidence).replace(/\n+/g, ' ').slice(0, 90)) : null,
-            open ? detail(x) : null))
+            className: 'rt-ap-method-toggle', role: 'button', tabIndex: 0,
+            onClick: () => collapse.toggle('m:' + st.code, true)(),
+            onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); collapse.toggle('m:' + st.code, true)() } },
+          }, h('span', { className: 'rt-sec-caret' }, openMethod ? '▾' : '▸'),
+            h('span', null, '阶段手段 · 工具 · ATT&CK · 蓝队视角')),
+          openMethod
+            ? h('div', { className: 'rt-ap-method', style: { borderLeftColor: st.color } }, stageMethod(st))
+            : null,
+          /* 到下一阶段的过渡 */
+          i < stages.length - 1
+            ? h('div', { className: 'rt-ap-trans' },
+                h('span', { className: 'rt-flow-arrow' }, '▼'),
+                st.transition ? h('span', { className: 'rt-ap-trans-t' }, st.transition) : null)
+            : h('div', { className: 'rt-ap-trans' }, h('span', { className: 'rt-flow-arrow' }, '▼'),
+                h('span', { className: 'rt-ap-trans-t' }, '合计 ' + ((summary && summary.points) || 0) + ' 分')))
       }
 
-      /* ── B：横向流程带（简洁：一行一个节点，可横向滚） ───────────── */
-      const nodeB = (x, i) => h('div', { key: 'h' + x.id, className: 'rt-hflow-item' },
-        i > 0 ? h('span', {
-          className: 'rt-hflow-arrow',
-          title: x.action ? '靠什么动作：' + (x.action.title || '') + (x.action_inferred ? '（推断）' : '') : '',
-        }, '→') : null,
-        h('div', {
-          className: 'rt-hflow-node' + (x.counted ? ' scored' : ' overflow') + (openId === x.id ? ' open' : ''),
-          role: 'button', tabIndex: 0,
-          onClick: () => toggle(x.id),
-          onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(x.id) } },
-          title: x.point_name + '  ' + (x.target || ''),
-        },
-          h('span', { className: 'rt-hflow-pts' }, (x.counted ? '+' : '') + (x.points || 0)),
-          h('span', { className: 'rt-hflow-name' }, (x.point_name || '').replace(/^(获取|上传|拿下|突破)/, '').slice(0, 8)),
-          x.nth_of_point > 1 ? h('span', { className: 'rt-hflow-n' }, '×' + x.nth_of_point) : null))
-
-      const openItem = items.find((x) => x.id === openId) || null
+      /* ── B：横向路径图（五列并排，简洁） ───────────────────────── */
+      const stageColB = (st, i) => h('div', { key: 'col' + st.code, className: 'rt-ap-col' },
+        i > 0 ? h('span', { className: 'rt-ap-col-arrow' }, '▶') : null,
+        h('div', { className: 'rt-hcol', style: { borderTopColor: st.color } },
+          h('div', { className: 'rt-ap-head', style: { borderLeftColor: st.color, padding: '5px 8px' } },
+            h('span', { className: 'rt-ap-no', style: { background: st.color, width: 15, height: 15, fontSize: 10 } }, ('0' + (i + 1)).slice(-2)),
+            h('span', { className: 'rt-ap-name', style: { fontSize: 12 } }, st.name),
+            h('div', { className: 'rt-spacer' }),
+            h('span', { className: 'rt-ap-pts' + (st.points > 0 ? '' : ' off') }, '+' + st.points)),
+          h('div', { className: 'rt-hcol-goal', title: st.goal }, st.goal),
+          h('div', { className: 'rt-hcol-body' },
+            st.items.length
+              ? st.items.slice(0, 6).map((x) => h('div', {
+                  key: 'c' + x.id, className: 'rt-hcol-hit' + (x.counted ? '' : ' off'),
+                  title: x.point_name + '  ' + (x.target || ''),
+                }, h('span', { className: 'rt-hcol-pts' }, (x.counted ? '+' : '') + x.points), h('span', { className: 'rt-hcol-name' }, x.point_name)))
+              : h('div', { className: 'rt-hcol-none' }, '无直接得分'),
+            st.items.length > 6 ? h('div', { className: 'rt-hcol-none' }, '…另有 ' + (st.items.length - 6) + ' 次') : null,
+            h('div', { className: 'rt-hcol-secs' }, (st.sections || []).map((sec, si) => h('span', { key: 'x' + si, className: 'rt-hcol-sec' }, sec.label)))),
+          st.attck ? h('div', { className: 'rt-hcol-attck', title: st.attck }, st.attck) : null),
+        h('div', { className: 'rt-hcol-blue' }, h('b', null, '蓝队'), h('span', null, st.blue_team || '—')))
 
       return h('div', { className: 'rt-main' },
         h('div', { className: 'rt-toolbar' },
           h('span', { style: { fontWeight: 600 } }, '攻击得分链路'),
+          h('span', { className: 'rt-tag', style: { fontSize: 10.5 } }, '5 个作战阶段 · MITRE ATT&CK'),
           summary ? h('span', { className: 'rt-tag rt-tag-live' }, '总分 ' + summary.points + ' / ' + summary.totalPoints + ' 分') : null,
           summary ? h('span', { className: 'rt-tag' }, summary.countedHits + ' 次计入 / 共 ' + summary.hits + ' 次命中') : null,
-          summary && summary.missingCount > 0 ? h('span', { className: 'rt-tag' }, '未拿下 ' + summary.missingCount + ' 项 / ' + summary.missingPoints + ' 分') : null,
           h('div', { className: 'rt-spacer' }),
-          h('button', {
-            className: 'rt-btn' + (view === 'A' ? ' rt-btn-primary' : ''), title: '竖向流程条：每一步的得分与动作都看得清',
-            onClick: () => setView('A'),
-          }, '流程 A'),
-          h('button', {
-            className: 'rt-btn' + (view === 'B' ? ' rt-btn-primary' : ''), title: '横向流程带：一屏看清整条得分链',
-            onClick: () => setView('B'),
-          }, '流程 B'),
+          h('button', { className: 'rt-btn' + (view === 'A' ? ' rt-btn-primary' : ''), title: '竖向路径图：逐阶段向下，含阶段目标与手段', onClick: () => setView('A') }, '路径图 A'),
+          h('button', { className: 'rt-btn' + (view === 'B' ? ' rt-btn-primary' : ''), title: '横向路径图：五阶段并排，简洁', onClick: () => setView('B') }, '路径图 B'),
           h('button', { className: 'rt-btn', disabled: loading, onClick: load }, loading ? '加载中…' : '刷新')),
         err ? h('div', { className: 'rt-err' }, err) : null,
-        !items.length && !err && data !== null
-          ? h('div', { className: 'rt-empty' },
-              h('div', null, '还没有得分记录。'),
-              h('div', { style: { marginTop: 6, fontSize: 12 } },
-                '拿到成果后用 redteam_score_hit 记分（写明目标资产与拿到的东西），这条链路才会长出来。'))
+        !stages.length && !err && data !== null
+          ? h('div', { className: 'rt-empty' }, '还没有得分记录。')
           : view === 'A'
-            ? h('div', { className: 'rt-flow' },
-                items.map(nodeA),
-                h('div', { className: 'rt-flow-end' }, '合计 ' + ((summary && summary.points) || 0) + ' 分'))
-            : h('div', { className: 'rt-hflow-wrap' },
-                h('div', { className: 'rt-hflow' },
-                  h('div', { className: 'rt-hflow-item' }, h('span', { className: 'rt-hflow-start' }, '起点')),
-                  items.map(nodeB),
-                  h('div', { className: 'rt-hflow-item' },
-                    h('span', { className: 'rt-hflow-arrow' }, '→'),
-                    h('span', { className: 'rt-hflow-end' }, '合计 ' + ((summary && summary.points) || 0) + ' 分'))),
-                openItem ? h('div', { className: 'rt-flow-detail', style: { padding: '0 12px 12px' } },
-                  h('div', { className: 'rt-flow-head', style: { marginBottom: 4 } },
-                    h('span', { className: 'rt-flow-idx' }, String(items.indexOf(openItem) + 1)),
-                    h('span', { className: 'rt-flow-name' }, openItem.point_name)),
-                  detail(openItem)) : h('div', { className: 'rt-atest-meta', style: { padding: '0 12px 12px' } },
-                    '点节点看该步的详情与"靠什么动作拿到的"')))
+            ? h('div', { className: 'rt-ap' }, stages.map(stageBlockA))
+            : h('div', { className: 'rt-ap-h' }, stages.map(stageColB)))
     }
 
     /* ---------------------------------------------------------- 得分复现报告 */
@@ -2356,7 +2446,7 @@ window.__ModuleLoader__.load({
       const stats = (snapshot && snapshot.stats) || {}
       const tabs = [
         ['assets', '资产测绘'], ['testing', '当前测试'], ['sessions', '会话隧道'], ['findings', '漏洞战果'],
-        ['chain', '攻击链'], ['scores', '得分目标'], ['report', '报告'],
+        ['chain', '攻击路径'], ['scores', '得分目标'], ['report', '报告'],
         ['attackfiles', '攻击文件'], ['prompts', '智能体提示词'], ['skills', '技能库'],
       ]
       const full = isFullWindow()
