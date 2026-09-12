@@ -323,6 +323,22 @@ function migrate(db) {
   } catch { /* 首次建库时表为空，忽略 */ }
 }
 
+/**
+ * 目标归并：同一条漏洞的 target 可能带路径/参数（http://h:8080/a/b、10.0.0.5:6379），
+ * 聚合视图要按「站点/服务」而不是按完整 URL 分组，否则 300 条漏洞会聚成 300 组。
+ */
+export function targetKey(target, fallbackIp) {
+  const t = String(target || '').trim()
+  if (t !== '') {
+    const url = /^([a-z][a-z0-9+.-]*:\/\/[^/?#\s]+)/i.exec(t)
+    if (url !== null) return url[1]
+    const head = /^([^\s/?#]+)/.exec(t)
+    if (head !== null) return head[1]
+    return t
+  }
+  return fallbackIp || '(未指定目标)'
+}
+
 /** 把「通过这个漏洞拿到了什么」规范化成一行短标签：数组或分隔串 → 「A、B」。 */
 function normGained(value) {
   if (value === undefined || value === null) return null
@@ -827,6 +843,7 @@ export class RedteamStore {
         status: meta.status || 'active', created_at: meta.created_at || null,
       },
       stats: this.stats(id),
+      tests: this.testStats(id),
       segments: this.listSegments(id),
     }
   }
@@ -892,8 +909,15 @@ export class RedteamStore {
       args.push(f.priority)
     }
     if (f.test_status) {
-      where.push("COALESCE(a.test_status, 'untested') = ?")
-      args.push(f.test_status)
+      /* 支持多值：test_status=abandoned,blocked */
+      const list = String(f.test_status).split(',').map((x) => x.trim()).filter(Boolean)
+      if (list.length > 1) {
+        where.push(`COALESCE(a.test_status, 'untested') IN (${list.map(() => '?').join(',')})`)
+        args.push(...list)
+      } else {
+        where.push("COALESCE(a.test_status, 'untested') = ?")
+        args.push(f.test_status)
+      }
     }
     /* 内外网维度：internal | external（老数据在迁移时已回填） */
     if (f.scope) {
@@ -911,8 +935,28 @@ export class RedteamStore {
     const total = db.prepare(`SELECT COUNT(*) AS n FROM asset a ${clause}`).get(...args).n
     const limit = Math.min(Number(f.limit) || 200, 2000)
     const offset = Number(f.offset) || 0
-    const rows = db.prepare(`SELECT a.* FROM asset a ${clause} ORDER BY a.ip_int LIMIT ? OFFSET ?`).all(...args, limit, offset)
-    return { total, items: rows.map((r) => this.assetRow(db, r)) }
+    const openPorts = "COALESCE((SELECT COUNT(*) FROM port p WHERE p.asset_id = a.id AND p.state = 'open'), 0)"
+    /* 排序：默认「最该打的排前面」——易打性高 → 未测 → 端口多；sort=ip / sort=ports 可切换 */
+    const sort = f.sort || 'priority'
+    let orderBy = 'a.ip_int'
+    if (sort === 'ports') orderBy = `${openPorts} DESC, a.ip_int`
+    else if (sort === 'todo') {
+      /* 待测优先：把这轮还能打的先顶上来，已测/放弃的沉底 */
+      orderBy = `CASE COALESCE(a.test_status, 'untested')
+          WHEN 'untested' THEN 0 WHEN 'testing' THEN 1 WHEN 'tested' THEN 2
+          WHEN 'blocked' THEN 3 WHEN 'abandoned' THEN 4 WHEN 'no_surface' THEN 5 ELSE 6 END,
+        CASE COALESCE(a.priority, '') WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN 'low' THEN 2 ELSE 3 END,
+        ${openPorts} DESC, a.ip_int`
+    } else if (sort === 'priority') {
+      orderBy = `CASE COALESCE(a.priority, '') WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN 'low' THEN 2 ELSE 3 END,
+        CASE COALESCE(a.test_status, 'untested')
+          WHEN 'untested' THEN 0 WHEN 'testing' THEN 1 WHEN 'tested' THEN 2
+          WHEN 'blocked' THEN 3 WHEN 'abandoned' THEN 4 WHEN 'no_surface' THEN 5 ELSE 6 END,
+        ${openPorts} DESC, a.ip_int`
+    }
+    const rows = db.prepare(`SELECT a.*, ${openPorts} AS open_port_count FROM asset a ${clause} ORDER BY ${orderBy} LIMIT ? OFFSET ?`)
+      .all(...args, limit, offset)
+    return { total, sort, items: rows.map((r) => this.assetRow(db, r)) }
   }
 
   getAsset(id, assetId) {
@@ -1218,7 +1262,16 @@ export class RedteamStore {
     for (const row of db.prepare('SELECT severity, COUNT(*) AS n FROM vuln GROUP BY severity').all()) bySeverity[row.severity] = row.n
     const byStatus = {}
     for (const row of db.prepare('SELECT status, COUNT(*) AS n FROM vuln GROUP BY status').all()) byStatus[row.status] = row.n
-    return { total: Object.values(bySeverity).reduce((a, b) => a + b, 0), bySeverity, byStatus }
+    /* 已经写明"拿到了什么权限"的漏洞数：结论行用 */
+    const withGained = db.prepare("SELECT COUNT(*) AS n FROM vuln WHERE COALESCE(gained,'') <> ''").get().n
+    const withEvidence = db.prepare("SELECT COUNT(*) AS n FROM vuln WHERE COALESCE(evidence,'') <> '' OR id IN (SELECT vuln_id FROM http_evidence WHERE vuln_id IS NOT NULL)").get().n
+    /* 按目标聚合所需的组数（漏洞页默认视图）：先按「站点/服务」归并再数 */
+    const rawTargets = db.prepare(`SELECT target, (SELECT ip FROM asset WHERE id = vuln.asset_id) AS ip FROM vuln`).all()
+    const targetGroups = new Set(rawTargets.map((r) => targetKey(r.target, r.ip))).size
+    return {
+      total: Object.values(bySeverity).reduce((a, b) => a + b, 0),
+      bySeverity, byStatus, withGained, withEvidence, targetGroups,
+    }
   }
 
   /** 凭据：明文写 secret_value（面板直接显示），同时保留 secret_ref 指向证据文件。 */

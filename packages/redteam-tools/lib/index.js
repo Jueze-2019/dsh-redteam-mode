@@ -198,7 +198,7 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'redteam_asset_query',
-    description: '检索资产库。支持按 C 段、端口、服务、指纹、来源、关键词（全文，覆盖 IP/域名/banner/服务/指纹）过滤。返回紧凑结果，含每个资产的开放端口与指纹及来源标注。',
+    description: '检索资产库。支持按 C 段、端口、服务、指纹、来源、内外网维度（scope）、排序（sort）、关键词（全文，覆盖 IP/域名/banner/服务/指纹）过滤。返回紧凑结果，含每个资产的开放端口与指纹及内外网归属。',
     parameters: {
       engagement: { type: 'string' },
       cidr: { type: 'string', description: 'C 段，例如 203.0.113.0/24' },
@@ -208,6 +208,8 @@ export function apply(ctx) {
       provenance: { type: 'string', enum: ['passive', 'active'], description: '只看被动或主动来源' },
       q: { type: 'string', description: '全文检索词（空格分隔多词为 AND）' },
       state: { type: 'string', enum: ['live', 'dead', 'unknown'] },
+      scope: { type: 'string', enum: ['internal', 'external'], description: '内外网维度：internal=内网/私网地址，external=互联网可达' },
+      sort: { type: 'string', enum: ['priority', 'todo', 'ports', 'ip'], description: '排序：priority=易打性优先（默认），todo=待测优先，ports=端口多优先，ip=按 IP' },
       limit: { type: 'number', description: '返回条数上限，默认 50，最大 200' },
     },
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
@@ -217,7 +219,7 @@ export function apply(ctx) {
       const result = store.listAssets(id, {
         cidr: args.cidr, port: args.port, service: args.service,
         fingerprint: args.fingerprint, provenance: args.provenance,
-        q: args.q, state: args.state, limit,
+        q: args.q, state: args.state, scope: args.scope, sort: args.sort, limit,
       })
       return JSON.stringify({
         ok: true, engagement: id, total: result.total, returned: result.items.length,
@@ -347,6 +349,7 @@ export function apply(ctx) {
       confidence: { type: 'number', description: '0–1' },
       evidence: { type: 'string', description: '证据：请求/响应摘要、命令、证据文件路径' },
       found_by_agent: { type: 'string', description: '发现角色，默认 vuln-scan' },
+      gained: { type: 'string', description: '【重要】通过这个漏洞拿到了什么权限/成果，写得分口径的短标签，多项用顿号或逗号分隔，例如「服务器权限、内网隧道」「后台管理员账号」「数据库权限」' },
     },
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
     async execute(args, exec) {

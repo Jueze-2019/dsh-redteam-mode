@@ -60,7 +60,7 @@ window.__ModuleLoader__.load({
   border-radius:6px;padding:4px 8px;font-size:12px;font-family:inherit;outline:none;min-width:0}
 .rt-input:focus{border-color:var(--dsw-alias-brand-primary)}
 .rt-table{flex:1;overflow:auto}
-.rt-row{display:grid;grid-template-columns:132px 52px 78px 54px 1fr 1fr 96px;gap:8px;padding:6px 10px;
+.rt-row{display:grid;grid-template-columns:150px 74px 104px 1.15fr 1fr;gap:8px;padding:6px 10px;
   border-bottom:1px solid var(--dsw-alias-border-l1);align-items:center;cursor:pointer;font-size:12.5px}
 .rt-row:hover{background:var(--dsw-alias-bg-layer-2)}
 .rt-row.head{cursor:default;color:var(--dsw-alias-label-secondary);font-size:11.5px;font-weight:600;position:sticky;top:0;
@@ -144,7 +144,7 @@ window.__ModuleLoader__.load({
 .rt-full .rt-tabs{padding:10px 18px 0;gap:6px;flex-wrap:wrap}
 .rt-full .rt-side{width:260px}
 .rt-full .rt-list{width:280px}
-.rt-full .rt-row{grid-template-columns:150px 64px 100px 62px 1.2fr 1.2fr 120px}
+.rt-full .rt-row{grid-template-columns:190px 90px 130px 1.4fr 1.2fr}
 .rt-full .rt-vrow{grid-template-columns:80px minmax(0,1.6fr) 200px 150px 90px 64px}
 .rt-full .rt-pane{padding:18px}
 .rt-full .rt-textarea{min-height:60vh}
@@ -245,6 +245,28 @@ window.__ModuleLoader__.load({
 .rt-atest-meta{font-size:11.5px;color:var(--dsw-alias-label-secondary);margin-top:3px;word-break:break-word}
 .rt-atest-notes{font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.6;white-space:pre-wrap;
   word-break:break-word;background:var(--dsw-alias-bg-base);border-radius:4px;padding:5px 7px;margin-top:4px;max-height:76px;overflow:auto}
+.rt-concl{display:flex;align-items:center;gap:4px;padding:6px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);
+  background:var(--dsw-alias-bg-layer-2);flex-wrap:wrap}
+.rt-concl-i{display:inline-flex;align-items:baseline;gap:4px;padding:2px 8px;border-radius:6px;cursor:pointer;
+  border:1px solid transparent}
+.rt-concl-i:hover{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1)}
+.rt-concl-i.on{border-color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-bg-layer-1)}
+.rt-concl-i b{font-family:ui-monospace,Menlo,monospace;font-size:14px;font-weight:700}
+.rt-concl-i>span{color:var(--dsw-alias-label-secondary);font-size:11.5px}
+.rt-more{color:var(--dsw-alias-brand-primary);font-size:11.5px;cursor:pointer;user-select:none;margin-top:4px;display:inline-block}
+.rt-more:hover{text-decoration:underline}
+.rt-grp{display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;border-bottom:1px solid var(--dsw-alias-border-l1);
+  background:var(--dsw-alias-bg-layer-2)}
+.rt-grp:hover{background:var(--dsw-alias-bg-layer-1)}
+.rt-grp-t{font-family:ui-monospace,Menlo,monospace;font-weight:600;font-size:12.5px;word-break:break-all}
+.rt-grp-n{font-size:11.5px;color:var(--dsw-alias-label-secondary);white-space:nowrap}
+.rt-subtabs{display:flex;gap:4px;padding:6px 10px 0;border-bottom:1px solid var(--dsw-alias-border-l1);align-items:center}
+.rt-subtab{padding:4px 10px;border-radius:6px 6px 0 0;cursor:pointer;font-size:12px;color:var(--dsw-alias-label-secondary)}
+.rt-subtab.on{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);font-weight:600}
+.rt-sevbar{width:3px;border-radius:2px;align-self:stretch;flex:none;margin-right:2px}
+.rt-stagegrp{display:flex;align-items:center;gap:8px;padding:6px 10px;margin-top:6px;cursor:pointer;border-radius:6px;
+  background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1)}
+.rt-stagegrp:hover{border-color:var(--dsw-alias-border-l2)}
 .rt-md{flex:1;overflow:auto;margin:0;padding:14px 16px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;
   line-height:1.65;white-space:pre-wrap;word-break:break-word;background:var(--dsw-alias-bg-base)}
 .rt-weblink{display:block;font-size:11.5px;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -322,6 +344,9 @@ window.__ModuleLoader__.load({
       const [testStatus, setTestStatus] = React.useState('')
       const [priority, setPriority] = React.useState('')
       const [scope, setScope] = React.useState('')
+      const [assetState, setAssetState] = React.useState('')
+      const [sort, setSort] = React.useState('priority')
+      const [showAll, setShowAll] = React.useState(null)
       const [state, setState] = React.useState({ loading: false, error: null, total: 0, items: [] })
       const [graphState, setGraphState] = React.useState({ loading: false, data: null, error: null })
       const [domains, setDomains] = React.useState(null)
@@ -339,7 +364,8 @@ window.__ModuleLoader__.load({
           op: 'assets', engagement: eng, cidr: cidr || undefined, q: qApplied || undefined,
           service: service || undefined, port: port || undefined,
           provenance: prov || undefined, test_status: testStatus || undefined,
-          priority: priority || undefined, scope: scope || undefined, limit: 400,
+          priority: priority || undefined, scope: scope || undefined,
+          state: assetState || undefined, sort: sort, limit: 400,
         }).then((r) => {
           if (my !== seq.current) return
           if (!r || r.ok === false) {
@@ -352,7 +378,7 @@ window.__ModuleLoader__.load({
         }, (e) => {
           if (my === seq.current) setState({ loading: false, error: String((e && e.message) || e), total: 0, items: [] })
         })
-      }, [eng, cidr, qApplied, service, port, prov, testStatus, priority, scope, refreshKey])
+      }, [eng, cidr, qApplied, service, port, prov, testStatus, priority, scope, assetState, sort, refreshKey])
 
       React.useEffect(() => {
         if (!eng || view !== 'domain') return
@@ -405,17 +431,17 @@ window.__ModuleLoader__.load({
           h('span', { className: 'rt-spacer' }),
           h('span', { style: { fontWeight: 400 } }, list.reduce((n, x) => n + (x.assets || 0), 0) + ' 资产'))]
         for (const s of list) {
+          /* 一段一行：C 段 + 资产数 + 端口数（归属与主被动拆分进 title，不再占位） */
           out.push(h('div', {
             key: s.cidr, className: 'rt-seg' + (cidr === s.cidr ? ' on' : ''),
             onClick: () => setCidr(s.cidr),
+            title: (s.org || '未知归属') + ' · 被动端口 ' + s.passive_ports + ' / 主动端口 ' + s.active_ports,
           },
-            h('div', { className: 'rt-seg-cidr' },
-              h('span', { className: 'rt-scope rt-scope-' + kind, style: { marginRight: 5 } }, kind === 'internal' ? '内' : '外'),
-              s.cidr),
-            h('div', { className: 'rt-seg-meta' }, (s.org || '未知归属') + ' · ' + s.assets + ' 资产 · ' + s.open_ports + ' 端口'),
-            h('div', { className: 'rt-seg-meta' },
-              h('span', { className: 'rt-tag rt-tag-passive' }, '被动 ' + s.passive_ports),
-              h('span', { className: 'rt-tag rt-tag-active' }, '主动 ' + s.active_ports))))
+            h('div', { className: 'rt-seg-cidr', style: { display: 'flex', alignItems: 'baseline', gap: 5 } },
+              h('span', { className: 'rt-scope rt-scope-' + kind }, kind === 'internal' ? '内' : '外'),
+              h('span', { style: { flex: 1 } }, s.cidr),
+              h('span', { className: 'rt-seg-meta', style: { margin: 0, whiteSpace: 'nowrap' } },
+                s.assets + ' 台 · ' + s.open_ports + ' 端口'))))
         }
         return out
       }
@@ -444,7 +470,7 @@ window.__ModuleLoader__.load({
           h('option', { value: '' }, '内外网不限'),
           h('option', { value: 'external' }, '仅外网资产'),
           h('option', { value: 'internal' }, '仅内网资产')),
-        h('select', { className: 'rt-input', value: prov, onChange: (e) => setProv(e.target.value) },
+        h('select', { className: 'rt-input', value: prov, onChange: (e) => setProv(e.target.value), title: '按端口来源过滤（列表已不再单列显示，详情里可见）' },
           h('option', { value: '' }, '来源不限'),
           h('option', { value: 'passive' }, '仅被动'),
           h('option', { value: 'active' }, '仅主动')),
@@ -468,33 +494,65 @@ window.__ModuleLoader__.load({
         h('button', { className: 'rt-btn' + (view === 'web' ? ' rt-btn-primary' : ''), onClick: () => setView('web') }, 'Web'),
         h('button', { className: 'rt-btn' + (view === 'graph' ? ' rt-btn-primary' : ''), onClick: () => setView('graph') }, '图谱'))
 
+      /* ── 结论行：一屏看清家底，数字点一下就是筛选 ───────────────────── */
+      const tests = (snapshot && snapshot.tests) || {}
+      const snapStats = (snapshot && snapshot.stats) || {}
+      const noFilter = !testStatus && !priority && !scope && !prov && !assetState && !cidr
+      const conclItem = (key, label, value, active, onClick) => h('span', {
+        key: key, className: 'rt-concl-i' + (active ? ' on' : ''), onClick: onClick, title: '点击筛选 / 再点取消',
+      }, h('b', null, String(value || 0)), h('span', null, label))
+      const toggleTest = (v) => { setTestStatus((cur) => (cur === v ? '' : v)); setAssetState('') }
+      const conclusion = h('div', { className: 'rt-concl' },
+        conclItem('all', '台资产', snapStats.assets, noFilter, () => {
+          setTestStatus(''); setPriority(''); setScope(''); setProv(''); setAssetState(''); setCidr(null)
+        }),
+        conclItem('live', '存活', snapStats.liveAssets, assetState === 'live', () => { setAssetState((v) => (v === 'live' ? '' : 'live')); setTestStatus('') }),
+        conclItem('untested', '待测', tests.untested, testStatus === 'untested', () => toggleTest('untested')),
+        conclItem('testing', '测试中', tests.testing, testStatus === 'testing', () => toggleTest('testing')),
+        conclItem('tested', '已测', tests.tested, testStatus === 'tested', () => toggleTest('tested')),
+        conclItem('giveup', '放弃', (tests.abandoned || 0) + (tests.blocked || 0), testStatus === 'abandoned,blocked', () => toggleTest('abandoned,blocked')),
+        h('div', { className: 'rt-spacer' }),
+        h('select', {
+          className: 'rt-input', value: sort, onChange: (e) => setSort(e.target.value),
+          title: '列表排序方式',
+        },
+          h('option', { value: 'priority' }, '排序：易打性优先'),
+          h('option', { value: 'todo' }, '排序：待测优先'),
+          h('option', { value: 'ports' }, '排序：端口多优先'),
+          h('option', { value: 'ip' }, '排序：按 IP')))
+
       const head = h('div', { className: 'rt-row head' },
-        h('span', null, 'IP'), h('span', null, '状态'), h('span', null, '来源'), h('span', null, '易打'),
-        h('span', null, '开放端口 / 服务'), h('span', null, '指纹'), h('span', null, '测试'))
+        h('span', null, 'IP'), h('span', null, '易打'), h('span', null, '测试状态'),
+        h('span', null, '开放端口 / 服务'), h('span', null, '指纹'))
 
       const rowNodes = []
       for (const it of state.items) {
         const openPorts = it.ports.filter((p) => p.state === 'open')
         const portText = openPorts.map((p) => p.port + (p.service ? '/' + p.service : '')).join(', ') || '—'
         const fpText = it.fingerprints.map((f) => [f.vendor, f.product, f.version].filter(Boolean).join(' ')).join(' / ') || '—'
+        /* 端口最多列 3 个，其余用 +N；主被动来源不再占列，进详情 */
+        const shownPorts = openPorts.slice(0, 3).map((p) => p.port + (p.service ? '/' + p.service : '')).join(', ')
+        const morePorts = openPorts.length > 3 ? ' +' + (openPorts.length - 3) : ''
         rowNodes.push(h('div', {
           key: 'r' + it.id, className: 'rt-row', onClick: () => toggleRow(it.id),
         },
-          h('span', { className: 'rt-mono' },
-            h('span', { className: 'rt-scope rt-scope-' + (it.scope === 'internal' ? 'internal' : 'external') },
-              it.scope === 'internal' ? '内' : '外'),
-            it.ip),
-          h('span', null, h('span', {
-            className: 'rt-tag rt-tag-' + (it.state === 'live' ? 'live' : 'dead'),
-          }, it.state === 'live' ? '存活' : it.state)),
-          h('span', null,
-            it.passive ? h('span', { className: 'rt-tag rt-tag-passive' }, '被动 ' + it.passive) : null,
-            it.active ? h('span', { className: 'rt-tag rt-tag-active' }, '主动 ' + it.active) : null),
+          h('span', { className: 'rt-mono', style: { display: 'flex', alignItems: 'baseline', gap: 4 } },
+            h('span', {
+              className: 'rt-scope rt-scope-' + (it.scope === 'internal' ? 'internal' : 'external'),
+            }, it.scope === 'internal' ? '内' : '外'),
+            h('span', {
+              title: it.state === 'live' ? '存活' : String(it.state),
+              style: {
+                width: 7, height: 7, borderRadius: '50%', flex: 'none', marginTop: 4,
+                background: it.state === 'live' ? '#10b981' : '#94a3b8',
+              },
+            }),
+            h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis' } }, it.ip)),
           h('span', null, h(PriTag, { p: it.priority, title: it.potential || '' })),
-          h('span', { title: portText }, portText.length > 40 ? portText.slice(0, 40) + '…' : portText),
-          h('span', { title: fpText }, fpText.length > 34 ? fpText.slice(0, 34) + '…' : fpText),
           h('span', null, h(TestTag, { s: it.test_status }),
-            it.blocked_count ? h('span', { className: 'rt-tag', style: { color: '#ef4444', borderColor: '#ef444455' } }, '封' + it.blocked_count) : null)))
+            it.blocked_count ? h('span', { className: 'rt-tag', style: { color: '#ef4444', borderColor: '#ef444455', marginLeft: 4 } }, '封' + it.blocked_count) : null),
+          h('span', { title: portText }, (shownPorts || '—') + morePorts),
+          h('span', { title: fpText }, fpText.length > 30 ? fpText.slice(0, 30) + '…' : fpText)))
 
         if (openId !== it.id) continue
         const d = detail && detail.id === it.id ? detail : null
@@ -523,36 +581,44 @@ window.__ModuleLoader__.load({
               h(ProvTag, { p: o.provenance })))
           }
         }
+        /* 详情分三层：3 行必读 → 「展开全部」后才是溯源、原始记录与备注全文 */
+        const all = showAll === it.id
+        const noteLines = d && d.test_notes ? d.test_notes.split('\n').filter(Boolean) : []
         const inner = d
           ? h('div', null,
-              h('div', { className: 'rt-kv' }, h('b', null, '主机名'), h('span', null, (d.names || []).map((n) => n.name).join(', ') || '—')),
-              h('div', { className: 'rt-kv' }, h('b', null, 'C 段'), h('span', null, d.segment_cidr)),
-              h('div', { className: 'rt-kv' }, h('b', null, '归属'),
-                h('span', null,
-                  h('span', { className: 'rt-scope rt-scope-' + (d.scope === 'internal' ? 'internal' : 'external'), style: { marginRight: 6 } },
-                    d.scope === 'internal' ? '内网资产' : '外网资产'),
-                  h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } },
-                    d.scope === 'internal' ? '私网地址段，需经隧道/跳板可达' : '互联网可直接访问'))),
-              h('div', { className: 'rt-kv' }, h('b', null, '时间'), h('span', null, '首见 ' + fmt(d.first_seen) + ' · 末见 ' + fmt(d.last_seen))),
+              /* 必读三行 */
               h('div', { className: 'rt-kv' }, h('b', null, '测试'), h('span', null,
                 h(TestTag, { s: d.test_status }),
-                h('span', { style: { marginLeft: 8 } }, '封禁 ' + (d.blocked_count || 0) + ' 次' + (d.test_updated_at ? ' · 更新 ' + fmt(d.test_updated_at) : '')),
-                d.test_updated_by ? h('span', { style: { marginLeft: 8 } }, 'by ' + d.test_updated_by) : null)),
+                d.blocked_count ? h('span', { className: 'rt-tag', style: { marginLeft: 6, color: '#ef4444', borderColor: '#ef444455' } }, '被封 ' + d.blocked_count + ' 次') : null,
+                h('span', { style: { marginLeft: 8, color: 'var(--dsw-alias-label-secondary)' } },
+                  (d.test_updated_at ? fmt(d.test_updated_at) : '未测过') + (d.test_updated_by ? ' · ' + d.test_updated_by : '')))),
               h('div', { className: 'rt-kv' }, h('b', null, '易打性'), h('span', null,
                 h(PriTag, { p: d.priority }),
                 h('span', { style: { marginLeft: 8 } }, d.potential || '未评估'),
-                d.assessed_at ? h('span', { style: { marginLeft: 8 } }, '· ' + fmt(d.assessed_at)) : null)),
-              d.assess_reason ? h('div', { className: 'rt-kv' }, h('b', null, '评估依据'), h('span', null, d.assess_reason)) : null,
-              d.test_surface ? h('div', { className: 'rt-kv' }, h('b', null, '剩余攻击面'), h('span', null, d.test_surface)) : null,
-              d.test_notes ? h('div', null,
-                h('div', { style: { fontWeight: 600, margin: '6px 0 3px' } }, '测试记录'),
-                h('div', null, d.test_notes.split('\n').filter(Boolean).map((line, i) => h('div', { key: 'tn' + i, style: { fontSize: 11.5, marginBottom: 2 } }, line)))) : null,
-              h('div', { style: { margin: '6px 0 3px', fontWeight: 600 } }, '开放端口 / 服务'),
-              h('div', null, portRows.length ? portRows : '—'),
-              h('div', { style: { margin: '6px 0 3px', fontWeight: 600 } }, '指纹'),
-              h('div', null, fpRows.length ? fpRows : '—'),
-              h('div', { style: { margin: '6px 0 3px', fontWeight: 600 } }, '采集溯源（最近 8 条）'),
-              h('div', null, obsRows.length ? obsRows : '—'))
+                d.assess_reason ? h('span', { style: { marginLeft: 8, color: 'var(--dsw-alias-label-secondary)' } }, d.assess_reason) : null)),
+              h('div', { className: 'rt-kv' }, h('b', null, '攻击面'), h('span', null,
+                d.test_surface || (portRows.length ? '未记录（开放端口见下）' : '无开放端口'),
+                d.scope ? h('span', { className: 'rt-scope rt-scope-' + (d.scope === 'internal' ? 'internal' : 'external'), style: { marginLeft: 8 } },
+                  d.scope === 'internal' ? '内网资产' : '外网资产') : null)),
+              h('span', { className: 'rt-more', onClick: () => setShowAll(all ? null : it.id) },
+                all ? '收起全部 ▲' : '展开全部（端口 · 指纹 · 采集溯源 · 测试记录）▼'),
+              all ? h('div', null,
+                h('div', { className: 'rt-kv' }, h('b', null, '主机名'), h('span', null, (d.names || []).map((n) => n.name).join(', ') || '—')),
+                h('div', { className: 'rt-kv' }, h('b', null, 'C 段'), h('span', null, d.segment_cidr + ' · 首见 ' + fmt(d.first_seen) + ' · 末见 ' + fmt(d.last_seen))),
+                h('div', { className: 'rt-kv' }, h('b', null, '来源'), h('span', null,
+                  '被动端口 ' + (d.passive || 0) + ' · 主动端口 ' + (d.active || 0))),
+                h('div', { style: { margin: '6px 0 3px', fontWeight: 600 } }, '开放端口 / 服务'),
+                h('div', null, portRows.length ? portRows : '—'),
+                h('div', { style: { margin: '6px 0 3px', fontWeight: 600 } }, '指纹'),
+                h('div', null, fpRows.length ? fpRows : '—'),
+                noteLines.length
+                  ? h('div', null,
+                      h('div', { style: { margin: '6px 0 3px', fontWeight: 600 } }, '测试记录（' + noteLines.length + ' 条）'),
+                      h('div', { className: 'rt-atest-notes', style: { maxHeight: 220 } }, noteLines.join('\n')))
+                  : null,
+                h('div', { style: { margin: '6px 0 3px', fontWeight: 600 } }, '采集溯源（最近 8 条）'),
+                h('div', null, obsRows.length ? obsRows : '—'))
+                : null)
           : h('div', null, '加载中…')
         rowNodes.push(h('div', {
           key: 'd' + it.id, className: 'rt-row',
@@ -619,6 +685,7 @@ window.__ModuleLoader__.load({
 
       return h('div', { className: 'rt-split' }, side,
         h('div', { className: 'rt-main' }, toolbar,
+          conclusion,
           state.error ? h('div', { className: 'rt-err' }, state.error) : null,
           pane))
     }
@@ -908,6 +975,19 @@ window.__ModuleLoader__.load({
     const sevClass = (s) => 'rt-sev rt-sev-' + (SEV_LABEL[s] ? s : 'info')
 
 
+    /** 目标归并：按「scheme://host:port」聚合，避免带路径的 URL 把分组打散。 */
+    function targetKeyOf(v) {
+      const t = String(v.target || '').trim()
+      if (t !== '') {
+        const url = /^([a-z][a-z0-9+.-]*:\/\/[^/?#\s]+)/i.exec(t)
+        if (url) return url[1]
+        const head = /^([^\s/?#]+)/.exec(t)
+        if (head) return head[1]
+        return t
+      }
+      return v.asset_ip || '(未指定目标)'
+    }
+
     /* ---------------------------------------------------------- 证据渲染 */
     /** 把一段原始 HTTP 报文按「请求行/状态行 + 头 + 体」着色，便于人眼扫读。 */
     function HttpBlock(props) {
@@ -978,6 +1058,11 @@ window.__ModuleLoader__.load({
       const [accesses, setAccesses] = React.useState([])
       const [openId, setOpenId] = React.useState(null)
       const [msg, setMsg] = React.useState(null)
+      /* 子页签：漏洞 / 凭据 / 访问会话（凭据不再铺在漏洞页底部） */
+      const [subTab, setSubTab] = React.useState('vulns')
+      /* 默认按目标聚合：322 条平铺没法读，先看"哪台被打下什么" */
+      const [grouped, setGrouped] = React.useState(true)
+      const [openTarget, setOpenTarget] = React.useState({})
 
       const load = () => {
         if (!eng) return
@@ -1008,14 +1093,30 @@ window.__ModuleLoader__.load({
       const stats = (state.stats && state.stats.bySeverity) ? state.stats : { bySeverity: {}, byStatus: {} }
       const needRestart = state.error !== null && String(state.error).indexOf('unknown op') >= 0
 
+      /* ── 结论行：只给结论，数字点一下就是筛选 ─────────────────────── */
+      const concl = (key, label, value, active, onClick) => h('span', {
+        key: key, className: 'rt-concl-i' + (active ? ' on' : ''), onClick: onClick, title: '点击筛选 / 再点取消',
+      }, h('b', null, String(value || 0)), h('span', null, label))
+      const conclusion = h('div', { className: 'rt-concl' },
+        concl('conf', '已确认', (stats.byStatus.confirmed || 0), status === 'confirmed', () => setStatus((v) => (v === 'confirmed' ? '' : 'confirmed'))),
+        concl('exp', '已利用', (stats.byStatus.exploited || 0), status === 'exploited', () => setStatus((v) => (v === 'exploited' ? '' : 'exploited'))),
+        concl('crit', '严重', (stats.bySeverity.critical || 0), sev === 'critical', () => setSev((v) => (v === 'critical' ? '' : 'critical'))),
+        concl('high', '高危', (stats.bySeverity.high || 0), sev === 'high', () => setSev((v) => (v === 'high' ? '' : 'high'))),
+        concl('med', '中危', (stats.bySeverity.medium || 0), sev === 'medium', () => setSev((v) => (v === 'medium' ? '' : 'medium'))),
+        concl('gain', '拿到权限', (stats.withGained || 0), false, () => {}),
+        h('div', { className: 'rt-spacer' }),
+        h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)' } },
+          '默认按目标聚合 · 共 ' + (stats.targetGroups || 0) + ' 个目标'))
+
       const head = h('div', { className: 'rt-vrow head' },
         h('span', null, '等级'), h('span', null, '漏洞 / 编号'), h('span', null, '目标'),
         h('span', null, '拿到什么'), h('span', null, '状态'), h('span', null, '置信'))
 
-      const rows = []
-      for (const v of state.items) {
+      /* 单条漏洞（行 + 展开详情），聚合视图与平铺视图共用 */
+      const vulnRows = (v) => {
+        const out = []
         const gainedList = String(v.gained || '').split(/[、,;，；]/).map((x) => x.trim()).filter(Boolean)
-        rows.push(h('div', {
+        out.push(h('div', {
           key: 'v' + v.id, className: 'rt-vrow',
           style: { cursor: 'pointer' },
           onClick: () => setOpenId(openId === v.id ? null : v.id),
@@ -1029,8 +1130,8 @@ window.__ModuleLoader__.load({
               : h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, '—')),
           h('span', null, h('span', { className: 'rt-tag' }, STATUS_LABEL[v.status] || v.status)),
           h('span', null, v.confidence === null || v.confidence === undefined ? '—' : Math.round(v.confidence * 100) + '%')))
-        if (openId !== v.id) continue
-        rows.push(h('div', {
+        if (openId !== v.id) return out
+        out.push(h('div', {
           key: 'vd' + v.id, className: 'rt-vrow',
           style: { cursor: 'default', gridTemplateColumns: '1fr' },
         }, h('div', { className: 'rt-vdetail' },
@@ -1047,6 +1148,50 @@ window.__ModuleLoader__.load({
             h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); setVulnStatus(v.id, 'exploited') } }, '已利用'),
             h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); setVulnStatus(v.id, 'false-positive') } }, '误报'),
             h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); setVulnStatus(v.id, 'fixed') } }, '已修复')))))
+        return out
+      }
+
+      const rows = []
+      if (grouped) {
+        /* 按目标聚合成组：先看"哪台被打下什么"，再点进去看具体漏洞 */
+        const groups = new Map()
+        for (const v of state.items) {
+          const key = targetKeyOf(v)
+          if (!groups.has(key)) groups.set(key, [])
+          groups.get(key).push(v)
+        }
+        const SEV_RANK = { critical: 0, high: 1, medium: 2, low: 3, info: 4 }
+        const list = Array.from(groups.entries()).map(([key, vs]) => ({
+          key,
+          vulns: vs,
+          top: vs.slice().sort((a, b) => (SEV_RANK[a.severity] ?? 9) - (SEV_RANK[b.severity] ?? 9))[0],
+          gained: Array.from(new Set(vs.flatMap((v) => String(v.gained || '').split(/[、,;，；]/).map((x) => x.trim()).filter(Boolean)))),
+          exploited: vs.filter((v) => v.status === 'exploited').length,
+        })).sort((a, b) => (SEV_RANK[a.top.severity] ?? 9) - (SEV_RANK[b.top.severity] ?? 9) || b.vulns.length - a.vulns.length)
+        for (const g of list) {
+          const isOpen = openTarget[g.key] === true
+          rows.push(h('div', {
+            key: 'g' + g.key, className: 'rt-grp',
+            onClick: () => setOpenTarget((o) => Object.assign({}, o, { [g.key]: !o[g.key] })),
+          },
+            h('span', { style: { flex: 'none', color: 'var(--dsw-alias-label-secondary)' } }, isOpen ? '▾' : '▸'),
+            h('span', { className: 'rt-sev rt-sev-' + g.top.severity }, SEV_LABEL[g.top.severity] || g.top.severity),
+            h('span', { className: 'rt-grp-t' }, g.key),
+            h('span', { className: 'rt-grp-n' }, g.vulns.length + ' 个漏洞'),
+            g.exploited ? h('span', { className: 'rt-grp-n', style: { color: '#10b981' } }, '已利用 ' + g.exploited) : null,
+            g.top.asset_ip && g.top.asset_ip !== g.key ? h('span', { className: 'rt-grp-n' }, '资产 ' + g.top.asset_ip) : null,
+            h('div', { className: 'rt-spacer' }),
+            g.gained.length
+              ? h('span', null, g.gained.slice(0, 2).map((x, i) => h('span', { key: 'gg' + i, className: 'rt-gain', style: { marginLeft: 6 } }, x)),
+                  g.gained.length > 2 ? h('span', { className: 'rt-grp-n', style: { marginLeft: 4 } }, '+' + (g.gained.length - 2)) : null)
+              : h('span', { className: 'rt-grp-n' }, '未记录拿到的权限')))
+          if (isOpen) for (const v of g.vulns) rows.push(...vulnRows(v))
+        }
+        if (!list.length && !state.loading && !state.error) {
+          rows.push(h('div', { key: 'none', className: 'rt-empty' }, '暂无漏洞记录'))
+        }
+      } else {
+        for (const v of state.items) rows.push(...vulnRows(v))
       }
 
       const toolbar = h('div', { className: 'rt-toolbar' },
@@ -1070,16 +1215,6 @@ window.__ModuleLoader__.load({
           h('option', { value: 'exploited' }, '已利用'),
           h('option', { value: 'false-positive' }, '误报'),
           h('option', { value: 'fixed' }, '已修复')))
-
-      const summary = h('div', { className: 'rt-toolbar', style: { borderTop: 'none' } },
-        h('span', { className: 'rt-tag rt-sev-critical', style: { color: '#fff' } }, '严重 ' + (stats.bySeverity.critical || 0)),
-        h('span', { className: 'rt-tag rt-sev-high', style: { color: '#fff' } }, '高危 ' + (stats.bySeverity.high || 0)),
-        h('span', { className: 'rt-tag rt-sev-medium', style: { color: '#fff' } }, '中危 ' + (stats.bySeverity.medium || 0)),
-        h('span', { className: 'rt-tag rt-sev-low', style: { color: '#fff' } }, '低危 ' + (stats.bySeverity.low || 0)),
-        h('div', { className: 'rt-spacer' }),
-        h('span', null, '已确认 ' + ((stats.byStatus && stats.byStatus.confirmed) || 0)),
-        h('span', null, '已利用 ' + ((stats.byStatus && stats.byStatus.exploited) || 0)),
-        h('span', null, '误报 ' + ((stats.byStatus && stats.byStatus['false-positive']) || 0)))
 
       const credSection = h('div', null,
         h('div', { className: 'rt-section' }, '凭据 · ' + creds.length + (creds.length ? '（明文直显，注意屏幕分享/录屏）' : '')),
@@ -1121,14 +1256,31 @@ window.__ModuleLoader__.load({
               h('span', { className: 'rt-mono', title: a.session_ref || '' }, a.session_ref || '—')))
           : h('div', { className: 'rt-empty' }, '暂无'))
 
-      return h('div', { className: 'rt-main' }, toolbar, summary,
+      const subTabBtn = (key, label, n) => h('span', {
+        className: 'rt-subtab' + (subTab === key ? ' on' : ''),
+        onClick: () => setSubTab(key),
+      }, label + ' ' + n)
+
+      return h('div', { className: 'rt-main' }, toolbar, conclusion,
+        h('div', { className: 'rt-subtabs' },
+          subTabBtn('vulns', '漏洞', state.total || 0),
+          subTabBtn('creds', '凭据', creds.length),
+          subTabBtn('access', '访问会话', accesses.length),
+          h('div', { className: 'rt-spacer' }),
+          h('button', {
+            className: 'rt-btn' + (grouped ? ' rt-btn-primary' : ''),
+            title: grouped ? '当前：按目标聚合（先看哪台被打下什么）' : '当前：平铺每条漏洞',
+            onClick: () => setGrouped((g) => !g),
+          }, grouped ? '按目标聚合' : '平铺列表')),
         msg ? h('div', { className: msg.err ? 'rt-err' : 'rt-foot' }, msg.err || msg.ok) : null,
         needRestart ? h('div', { className: 'rt-empty' }, '该模块的宿主代码已更新，需重启一次 dsh web 后生效') : null,
         state.error && !needRestart ? h('div', { className: 'rt-err' }, state.error) : null,
-        h('div', { className: 'rt-table' }, head, rows,
-          !state.loading && !state.items.length && !state.error ? h('div', { className: 'rt-empty' }, '暂无漏洞记录') : null),
-        h('div', { style: { borderTop: '1px solid var(--dsw-alias-border-l1)', maxHeight: '38%', overflow: 'auto' } },
-          credSection, accessSection))
+        subTab === 'creds'
+          ? h('div', { className: 'rt-body', style: { overflow: 'auto' } }, credSection)
+          : subTab === 'access'
+            ? h('div', { className: 'rt-body', style: { overflow: 'auto' } }, accessSection)
+            : h('div', { className: 'rt-table' }, head, rows,
+                !state.loading && !state.items.length && !state.error ? h('div', { className: 'rt-empty' }, '暂无漏洞记录') : null))
     }
 
     /* ---------------------------------------------------------- 攻击链 */
@@ -1145,6 +1297,10 @@ window.__ModuleLoader__.load({
       const [mode, setMode] = React.useState('attack')
       /* 展示顺序：默认倒序（最新的一步在最上面），可切换为正序 */
       const [desc, setDesc] = React.useState(true)
+      /* 阶段分组折叠：undefined=默认只展开最近活跃阶段，null=全折叠，字符串=展开该阶段 */
+      const [openStage, setOpenStage] = React.useState(undefined)
+      /* 单步展开（默认只占一行） */
+      const [openStep, setOpenStep] = React.useState(null)
 
       const load = () => {
         if (!eng) return
@@ -1237,9 +1393,10 @@ window.__ModuleLoader__.load({
         h('button', { className: 'rt-btn', style: { padding: '0 7px', fontSize: 11 }, onClick: loadLive }, '刷新'))
 
       const ordered = desc ? items.slice().reverse() : items
-      /* 一步 = 序号圆点 + 标题行（阶段/严重级徽标 + 时间）+ 详情块 + 结构化 chip */
-      const steps = ordered.map((s, i) => {
+      /* 一步默认只占一行（序号 + 标题 + 阶段 + 时间），点开才看详情与结构化 chip */
+      const stepNode = (s, i) => {
         const stageKey = STAGE_LABEL[s.stage] ? s.stage : 'other'
+        const expanded = openStep === s.id
         const chips = []
         if (s.asset_ip) chips.push(h('span', { key: 'ip', className: 'rt-chip' }, h('i', null, '资产'), h('span', { className: 'rt-mono' }, s.asset_ip)))
         if (s.vuln_cve || s.vuln_title) {
@@ -1249,17 +1406,51 @@ window.__ModuleLoader__.load({
         }
         if (s.evidence_ref) chips.push(h('span', { key: 'evi', className: 'rt-chip' }, h('i', null, '证据'), h('span', null, s.evidence_ref)))
         if (s.recorded_by) chips.push(h('span', { key: 'by', className: 'rt-chip' }, h('i', null, '记录'), h('span', null, s.recorded_by)))
-        return h('div', { key: 's' + s.id, className: 'rt-step' },
+        const preview = s.detail ? String(s.detail).split('\n')[0] : ''
+        return h('div', { key: 's' + s.id, className: 'rt-step', style: { cursor: 'pointer' },
+          onClick: () => setOpenStep((cur) => (cur === s.id ? null : s.id)) },
           h('div', { className: 'rt-step-dot rt-stage-' + stageKey }, String(s.seq === null || s.seq === undefined ? i + 1 : s.seq)),
           h('div', { className: 'rt-step-body', style: { flex: 1 } },
             h('div', { className: 'rt-step-head' },
-              h('span', { className: 'rt-step-title' }, s.title || '（未命名步骤）'),
-              h('span', { className: 'rt-stage-tag rt-st-' + stageKey }, STAGE_LABEL[s.stage] || s.stage || '其他'),
+              h('span', { className: 'rt-step-title' }, (s.title || '（未命名步骤）').slice(0, 80)),
               s.vuln_severity ? h('span', { className: 'rt-sev rt-sev-' + s.vuln_severity }, s.vuln_severity) : null,
               h('span', { className: 'rt-step-time' }, fmt(s.recorded_at))),
-            s.detail ? h('div', { className: 'rt-step-detail' }, s.detail) : null,
-            chips.length ? h('div', null, chips) : null))
-      })
+            expanded
+              ? h('div', null,
+                  s.detail ? h('div', { className: 'rt-step-detail' }, s.detail) : null,
+                  chips.length ? h('div', null, chips) : null)
+              : (preview ? h('div', { className: 'rt-step-meta', style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, preview.slice(0, 110)) : null)))
+      }
+
+      /* 按阶段分组：默认只展开最近活跃的那个阶段，其余折叠成一行 */
+      const groups = []
+      const gIdx = new Map()
+      for (const s of ordered) {
+        const k = STAGE_LABEL[s.stage] ? s.stage : 'other'
+        let g = gIdx.get(k)
+        if (g === undefined) {
+          g = { key: k, label: STAGE_LABEL[k] || k, list: [] }
+          gIdx.set(k, g)
+          groups.push(g)
+        }
+        g.list.push(s)
+      }
+      const currentStage = groups.length ? groups[0].key : null
+      const activeStage = openStage === undefined ? currentStage : openStage
+      const steps = []
+      for (const g of groups) {
+        const isOpen = activeStage === g.key
+        steps.push(h('div', {
+          key: 'g' + g.key, className: 'rt-stagegrp',
+          onClick: () => setOpenStage((cur) => ((cur === undefined ? currentStage : cur) === g.key ? null : g.key)),
+        },
+          h('span', { className: 'rt-stage-tag rt-st-' + g.key }, g.label),
+          h('span', { className: 'rt-grp-n' }, g.list.length + ' 步'),
+          h('div', { className: 'rt-spacer' }),
+          h('span', { className: 'rt-grp-n' }, fmt(g.list[0] && g.list[0].recorded_at)),
+          h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, isOpen ? '▾' : '▸')))
+        if (isOpen) for (let i = 0; i < g.list.length; i++) steps.push(stepNode(g.list[i], i))
+      }
 
       /* 得分链路：只呈现"得分"这条线，不含任何信息收集/未得分的过程 */
       const scoreItems = (score && score.items) || []
@@ -1310,7 +1501,7 @@ window.__ModuleLoader__.load({
             className: 'rt-btn',
             title: desc ? '当前：最新的一步在最上面（默认），点击切换为正序' : '当前：从第 1 步开始，点击切换为倒序',
             onClick: () => setDesc((d) => !d),
-          }, desc ? '倒序（最新在前）↓' : '正序（第 1 步在前）↑'),
+          }, desc ? '倒序 ↓' : '正序 ↑'),
           h('button', { className: 'rt-btn', disabled: loading, onClick: load }, loading ? '加载中…' : '刷新')),
         err ? h('div', { className: 'rt-err' }, err) : null,
         liveBar,
