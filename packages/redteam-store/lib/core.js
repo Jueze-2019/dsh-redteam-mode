@@ -349,7 +349,9 @@ function migrate(db) {
   ensure('attack_step', 'point_id', 'INTEGER')
   /* 攻击链已推倒重来：老的五阶段行整体作废，attck 列移除 */
   try {
-    db.prepare("DELETE FROM stage WHERE code IN ('external','foothold','tunnel','privilege','target')").run()
+    /* 注意：'target' 在新老两版里同名，必须按名称区分，否则第二次打开会把新版阶段删掉 */
+    db.prepare("DELETE FROM stage WHERE code IN ('external','foothold','tunnel','privilege')").run()
+    db.prepare("DELETE FROM stage WHERE code = 'target' AND name = '靶标系统权限'").run()
     db.prepare("DELETE FROM stage WHERE code NOT IN ('recon','internet','boundary','internal','target')").run()
   } catch { /* 表还不存在，忽略 */ }
   if (has('stage', 'attck')) {
@@ -1199,20 +1201,25 @@ export class RedteamStore {
   /** 作战阶段：首次读取时补种默认五阶段（与得分点同策略，老靶标自动获得）。 */
   seedStages(id) {
     const db = this.db(id)
-    if (db.prepare('SELECT COUNT(*) AS n FROM stage').get().n > 0) return { seeded: 0 }
-    let order = 0
+    /* 自愈式补种：缺哪个补哪个（老库被上一版迁移误删的阶段会自动补回来） */
+    const have = new Set(db.prepare('SELECT code FROM stage').all().map((r) => r.code))
+    if (DEFAULT_STAGES.every((st) => have.has(st.code))) return { seeded: 0 }
+    let order = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS n FROM stage').get().n + 1
     const stmt = db.prepare(`INSERT INTO stage(code, name, subtitle, color, goal, sections, tools, transition, sort_order, updated_at)
       VALUES(?,?,?,?,?,?,?,?,?,?)`)
+    let seeded = 0
     for (const st of DEFAULT_STAGES) {
+      if (have.has(st.code)) continue
       stmt.run(st.code, st.name, st.subtitle, st.color, st.goal, JSON.stringify(st.sections),
         st.tools, st.transition, order++, nowIso())
+      seeded += 1
     }
-    return { seeded: DEFAULT_STAGES.length }
+    return { seeded: seeded }
   }
 
   listStages(id) {
     const db = this.db(id)
-    if (db.prepare('SELECT COUNT(*) AS n FROM stage').get().n === 0) this.seedStages(id)
+    this.seedStages(id)
     return db.prepare('SELECT * FROM stage ORDER BY sort_order, code').all().map((r) => ({
       code: r.code, name: r.name, subtitle: r.subtitle || '', color: r.color || '#64748b',
       goal: r.goal || '', sections: parseJson(r.sections, []), tools: r.tools || '',
@@ -1739,7 +1746,7 @@ export class RedteamStore {
     const db = this.db(id)
     const meta = readMeta(this.metaPathOf(id)) || {}
     const limit = Math.min(Number(options.limit) || 500, 2000)
-    const rows = db.prepare(`SELECT h.*, p.name AS point_name, p.points, p.category, p.max_hits,
+    const rows = db.prepare(`SELECT h.*, p.code, p.name AS point_name, p.points, p.category, p.max_hits,
         a.ip AS asset_ip, v.title AS vuln_title, v.cve AS vuln_cve, v.gained AS vuln_gained, v.severity AS vuln_severity
       FROM score_hit h
       LEFT JOIN score_point p ON p.id = h.point_id
@@ -1757,6 +1764,17 @@ export class RedteamStore {
       return s.length > n ? s.slice(0, n) + '\n…（截断，完整内容见证据文件）' : s
     }
 
+    /* 每条命中落在攻击链的哪个阶段（与攻击链页同一套推导规则） */
+    const scopeOf = new Map()
+    if (rows.length > 0) {
+      const ids = Array.from(new Set(rows.map((r) => r.asset_id).filter((v) => v !== null && v !== undefined)))
+      if (ids.length > 0) {
+        const ph = ids.map(() => '?').join(',')
+        for (const a of db.prepare(`SELECT id, COALESCE(scope, (${SCOPE_SQL})) AS scope FROM asset WHERE id IN (${ph})`).all(...ids)) {
+          scopeOf.set(a.id, a.scope)
+        }
+      }
+    }
     const items = rows.map((h, i) => {
       const seen = perPoint.get(h.point_id) || 0
       perPoint.set(h.point_id, seen + 1)
@@ -1808,6 +1826,8 @@ export class RedteamStore {
         seq: i + 1,
         id: h.id,
         point_id: h.point_id,
+        stage_code: scoreStageOf({ stage_code: h.stage_code, code: h.code, target: h.target },
+          h.asset_id === null || h.asset_id === undefined ? undefined : scopeOf.get(h.asset_id)),
         point_name: h.point_name || '（已删除的得分点）',
         category: h.category || '',
         points: h.points || 0,
@@ -1834,6 +1854,15 @@ export class RedteamStore {
       autoMatched: items.filter((x) => x.requests.some((r) => r.source === 'auto')).length,
       missingRequests: items.filter((x) => x.missing_evidence).length,
     }
+    /* ── 按攻击链顺序（信息收集 → 互联网资产权限 → 边界突破 → 内网资产权限 → 靶标权限）分组 ── */
+    let cumulative = 0
+    const stages = this.listStages(id).map((st, si) => {
+      const sItems = items.filter((x) => x.stage_code === st.code)
+      const pts = sItems.reduce((n, x) => n + (x.counted ? x.points : 0), 0)
+      cumulative += pts
+      return { code: st.code, name: st.name, color: st.color, goal: st.goal, transition: st.transition,
+        ordinal: si + 1, points: pts, cumulative: cumulative, items: sItems }
+    }).filter((st) => st.items.length > 0)
 
     /* markdown（给复制/下载，也方便智能体直接交付） */
     const md = []
@@ -1842,32 +1871,36 @@ export class RedteamStore {
       summary.withRequests + '/' + summary.count + ' 项带原始请求' +
       (summary.missingRequests > 0 ? '（' + summary.missingRequests + ' 项缺原始请求）' : ''), '')
     const CIRCLED = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲', '⑳']
-    for (const x of items) {
+    const NUMS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20']
+    for (const st of stages) {
       md.push('---', '')
-      md.push('## ' + (CIRCLED[x.seq - 1] || ('#' + x.seq)) + ' ' + x.point_name + '（+' + x.points + ' 分' + (x.counted ? '' : '，超出上限不计分') + '）', '')
-      if (x.target) md.push('- **目标**：' + x.target)
-      if (x.asset_ip) md.push('- **资产**：' + x.asset_ip)
-      if (x.gained) md.push('- **拿到**：' + x.gained)
-      if (x.vuln) md.push('- **利用的漏洞**：' + (x.vuln.cve ? x.vuln.cve + ' — ' : '') + x.vuln.title +
-        (x.vuln.severity ? '（' + x.vuln.severity + '）' : ''))
-      if (x.evidence) md.push('- **结果**：' + String(x.evidence).replace(/\n+/g, ' '))
-      if (x.nth_of_point > 1) md.push('- **同类第 ' + x.nth_of_point + ' 次**（上限 ' + x.max_hits + ' 次）')
-      if (x.recorded_at) md.push('- **记录**：' + x.recorded_at + (x.recorded_by ? ' · ' + x.recorded_by : ''))
-      md.push('')
-      if (x.requests.length === 0) {
-        md.push('> ⚠️ 这一项没有原始请求记录，无法直接复现；请补 `redteam_http_evidence_add`。', '')
-        continue
+      md.push('## ' + (CIRCLED[st.ordinal - 1] || '') + ' ' + st.name + '　+' + st.points + ' 分（累计 ' + st.cumulative + ' 分）', '')
+      if (st.goal) md.push('> ' + st.goal, '')
+      let n = 0
+      for (const x of st.items) {
+        n += 1
+        md.push('### ' + (NUMS[n - 1] || n) + '. ' + x.point_name + '　+' + x.points + ' 分' + (x.counted ? '' : '（超出上限不计分）'), '')
+        if (x.target) md.push('- **目标**：' + x.target)
+        if (x.gained) md.push('- **拿到**：' + x.gained)
+        if (x.evidence && String(x.evidence).replace(/\n+/g, ' ').trim() !== String(x.gained || '').trim()) {
+          md.push('- **结果**：' + String(x.evidence).replace(/\n+/g, ' ').slice(0, 300))
+        }
+        if (x.vuln) md.push('- **利用的漏洞**：' + (x.vuln.cve ? x.vuln.cve + ' — ' : '') + x.vuln.title)
+        md.push('')
+        if (x.requests.length === 0) {
+          md.push('> ⚠️ 没有原始请求记录，无法直接复现；请补 `redteam_http_evidence_add`。', '')
+          continue
+        }
+        x.requests.forEach((r, ri) => {
+          md.push('**复现请求 ' + (ri + 1) + '（可直接粘贴进 Yakit Repeater）**' + (r.source === 'auto' ? ' — 按目标路径自动匹配，请核对' : ''), '')
+          if (r.request) { md.push('```http', String(r.request).replace(/\r/g, '').trim(), '```', '') }
+          else if (r.url) { md.push('```http', (r.method || 'GET') + ' ' + r.url + ' HTTP/1.1', '```', '') }
+          if (r.response) { md.push('响应摘要：', '```http', String(r.response).replace(/\r/g, '').trim().slice(0, 1200), '```', '') }
+          md.push('')
+        })
       }
-      md.push('### 复现请求（可直接粘贴进 Yakit Repeater）', '')
-      x.requests.forEach((r, ri) => {
-        md.push('**请求 ' + (ri + 1) + '**' + (r.source === 'auto' ? '（按目标路径自动匹配，请核对）' : ''), '')
-        if (r.request) { md.push('```http', String(r.request).replace(/\r/g, '').trim(), '```', '') }
-        else if (r.url) { md.push('```http', (r.method || 'GET') + ' ' + r.url + ' HTTP/1.1', '```', '') }
-        if (r.response) { md.push('响应摘要：', '```http', String(r.response).replace(/\r/g, '').trim().slice(0, 1500), '```', '') }
-        if (r.note) md.push('> ' + r.note, '')
-      })
     }
-    return { items, summary, markdown: md.join('\n'), target: (meta && meta.target_name) || id }
+    return { items, stages, summary, markdown: md.join('\n'), target: (meta && meta.target_name) || id }
   }
 
   /**

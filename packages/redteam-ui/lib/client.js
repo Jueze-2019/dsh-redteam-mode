@@ -428,6 +428,20 @@ window.__ModuleLoader__.load({
 .rt-hcol-sub{font-size:10.5px;color:var(--dsw-alias-label-secondary);margin-bottom:2px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;gap:5px;align-items:center}
 .rt-hcol-sub.off{opacity:.6}
+.rt-hit-row{display:flex;align-items:center;gap:7px;font-size:11.5px;padding:3px 7px;border-radius:5px;
+  background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);margin-bottom:3px}
+.rt-hit-asset{font-family:ui-monospace,Menlo,monospace;font-weight:600;white-space:nowrap;flex:none;max-width:38%;
+  overflow:hidden;text-overflow:ellipsis}
+.rt-hit-txt{color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.rt-hit-txt.none{color:var(--dsw-alias-state-error-primary)}
+.rt-hit-row .rt-hit-time{flex:none}
+.rt-rep-stage{display:flex;align-items:center;gap:8px;padding:7px 10px;margin:12px 0 7px;
+  background:var(--dsw-alias-bg-layer-2);border-left:4px solid #64748b;border-radius:6px}
+.rt-rep-stage:first-child{margin-top:0}
+.rt-rep-stage-no{width:20px;height:20px;border-radius:5px;color:#fff;font-size:11px;font-weight:700;flex:none;
+  display:inline-flex;align-items:center;justify-content:center}
+.rt-rep-stage-name{font-weight:700;font-size:13px}
+.rt-rep-stage-n{font-size:11px;color:var(--dsw-alias-label-secondary)}
 .rt-md{flex:1;overflow:auto;margin:0;padding:14px 16px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;
   line-height:1.65;white-space:pre-wrap;word-break:break-word;background:var(--dsw-alias-bg-base)}
 .rt-weblink{display:block;font-size:11.5px;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1690,6 +1704,7 @@ window.__ModuleLoader__.load({
       }
 
       const items = (data && data.items) || []
+      const stages = (data && data.stages) || []
       const summary = (data && data.summary) || null
       const mdText = (data && data.markdown) || ''
       const CIRCLED = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲', '⑳']
@@ -1697,7 +1712,7 @@ window.__ModuleLoader__.load({
       /* 每项一条，平铺不折叠：目标 → 拿到什么 → 复现请求（可直接粘进 Yakit）→ 响应 */
       const card = (x) => h('div', { key: 'r' + x.id, className: 'rt-rep' },
         h('div', { className: 'rt-rep-head' },
-          h('span', { className: 'rt-rep-idx' }, CIRCLED[x.seq - 1] || ('#' + x.seq)),
+          h('span', { className: 'rt-rep-idx' }, String(x.seq)),
           h('span', { className: 'rt-rep-name' }, x.point_name),
           x.counted
             ? h('span', { className: 'rt-flow-pts' }, '+' + x.points + ' 分')
@@ -1715,8 +1730,6 @@ window.__ModuleLoader__.load({
           h('span', null, [x.vuln.cve, x.vuln.title].filter(Boolean).join(' '))) : null,
         x.evidence ? h('div', { className: 'rt-rep-meta' }, h('b', null, '结果 '),
           h('span', null, String(x.evidence).replace(/\n+/g, ' '))) : null,
-        h('div', { className: 'rt-rep-meta' }, h('b', null, '记录 '),
-          h('span', null, fmt(x.recorded_at) + (x.recorded_by ? ' · ' + x.recorded_by : ''))),
         x.requests.length === 0
           ? h('div', { className: 'rt-rep-missing' }, '⚠️ 这一项没有原始请求记录，无法直接复现 —— 请用 redteam_http_evidence_add 补上')
           : x.requests.map((r, ri) => h('div', { key: 'q' + ri, className: 'rt-rep-req' },
@@ -1748,8 +1761,16 @@ window.__ModuleLoader__.load({
         msg ? h('div', { className: msg.err ? 'rt-err' : 'rt-foot' }, msg.err || msg.ok) : null,
         err ? h('div', { className: 'rt-err' }, err) : null,
         h('div', { className: 'rt-body', style: { overflow: 'auto' } },
-          items.length
-            ? h('div', { className: 'rt-rep-list' }, items.map(card))
+          stages.length
+            ? h('div', { className: 'rt-rep-list' }, stages.map((st) => h('div', { key: 'g' + st.code },
+                h('div', { className: 'rt-rep-stage', style: { borderLeftColor: st.color } },
+                  h('span', { className: 'rt-rep-stage-no', style: { background: st.color } }, CIRCLED[st.ordinal - 1] || st.ordinal),
+                  h('span', { className: 'rt-rep-stage-name' }, st.name),
+                  h('span', { className: 'rt-rep-stage-n' }, st.items.length + ' 项'),
+                  h('div', { className: 'rt-spacer' }),
+                  h('span', { className: 'rt-flow-pts' }, '+' + st.points + ' 分'),
+                  h('span', { className: 'rt-ap-cum' }, '累计 ' + st.cumulative + ' 分')),
+                st.items.map(card))))
             : (data === null ? h('div', { className: 'rt-empty' }, '加载中…')
                 : h('div', { className: 'rt-empty' },
                     h('div', null, '还没有可交付的成果。'),
@@ -1919,27 +1940,23 @@ window.__ModuleLoader__.load({
             ? h('span', { className: 'rt-tag' + (p.hits.length > p.max_hits ? '' : ' rt-tag-active') }, '命中 ' + p.hits.length)
             : h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, '—'))))
         if (!open) continue
-        /* 命中记录：每条一张卡片 —— 序号 / 目标 / 记录人 / 时间 / 证据正文 */
-        const hitNodes = p.hits.map((hh, hi) => h('div', { key: 'h' + hh.id, className: 'rt-hit' },
-          h('div', { className: 'rt-hit-head' },
-            h('span', { className: 'rt-hit-idx' }, String(hi + 1)),
-            h('span', { className: 'rt-hit-target' }, hh.target || '未指定目标'),
-            hh.note ? h('span', { className: 'rt-tag' }, hh.note) : null,
-            hh.recorded_by ? h('span', { className: 'rt-tag rt-tag-active' }, hh.recorded_by) : null,
-            h('span', { className: 'rt-hit-time' }, fmt(hh.recorded_at))),
+        /* 命中记录：一行说完 —— 什么资产 + 账号密码/拿到的东西 + 时间（详细过程交给报告） */
+        const hitNodes = p.hits.map((hh, hi) => h('div', { key: 'h' + hh.id, className: 'rt-hit-row' },
+          h('span', { className: 'rt-hit-idx' }, String(hi + 1)),
+          h('span', { className: 'rt-hit-asset', title: hh.target || hh.asset_ip || '' },
+            hh.asset_ip || hh.target || '未指定资产'),
           hh.evidence
-            ? h('div', { className: 'rt-hit-evi' }, hh.evidence)
-            : h('div', { className: 'rt-hit-note', style: { color: 'var(--dsw-alias-state-error-primary)' } },
-                '没有填证据 —— 记分必须写明可核对的证据（回显、命令、数据条数、路径）'),
-          h('div', { style: { marginTop: 5 } },
-            hh.asset_id ? h('span', { className: 'rt-chip' }, h('i', null, '资产'), h('span', { className: 'rt-mono' }, '#' + hh.asset_id)) : null,
-            h('button', {
-              className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
-              onClick: (e) => {
-                e.stopPropagation()
-                try { navigator.clipboard.writeText(String(hh.evidence || '')) } catch (err) { /* ignore */ }
-              },
-            }, '复制证据'))))
+            ? h('span', { className: 'rt-hit-txt', title: hh.evidence }, String(hh.evidence).replace(/\n+/g, ' '))
+            : h('span', { className: 'rt-hit-txt none' }, '未填账号密码/结果'),
+          h('span', { className: 'rt-hit-time' }, fmt(hh.recorded_at)),
+          h('button', {
+            className: 'rt-btn', style: { padding: '0 5px', fontSize: 10.5 },
+            title: '复制这一条',
+            onClick: (e) => {
+              e.stopPropagation()
+              try { navigator.clipboard.writeText((hh.asset_ip || hh.target || '') + '  ' + (hh.evidence || '')) } catch (err) { /* ignore */ }
+            },
+          }, '复制')))
         rows.push(h('div', {
           key: 'spd' + p.id, className: 'rt-score-row',
           style: { cursor: 'default', gridTemplateColumns: '1fr' },
@@ -1950,11 +1967,12 @@ window.__ModuleLoader__.load({
               ' 次 · 命中 ' + p.hits.length + ' 次 · 计入 ' + p.counted + ' 次 = ' + p.earned + ' 分')),
           p.hits.length
             ? h('div', null,
-                h('div', { className: 'rt-section', style: { padding: '6px 0 0' } }, '命中记录 · ' + p.hits.length),
+                h('div', { className: 'rt-section', style: { padding: '6px 0 0' } },
+                  '命中记录 · ' + p.hits.length + '（只记资产与账号密码，详细复现见报告）'),
                 h('div', { className: 'rt-hits' }, hitNodes))
             : h('div', { className: 'rt-kv' }, h('b', null, '命中记录'),
                 h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } },
-                  '还没有 —— 拿下成果后用 redteam_score_hit 记分（target + evidence 必填）')),
+                  '还没有 —— 拿下成果后用 redteam_score_hit 记分：写明目标资产 + 拿到的账号密码/权限')),
           h('div', { className: 'rt-actions' },
             h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); startEdit(p) } }, '编辑')))))
       }
