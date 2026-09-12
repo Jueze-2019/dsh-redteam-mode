@@ -118,7 +118,7 @@ window.__ModuleLoader__.load({
 .rt-pri-high{color:#fff;background:#ef4444}
 .rt-pri-medium{color:#fff;background:#f59e0b}
 .rt-pri-low{color:#fff;background:#94a3b8}
-.rt-score-row{display:grid;grid-template-columns:16px 56px 1fr 90px 64px;gap:8px;padding:7px 10px;
+.rt-score-row{display:grid;grid-template-columns:16px 56px minmax(0,1fr) 104px 74px 62px;gap:8px;padding:7px 10px;
   border-bottom:1px solid var(--dsw-alias-border-l1);align-items:center;font-size:12.5px;cursor:pointer}
 .rt-score-row:hover{background:var(--dsw-alias-bg-layer-2)}
 .rt-score-row.head{cursor:default;color:var(--dsw-alias-label-secondary);font-size:11.5px;font-weight:600;
@@ -229,6 +229,8 @@ window.__ModuleLoader__.load({
   border:1px dashed var(--dsw-alias-state-error-primary);border-radius:5px;padding:5px 9px;margin-top:6px}
 .rt-cred-meta{font-size:11.5px;color:var(--dsw-alias-label-secondary);margin-top:5px;word-break:break-word}
 .rt-stage-score{background:#10b981}
+.rt-counted{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;color:#065f46;background:#a7f3d0;border:1px solid #10b98155;border-radius:9px;padding:0 7px}
+.rt-counted.full{color:#7c2d12;background:#fed7aa;border-color:#f59e0b55}
 .rt-scorepts{font-size:11.5px;font-weight:700;color:#065f46;background:#a7f3d0;border:1px solid #10b98155;
   border-radius:10px;padding:0 7px;white-space:nowrap}
 .rt-livebar{display:flex;align-items:center;gap:7px;padding:7px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);
@@ -295,6 +297,64 @@ window.__ModuleLoader__.load({
 .rt-clip:not(.open) .rt-clip-body{max-height:46px;overflow:hidden;
   -webkit-mask-image:linear-gradient(180deg,#000 55%,transparent);mask-image:linear-gradient(180deg,#000 55%,transparent)}
 .rt-clip.open .rt-clip-body{max-height:340px;overflow:auto}
+.rt-flow{padding:10px 12px 16px}
+.rt-flow-start,.rt-flow-end{font-size:11.5px;color:var(--dsw-alias-label-secondary);padding:4px 0}
+.rt-flow-end{font-weight:600;color:var(--dsw-alias-label-primary)}
+.rt-flow-link{display:flex;align-items:center;gap:8px;padding:3px 0 3px 10px}
+.rt-flow-arrow{color:var(--dsw-alias-border-l2);font-size:11px;flex:none}
+.rt-flow-action{font-size:11.5px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rt-flow-action.inferred{opacity:.7;font-style:italic}
+.rt-flow-node{border:1px solid var(--dsw-alias-border-l1);border-left:3px solid #10b981;border-radius:8px;
+  padding:8px 11px;background:var(--dsw-alias-bg-layer-2);cursor:pointer;outline:none}
+.rt-flow-node:hover{border-color:var(--dsw-alias-border-l2)}
+.rt-flow-node:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.rt-flow-node.overflow{border-left-color:#94a3b8;opacity:.75}
+.rt-flow-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rt-flow-idx{width:18px;height:18px;border-radius:50%;background:#10b981;color:#fff;font-size:11px;font-weight:700;
+  display:inline-flex;align-items:center;justify-content:center;flex:none}
+.rt-flow-node.overflow .rt-flow-idx{background:#94a3b8}
+.rt-flow-name{font-weight:600;font-size:13px}
+.rt-flow-pts{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;font-weight:700;color:#065f46;
+  background:#a7f3d0;border:1px solid #10b98155;border-radius:10px;padding:0 8px;white-space:nowrap}
+.rt-flow-pts.off{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1);border-color:var(--dsw-alias-border-l1)}
+.rt-flow-times{font-size:11px;color:var(--dsw-alias-label-secondary)}
+.rt-flow-target{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;margin-top:4px;word-break:break-all;
+  color:var(--dsw-alias-label-secondary)}
+.rt-flow-gain{font-size:12px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rt-flow-detail{margin-top:7px;padding-top:7px;border-top:1px dashed var(--dsw-alias-border-l1)}
+.rt-hflow-wrap{flex:1;min-height:0;display:flex;flex-direction:column;overflow:auto}
+.rt-hflow{display:flex;align-items:center;gap:0;padding:16px 12px;overflow-x:auto;flex-wrap:nowrap}
+.rt-hflow-item{display:flex;align-items:center;flex:none}
+.rt-hflow-start,.rt-hflow-end{font-size:11.5px;color:var(--dsw-alias-label-secondary);white-space:nowrap;padding:0 4px}
+.rt-hflow-end{font-weight:600;color:var(--dsw-alias-label-primary)}
+.rt-hflow-arrow{color:var(--dsw-alias-border-l2);padding:0 5px;font-size:13px;flex:none}
+.rt-hflow-node{display:flex;align-items:center;gap:5px;border:1px solid var(--dsw-alias-border-l1);
+  border-left:3px solid #10b981;border-radius:7px;padding:5px 8px;background:var(--dsw-alias-bg-layer-2);
+  cursor:pointer;white-space:nowrap;outline:none}
+.rt-hflow-node:hover{border-color:var(--dsw-alias-border-l2)}
+.rt-hflow-node:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.rt-hflow-node.overflow{border-left-color:#94a3b8;opacity:.72}
+.rt-hflow-node.open{border-color:var(--dsw-alias-brand-primary)}
+.rt-hflow-pts{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;font-weight:700;color:#065f46;background:#a7f3d0;
+  border-radius:8px;padding:0 6px}
+.rt-hflow-node.overflow .rt-hflow-pts{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1)}
+.rt-hflow-name{font-size:11.5px}
+.rt-hflow-n{font-size:10.5px;color:var(--dsw-alias-label-secondary)}
+.rt-rep-list{padding:10px 12px 14px}
+.rt-rep{border:1px solid var(--dsw-alias-border-l1);border-left:3px solid #10b981;border-radius:8px;
+  padding:9px 11px;margin-bottom:10px;background:var(--dsw-alias-bg-layer-2)}
+.rt-rep-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rt-rep-idx{font-size:15px;color:#10b981;font-weight:700;flex:none}
+.rt-rep-name{font-weight:600;font-size:13px}
+.rt-rep-meta{font-size:12px;margin-top:4px;color:var(--dsw-alias-label-secondary);word-break:break-word}
+.rt-rep-meta b{color:var(--dsw-alias-label-primary);font-weight:600;margin-right:2px}
+.rt-rep-missing{font-size:11.5px;color:var(--dsw-alias-state-error-primary);margin-top:6px;
+  border:1px dashed var(--dsw-alias-state-error-primary);border-radius:5px;padding:5px 8px}
+.rt-rep-req{margin-top:7px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;overflow:hidden}
+.rt-rep-req-head{display:flex;align-items:center;gap:7px;padding:4px 8px;font-size:11.5px;font-weight:600;
+  background:var(--dsw-alias-bg-layer-1);border-bottom:1px solid var(--dsw-alias-border-l1)}
+.rt-rep-http{margin:0;padding:8px 10px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.6;
+  white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto;background:var(--dsw-alias-bg-base)}
 .rt-md{flex:1;overflow:auto;margin:0;padding:14px 16px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;
   line-height:1.65;white-space:pre-wrap;word-break:break-word;background:var(--dsw-alias-bg-base)}
 .rt-weblink{display:block;font-size:11.5px;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1323,277 +1383,248 @@ window.__ModuleLoader__.load({
     /* ---------------------------------------------------------- 攻击链 */
     const STAGE_LABEL = { recon: '信息收集', vuln: '漏洞发现', exploit: '漏洞利用', access: '获得权限', pivot: '内网突破', data: '敏感数据', other: '其他' }
 
+    /* ---------------------------------------------------------- 攻击得分链路（流程图） */
+    /**
+     * 只画"拿到分"的链路：每个节点是一次得分，连线上的灰字是"靠什么动作拿到的"。
+     * 与得分无关的漏洞与攻击步骤一律不出现。
+     * A = 竖向流程条（详细）；B = 横向流程带（简洁）。
+     */
     function ChainTab(props) {
       const eng = props.engagement
       const refreshKey = props.refreshKey || 0
-      const [items, setItems] = React.useState([])
-      const [score, setScore] = React.useState(null)
+      const [data, setData] = React.useState(null)
       const [err, setErr] = React.useState(null)
       const [loading, setLoading] = React.useState(false)
-      /* 两种链路分开看：实际攻击链（攻击步骤） / 得分链路（只含得分） */
-      const [mode, setMode] = React.useState('attack')
-      /* 展示顺序：默认倒序（最新的一步在最上面），可切换为正序 */
-      const [desc, setDesc] = React.useState(true)
-      /* 阶段折叠状态按「页签 + 靶标」记忆；默认只展开最近活跃阶段 */
-      const collapse = useCollapse('chain:' + eng)
-      /* 单步展开（默认只占一行） */
-      const [openStep, setOpenStep] = React.useState(null)
+      const [view, setView] = React.useState('A')
+      const [openId, setOpenId] = React.useState(null)
 
       const load = () => {
         if (!eng) return
         setLoading(true)
-        api({ op: 'chain', engagement: eng }).then((r) => {
+        api({ op: 'scoreChain', engagement: eng }).then((r) => {
           setLoading(false)
           if (!r || r.ok === false) { setErr((r && r.error) || '读取失败'); return }
-          setErr(null)
-          setItems(r.items || [])
+          setErr(null); setData(r)
         }, (e) => { setLoading(false); setErr(String((e && e.message) || e)) })
       }
       React.useEffect(load, [eng, refreshKey])
 
-      React.useEffect(() => {
-        if (!eng || mode !== 'score') return
-        api({ op: 'scoreChain', engagement: eng }).then((r) => {
-          if (!r || r.ok === false) { setErr((r && r.error) || '得分链路读取失败'); return }
-          setErr(null)
-          setScore(r)
-        }, (e) => setErr(String((e && e.message) || e)))
-      }, [eng, mode, refreshKey])
+      const items = (data && data.items) || []
+      const summary = (data && data.summary) || null
+      const toggle = (id) => setOpenId((cur) => (cur === id ? null : id))
 
-      const ordered = desc ? items.slice().reverse() : items
-      /* 一步默认只占一行（序号 + 标题 + 阶段 + 时间），点开才看详情与结构化 chip */
-      const stepNode = (s, i) => {
-        const stageKey = STAGE_LABEL[s.stage] ? s.stage : 'other'
-        const expanded = openStep === s.id
-        const chips = []
-        if (s.asset_ip) chips.push(h('span', { key: 'ip', className: 'rt-chip' }, h('i', null, '资产'), h('span', { className: 'rt-mono' }, s.asset_ip)))
-        if (s.vuln_cve || s.vuln_title) {
-          chips.push(h('span', { key: 'vuln', className: 'rt-chip' },
-            h('i', null, '漏洞'),
-            h('span', null, [s.vuln_cve, s.vuln_title].filter(Boolean).join(' '))))
-        }
-        if (s.evidence_ref) chips.push(h('span', { key: 'evi', className: 'rt-chip' }, h('i', null, '证据'), h('span', null, s.evidence_ref)))
-        if (s.recorded_by) chips.push(h('span', { key: 'by', className: 'rt-chip' }, h('i', null, '记录'), h('span', null, s.recorded_by)))
-        const preview = s.detail ? String(s.detail).split('\n')[0] : ''
-        return h('div', { key: 's' + s.id, className: 'rt-step', style: { cursor: 'pointer' },
-          onClick: () => setOpenStep((cur) => (cur === s.id ? null : s.id)) },
-          h('div', { className: 'rt-step-dot rt-stage-' + stageKey }, String(s.seq === null || s.seq === undefined ? i + 1 : s.seq)),
-          h('div', { className: 'rt-step-body', style: { flex: 1 } },
-            h('div', { className: 'rt-step-head' },
-              h('span', { className: 'rt-step-title' }, (s.title || '（未命名步骤）').slice(0, 80)),
-              s.vuln_severity ? h('span', { className: 'rt-sev rt-sev-' + s.vuln_severity }, s.vuln_severity) : null,
-              h('span', { className: 'rt-step-time' }, fmt(s.recorded_at))),
-            expanded
-              ? h('div', null,
-                  s.detail ? h('div', { className: 'rt-step-detail' }, s.detail) : null,
-                  chips.length ? h('div', null, chips) : null)
-              : (preview ? h('div', { className: 'rt-step-meta', style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, preview.slice(0, 110)) : null)))
+      /* 单次命中的详情（两个视图共用） */
+      const detail = (x) => h('div', { className: 'rt-flow-detail' },
+        h('div', { className: 'rt-kv' }, h('b', null, '目标'), h('span', { className: 'rt-mono', style: { wordBreak: 'break-all' } }, x.target || '—')),
+        x.asset_ip ? h('div', { className: 'rt-kv' }, h('b', null, '资产'), h('span', { className: 'rt-mono' }, x.asset_ip)) : null,
+        x.vuln_title ? h('div', { className: 'rt-kv' }, h('b', null, '利用漏洞'), h('span', null, [x.vuln_cve, x.vuln_title].filter(Boolean).join(' '))) : null,
+        h('div', { className: 'rt-kv' }, h('b', null, '次数'), h('span', null,
+          '同类第 ' + x.nth_of_point + ' 次' + (x.counted ? '（计入 ' + x.points + ' 分）' : '（超出上限 ' + x.max_hits + ' 次，不计分）'))),
+        h('div', { className: 'rt-kv' }, h('b', null, '记录'), h('span', null, fmt(x.recorded_at) + (x.recorded_by ? ' · ' + x.recorded_by : ''))),
+        x.evidence ? h(Clip, { label: '结果与证据', text: x.evidence }) : null)
+
+      /* ── A：竖向流程条 ─────────────────────────────────────────── */
+      const nodeA = (x, i) => {
+        const open = openId === x.id
+        return h('div', { key: 'n' + x.id },
+          /* 起点只在最上面出现一次 */
+          i === 0 ? h('div', { className: 'rt-flow-start' }, '起点：授权靶标 · ' + (x.asset_ip || x.target || '—')) : null,
+          /* 每个节点上方的连线：带"靠什么动作拿到的"灰字（第一个节点也要显示） */
+          i > 0 || x.action
+            ? h('div', { className: 'rt-flow-link' },
+                h('span', { className: 'rt-flow-arrow' }, '▼'),
+                x.action
+                  ? h('span', {
+                      className: 'rt-flow-action' + (x.action_inferred ? ' inferred' : ''),
+                      title: x.action_inferred ? '按资产与时间推断，未显式关联' : '来自攻击链步骤 #' + x.action.id,
+                    }, '靠什么动作：' + (x.action.title || '（未命名步骤）') + (x.action_inferred ? '（推断）' : ''))
+                  : h('span', { className: 'rt-flow-action', style: { opacity: .6 } },
+                      '（未记录动作 —— 写攻击链时带上 point_code 即可显示）'))
+            : null,
+          h('div', {
+            className: 'rt-flow-node' + (x.counted ? ' scored' : ' overflow') + (open ? ' open' : ''),
+            role: 'button', tabIndex: 0,
+            onClick: () => toggle(x.id),
+            onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(x.id) } },
+          },
+            h('div', { className: 'rt-flow-head' },
+              h('span', { className: 'rt-flow-idx' }, String(i + 1)),
+              h('span', { className: 'rt-flow-name' }, x.point_name),
+              h('span', { className: 'rt-flow-pts' + (x.counted ? '' : ' off') },
+                (x.counted ? '+' : '') + (x.points || 0) + ' 分'),
+              x.nth_of_point > 1 ? h('span', { className: 'rt-flow-times' }, '第 ' + x.nth_of_point + ' 次') : null),
+            h('div', { className: 'rt-flow-target' }, x.target || x.asset_ip || '—'),
+            x.evidence ? h('div', { className: 'rt-flow-gain' }, String(x.evidence).replace(/\n+/g, ' ').slice(0, 90)) : null,
+            open ? detail(x) : null))
       }
 
-      /* 按阶段分组：默认只展开最近活跃的那个阶段，其余折叠成一行 */
-      const groups = []
-      const gIdx = new Map()
-      for (const s of ordered) {
-        const k = STAGE_LABEL[s.stage] ? s.stage : 'other'
-        let g = gIdx.get(k)
-        if (g === undefined) {
-          g = { key: k, label: STAGE_LABEL[k] || k, list: [] }
-          gIdx.set(k, g)
-          groups.push(g)
-        }
-        g.list.push(s)
-      }
-      const currentStage = groups.length ? groups[0].key : null
-      const stageKeys = groups.map((g) => 'stage:' + g.key)
-      const steps = groups.map((g) => {
-        const key = 'stage:' + g.key
-        const defOpen = g.key === currentStage
-        return h(Section, {
-          key: 'sec:' + g.key, tone: 'stage', title: g.label,
-          count: g.list.length + ' 步',
-          sub: g.list[0] ? fmt(g.list[0].recorded_at) : null,
-          open: collapse.isOpen(key, defOpen),
-          onToggle: collapse.toggle(key, defOpen),
-        }, g.list.map((s, i) => stepNode(s, i)))
-      })
+      /* ── B：横向流程带（简洁：一行一个节点，可横向滚） ───────────── */
+      const nodeB = (x, i) => h('div', { key: 'h' + x.id, className: 'rt-hflow-item' },
+        i > 0 ? h('span', {
+          className: 'rt-hflow-arrow',
+          title: x.action ? '靠什么动作：' + (x.action.title || '') + (x.action_inferred ? '（推断）' : '') : '',
+        }, '→') : null,
+        h('div', {
+          className: 'rt-hflow-node' + (x.counted ? ' scored' : ' overflow') + (openId === x.id ? ' open' : ''),
+          role: 'button', tabIndex: 0,
+          onClick: () => toggle(x.id),
+          onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(x.id) } },
+          title: x.point_name + '  ' + (x.target || ''),
+        },
+          h('span', { className: 'rt-hflow-pts' }, (x.counted ? '+' : '') + (x.points || 0)),
+          h('span', { className: 'rt-hflow-name' }, (x.point_name || '').replace(/^(获取|上传|拿下|突破)/, '').slice(0, 8)),
+          x.nth_of_point > 1 ? h('span', { className: 'rt-hflow-n' }, '×' + x.nth_of_point) : null))
 
-      /* 得分链路：只呈现"得分"这条线，不含任何信息收集/未得分的过程 */
-      const scoreItems = (score && score.items) || []
-      const scoreOrdered = desc ? scoreItems.slice().reverse() : scoreItems
-      const scoreSteps = scoreOrdered.map((x, i) => {
-        const chips = []
-        if (x.target) chips.push(h('span', { key: 't', className: 'rt-chip' }, h('i', null, '目标'), h('span', { className: 'rt-mono' }, x.target)))
-        if (x.asset_ip && x.asset_ip !== x.target) chips.push(h('span', { key: 'ip', className: 'rt-chip' }, h('i', null, '资产'), h('span', { className: 'rt-mono' }, x.asset_ip)))
-        if (x.recorded_by) chips.push(h('span', { key: 'by', className: 'rt-chip' }, h('i', null, '记录'), h('span', null, x.recorded_by)))
-        return h('div', { key: 'sc' + x.id, className: 'rt-step' },
-          h('div', { className: 'rt-step-dot rt-stage-score' }, String(x.points === null || x.points === undefined ? i + 1 : x.points)),
-          h('div', { className: 'rt-step-body', style: { flex: 1 } },
-            h('div', { className: 'rt-step-head' },
-              h('span', { className: 'rt-step-title' }, x.point_name || x.code || '（已删除的得分点）'),
-              x.category ? h('span', { className: 'rt-stage-tag rt-st-other' }, x.category) : null,
-              h('span', { className: 'rt-scorepts' }, '+' + (x.points || 0) + ' 分'),
-              h('span', { className: 'rt-step-time' }, fmt(x.recorded_at))),
-            h('div', { className: 'rt-step-detail' }, x.evidence || '（未填证据）'),
-            chips.length ? h('div', null, chips) : null))
-      })
-
-      const scoreSummary = (score && score.summary) || null
-      const isScore = mode === 'score'
+      const openItem = items.find((x) => x.id === openId) || null
 
       return h('div', { className: 'rt-main' },
         h('div', { className: 'rt-toolbar' },
-          h('span', { style: { fontWeight: 600 } }, '攻击链'),
-          h('button', {
-            className: 'rt-btn' + (isScore ? '' : ' rt-btn-primary'),
-            title: '实际打过去的攻击步骤（信息收集 → 漏洞 → 权限 → 横向）',
-            onClick: () => setMode('attack'),
-          }, '实际攻击链'),
-          h('button', {
-            className: 'rt-btn' + (isScore ? ' rt-btn-primary' : ''),
-            title: '只看拿到了哪些分数：每一条都是得分的成果，过程与未得分的工作不显示',
-            onClick: () => setMode('score'),
-          }, '得分链路'),
-          isScore
-            ? (scoreSummary
-                ? h('span', { className: 'rt-tag rt-tag-live' }, '总分 ' + scoreSummary.points + ' 分 · 命中 ' + scoreSummary.hits + ' 次')
-                : null)
-            : h('span', { className: 'rt-tag' }, items.length + ' 步'),
-          isScore && scoreSummary && scoreSummary.missingCount > 0
-            ? h('span', { className: 'rt-tag' }, '未拿下 ' + scoreSummary.missingCount + ' 项 / ' + scoreSummary.missingPoints + ' 分')
-            : null,
+          h('span', { style: { fontWeight: 600 } }, '攻击得分链路'),
+          summary ? h('span', { className: 'rt-tag rt-tag-live' }, '总分 ' + summary.points + ' / ' + summary.totalPoints + ' 分') : null,
+          summary ? h('span', { className: 'rt-tag' }, summary.countedHits + ' 次计入 / 共 ' + summary.hits + ' 次命中') : null,
+          summary && summary.missingCount > 0 ? h('span', { className: 'rt-tag' }, '未拿下 ' + summary.missingCount + ' 项 / ' + summary.missingPoints + ' 分') : null,
           h('div', { className: 'rt-spacer' }),
           h('button', {
-            className: 'rt-btn', title: '展开所有阶段',
-            onClick: () => collapse.setAll(stageKeys, true),
-          }, '全部展开'),
+            className: 'rt-btn' + (view === 'A' ? ' rt-btn-primary' : ''), title: '竖向流程条：每一步的得分与动作都看得清',
+            onClick: () => setView('A'),
+          }, '流程 A'),
           h('button', {
-            className: 'rt-btn', title: '收起所有阶段',
-            onClick: () => collapse.setAll(stageKeys, false),
-          }, '全部收起'),
-          h('button', {
-            className: 'rt-btn',
-            title: desc ? '当前：最新的一步在最上面（默认），点击切换为正序' : '当前：从第 1 步开始，点击切换为倒序',
-            onClick: () => setDesc((d) => !d),
-          }, desc ? '倒序 ↓' : '正序 ↑'),
+            className: 'rt-btn' + (view === 'B' ? ' rt-btn-primary' : ''), title: '横向流程带：一屏看清整条得分链',
+            onClick: () => setView('B'),
+          }, '流程 B'),
           h('button', { className: 'rt-btn', disabled: loading, onClick: load }, loading ? '加载中…' : '刷新')),
         err ? h('div', { className: 'rt-err' }, err) : null,
-        isScore
-          ? h('div', { className: 'rt-chain' },
-              scoreSteps.length
-                ? scoreSteps
-                : h('div', { className: 'rt-empty' },
-                    '还没有得分记录。拿下成果后用 redteam_score_hit 记分（写明目标与证据），这条链路才会长出来。'))
-          : h('div', { className: 'rt-chain' },
-              steps.length
-                ? steps
-                : h('div', { className: 'rt-empty' }, '暂无攻击链记录（漏洞利用 / 内网突破阶段写入的步骤会按顺序出现在这里）')))
+        !items.length && !err && data !== null
+          ? h('div', { className: 'rt-empty' },
+              h('div', null, '还没有得分记录。'),
+              h('div', { style: { marginTop: 6, fontSize: 12 } },
+                '拿到成果后用 redteam_score_hit 记分（写明目标资产与拿到的东西），这条链路才会长出来。'))
+          : view === 'A'
+            ? h('div', { className: 'rt-flow' },
+                items.map(nodeA),
+                h('div', { className: 'rt-flow-end' }, '合计 ' + ((summary && summary.points) || 0) + ' 分'))
+            : h('div', { className: 'rt-hflow-wrap' },
+                h('div', { className: 'rt-hflow' },
+                  h('div', { className: 'rt-hflow-item' }, h('span', { className: 'rt-hflow-start' }, '起点')),
+                  items.map(nodeB),
+                  h('div', { className: 'rt-hflow-item' },
+                    h('span', { className: 'rt-hflow-arrow' }, '→'),
+                    h('span', { className: 'rt-hflow-end' }, '合计 ' + ((summary && summary.points) || 0) + ' 分'))),
+                openItem ? h('div', { className: 'rt-flow-detail', style: { padding: '0 12px 12px' } },
+                  h('div', { className: 'rt-flow-head', style: { marginBottom: 4 } },
+                    h('span', { className: 'rt-flow-idx' }, String(items.indexOf(openItem) + 1)),
+                    h('span', { className: 'rt-flow-name' }, openItem.point_name)),
+                  detail(openItem)) : h('div', { className: 'rt-atest-meta', style: { padding: '0 12px 12px' } },
+                    '点节点看该步的详情与"靠什么动作拿到的"')))
     }
 
-    /* ---------------------------------------------------------- 报告（按目标折叠） */
+    /* ---------------------------------------------------------- 得分复现报告 */
     function ReportTab(props) {
       const eng = props.engagement
       const refreshKey = props.refreshKey || 0
       const [data, setData] = React.useState(null)
       const [err, setErr] = React.useState(null)
       const [busy, setBusy] = React.useState(false)
-      const collapse = useCollapse('report:' + eng)
       const [msg, setMsg] = React.useState(null)
 
       const load = () => {
         if (!eng) return
-        setBusy(true)
-        setMsg(null)
-        api({ op: 'reportTargets', engagement: eng }).then((r) => {
+        setBusy(true); setMsg(null)
+        api({ op: 'scoreReport', engagement: eng }).then((r) => {
           setBusy(false)
           if (!r || r.ok === false) { setErr((r && r.error) || '生成失败'); return }
-          setErr(null)
-          setData(r)
+          setErr(null); setData(r)
         }, (e) => { setBusy(false); setErr(String((e && e.message) || e)) })
       }
       React.useEffect(load, [eng, refreshKey])
 
-      const copy = (markdown, label) => {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(markdown).then(() => setMsg({ ok: '已复制：' + label }), () => setMsg({ err: '复制失败，请手动选择' }))
-        } else setMsg({ err: '浏览器不支持剪贴板' })
-      }
-      const download = (markdown, label) => {
+      const copy = (text, label) => {
         try {
-          const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
+          navigator.clipboard.writeText(text)
+          setMsg({ ok: '已复制：' + label })
+        } catch (e) { setMsg({ err: '复制失败，请手动选择' }) }
+      }
+      const download = (text, label) => {
+        try {
+          const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' })
           const url = URL.createObjectURL(blob)
           const a = document.createElement('a')
           a.href = url
-          a.download = 'report-' + String(label).replace(/[^\w.\-]/g, '_') + '.md'
+          a.download = 'report-' + String(label || 'score').replace(/[^\w.\-]/g, '_') + '.md'
           a.click()
           URL.revokeObjectURL(url)
           setMsg({ ok: '已下载：' + label })
         } catch (e) { setMsg({ err: '下载失败：' + ((e && e.message) || e) }) }
       }
 
-      const totals = (data && data.totals) || { targets: 0, vulns: 0, accesses: 0, credentials: 0, files: 0, filteredOut: 0 }
-      const groups = (data && data.groups) || []
+      const items = (data && data.items) || []
+      const summary = (data && data.summary) || null
+      const mdText = (data && data.markdown) || ''
+      const CIRCLED = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲', '⑳']
 
-      const groupNodes = groups.map((g) => {
-        const gKey = 'cidr:' + g.cidr
-        const vulnSum = g.targets.reduce((n, t) => n + t.stats.vulns, 0)
-        const childs = []
-        for (const t of g.targets) {
-          const tKey = 'target:' + t.key
-          childs.push(h(Section, {
-            key: 'sec:' + t.key, tone: 'target', title: t.label,
-            count: '漏洞 ' + t.stats.vulns,
-            sub: [t.stats.accesses ? '已控 ' + t.stats.accesses : null, t.stats.credentials ? '凭据 ' + t.stats.credentials : null,
-              t.stats.files ? '文件 ' + t.stats.files : null, t.stats.chainSteps ? '链路 ' + t.stats.chainSteps : null].filter(Boolean).join(' · '),
-            open: collapse.isOpen(tKey, false), onToggle: collapse.toggle(tKey, false),
-          }, [
-            h('div', { key: 'acts' + t.key, className: 'rt-actions', style: { marginTop: 0, marginBottom: 6 } },
-              h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); copy(t.markdown, t.label) } }, '复制'),
-              h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); download(t.markdown, t.label) } }, '下载 .md')),
-            h('pre', { key: 'md' + t.key, className: 'rt-md', style: { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 6, maxHeight: '46vh', padding: '10px 12px' } }, t.markdown || '（无内容）'),
-          ]))
-        }
-        return h(Section, {
-          key: 'sec:' + g.cidr, tone: 'folder', title: g.cidr,
-          count: g.targets.length + ' 个目标',
-          sub: '漏洞 ' + vulnSum,
-          open: collapse.isOpen(gKey, true), onToggle: collapse.toggle(gKey, true),
-        }, childs)
-      })
+      /* 每项一条，平铺不折叠：目标 → 拿到什么 → 复现请求（可直接粘进 Yakit）→ 响应 */
+      const card = (x) => h('div', { key: 'r' + x.id, className: 'rt-rep' },
+        h('div', { className: 'rt-rep-head' },
+          h('span', { className: 'rt-rep-idx' }, CIRCLED[x.seq - 1] || ('#' + x.seq)),
+          h('span', { className: 'rt-rep-name' }, x.point_name),
+          x.counted
+            ? h('span', { className: 'rt-flow-pts' }, '+' + x.points + ' 分')
+            : h('span', { className: 'rt-flow-pts off' }, x.points + ' 分（超上限不计）'),
+          x.nth_of_point > 1 ? h('span', { className: 'rt-tag' }, '同类第 ' + x.nth_of_point + ' 次') : null,
+          h('div', { className: 'rt-spacer' }),
+          h('button', {
+            className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
+            onClick: () => copy(x.requests.map((v) => v.request || '').filter(Boolean).join('\n\n'), '第 ' + x.seq + ' 项请求'),
+          }, '复制请求')),
+        h('div', { className: 'rt-rep-meta' },
+          h('span', null, h('b', null, '目标 ')), h('span', { className: 'rt-mono' }, x.target || x.asset_ip || '—')),
+        x.gained ? h('div', { className: 'rt-rep-meta' }, h('b', null, '拿到 '), h('span', null, x.gained)) : null,
+        x.vuln ? h('div', { className: 'rt-rep-meta' }, h('b', null, '利用漏洞 '),
+          h('span', null, [x.vuln.cve, x.vuln.title].filter(Boolean).join(' '))) : null,
+        x.evidence ? h('div', { className: 'rt-rep-meta' }, h('b', null, '结果 '),
+          h('span', null, String(x.evidence).replace(/\n+/g, ' '))) : null,
+        h('div', { className: 'rt-rep-meta' }, h('b', null, '记录 '),
+          h('span', null, fmt(x.recorded_at) + (x.recorded_by ? ' · ' + x.recorded_by : ''))),
+        x.requests.length === 0
+          ? h('div', { className: 'rt-rep-missing' }, '⚠️ 这一项没有原始请求记录，无法直接复现 —— 请用 redteam_http_evidence_add 补上')
+          : x.requests.map((r, ri) => h('div', { key: 'q' + ri, className: 'rt-rep-req' },
+              h('div', { className: 'rt-rep-req-head' },
+                h('span', null, '复现请求 ' + (ri + 1) + (r.source === 'auto' ? '（按目标路径自动匹配，请核对）' : '')),
+                h('span', { className: 'rt-tag' }, (r.method || 'GET') + ' ' + (r.status === null || r.status === undefined ? '' : r.status)),
+                h('div', { className: 'rt-spacer' }),
+                h('button', {
+                  className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
+                  onClick: () => copy(String(r.request || ''), '请求 ' + (ri + 1)),
+                }, '复制到 Yakit')),
+              h('pre', { className: 'rt-rep-http' }, r.request || ((r.method || 'GET') + ' ' + (r.url || '') + ' HTTP/1.1')),
+              r.response ? h('div', null,
+                h('div', { className: 'rt-rep-req-head' }, h('span', null, '响应摘要')),
+                h('pre', { className: 'rt-rep-http', style: { maxHeight: 160 } }, String(r.response).slice(0, 1600))) : null)),
+        x.note ? h('div', { className: 'rt-rep-meta' }, h('b', null, '备注 '), h('span', null, x.note)) : null)
 
       return h('div', { className: 'rt-main' },
         h('div', { className: 'rt-toolbar' },
-          h('span', { style: { fontWeight: 600 } }, '成果报告'),
-          h('span', { className: 'rt-tag' }, totals.targets + ' 个目标'),
-          h('span', { className: 'rt-tag' }, '漏洞 ' + totals.vulns),
+          h('span', { style: { fontWeight: 600 } }, '攻击得分链路复现报告'),
+          summary ? h('span', { className: 'rt-tag rt-tag-live' }, '合计 ' + summary.points + ' 分') : null,
+          summary ? h('span', { className: 'rt-tag' }, summary.count + ' 项得分') : null,
+          summary ? h('span', { className: 'rt-tag' + (summary.missingRequests ? '' : ' rt-tag-live') },
+            summary.withRequests + '/' + summary.count + ' 项带原始请求') : null,
           h('div', { className: 'rt-spacer' }),
-          h('button', {
-            className: 'rt-btn', title: '展开所有目标',
-            onClick: () => collapse.setAll(groups.flatMap((g) => ['cidr:' + g.cidr].concat(g.targets.map((t) => 'target:' + t.key))), true),
-          }, '全部展开'),
-          h('button', {
-            className: 'rt-btn', title: '收起所有目标',
-            onClick: () => collapse.setAll(groups.flatMap((g) => ['cidr:' + g.cidr].concat(g.targets.map((t) => 'target:' + t.key))), false),
-          }, '全部收起'),
-          h('button', { className: 'rt-btn', disabled: busy, onClick: load }, busy ? '生成中…' : '重新生成'),
-          h('button', {
-            className: 'rt-btn rt-btn-primary',
-            onClick: () => {
-              const all = (data && data.targets) || []
-              const head = '# 攻防演练成果报告 — ' + ((data && data.engagement && data.engagement.name) || eng) + '\n\n'
-              download(head + all.map((t) => t.markdown).join('\n\n---\n\n'), '全部目标')
-            },
-          }, '下载全部')),
+          h('button', { className: 'rt-btn', disabled: busy || !mdText, onClick: () => copy(mdText, '整份报告') }, '复制全文'),
+          h('button', { className: 'rt-btn', disabled: busy || !mdText, onClick: () => download(mdText, (data && data.target) || eng) }, '下载 .md'),
+          h('button', { className: 'rt-btn', disabled: busy, onClick: load }, busy ? '生成中…' : '重新生成')),
         msg ? h('div', { className: msg.err ? 'rt-err' : 'rt-foot' }, msg.err || msg.ok) : null,
         err ? h('div', { className: 'rt-err' }, err) : null,
-        h('div', { className: 'rt-table' },
-          groupNodes,
-          data && !groups.length ? h('div', { className: 'rt-empty' }, '暂无可交付的成果（只收录已验证/已利用且中危以上的漏洞）') : null),
+        h('div', { className: 'rt-body', style: { overflow: 'auto' } },
+          items.length
+            ? h('div', { className: 'rt-rep-list' }, items.map(card))
+            : (data === null ? h('div', { className: 'rt-empty' }, '加载中…')
+                : h('div', { className: 'rt-empty' },
+                    h('div', null, '还没有可交付的成果。'),
+                    h('div', { style: { marginTop: 6, fontSize: 12 } },
+                      '本报告只收录"拿到了分"的成果；没有得分的漏洞不进报告。拿到成果后用 redteam_score_hit 记分（目标资产 + 拿到的东西），并补 redteam_http_evidence_add 以便复现。')))),
         h('div', { className: 'rt-foot' },
-          h('span', null, '口径：已验证/已利用且中危以上'),
-          h('span', null, '已控 ' + totals.accesses),
-          h('span', null, '凭据 ' + totals.credentials),
-          h('span', null, '攻击文件 ' + totals.files),
-          h('span', null, '已过滤 ' + totals.filteredOut)))
+          h('span', null, '口径：只收录得分成果，每条附带可粘进 Yakit Repeater 的原始请求')))
     }
 
     /* ---------------------------------------------------------- 攻击文件 */
@@ -1697,8 +1728,8 @@ window.__ModuleLoader__.load({
       }
       React.useEffect(load, [eng, refreshKey])
 
-      const startEdit = (p) => setForm({ id: p.id, name: p.name, category: p.category || '', points: p.points, description: p.description || '', enabled: p.enabled })
-      const startNew = () => { setForm({ name: '', category: '', points: 10, description: '', enabled: true }); setMsg(null) }
+      const startEdit = (p) => setForm({ id: p.id, name: p.name, category: p.category || '', points: p.points, max_hits: p.max_hits || 1, description: p.description || '', enabled: p.enabled })
+      const startNew = () => { setForm({ name: '', category: '', points: 10, max_hits: 1, description: '', enabled: true }); setMsg(null) }
       const setField = (k, v) => setForm((f) => Object.assign({}, f, { [k]: v }))
 
       const save = () => {
@@ -1745,10 +1776,16 @@ window.__ModuleLoader__.load({
             style: achieved ? {} : { background: 'var(--dsw-alias-bg-layer-2)', color: 'var(--dsw-alias-label-secondary)' },
           }, p.points + '分')),
           h('span', { title: p.description || '' }, p.name + (p.category ? '（' + p.category + '）' : '')),
+          h('span', { title: '同类得分可叠加，但最多计 ' + p.max_hits + ' 次；超过不计分' },
+            h('span', { className: 'rt-counted' + (p.counted >= p.max_hits ? ' full' : '') },
+              p.counted + ' / ' + p.max_hits),
+            h('span', { className: 'rt-sec-count', style: { marginLeft: 4 } }, '计入')),
           h('span', null, achieved
             ? h('span', { className: 'rt-tag rt-tag-live' }, '已拿下')
             : h('span', { className: 'rt-tag' }, p.enabled ? '待争取' : '停用')),
-          h('span', null, p.hits.length ? h('span', { className: 'rt-tag rt-tag-active' }, '命中 ' + p.hits.length) : null)))
+          h('span', { style: { textAlign: 'right' } }, p.hits.length
+            ? h('span', { className: 'rt-tag' + (p.hits.length > p.max_hits ? '' : ' rt-tag-active') }, '命中 ' + p.hits.length)
+            : h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, '—'))))
         if (!open) continue
         /* 命中记录：每条一张卡片 —— 序号 / 目标 / 记录人 / 时间 / 证据正文 */
         const hitNodes = p.hits.map((hh, hi) => h('div', { key: 'h' + hh.id, className: 'rt-hit' },
@@ -1777,7 +1814,8 @@ window.__ModuleLoader__.load({
         }, h('div', { className: 'rt-score-detail' },
           p.description ? h('div', { className: 'rt-kv' }, h('b', null, '得分条件'), h('span', null, p.description)) : null,
           h('div', { className: 'rt-kv' }, h('b', null, '状态'),
-            h('span', null, (p.enabled ? '启用' : '停用') + ' · ' + p.points + ' 分/次 · 命中 ' + p.hits.length + ' 次')),
+            h('span', null, (p.enabled ? '启用' : '停用') + ' · ' + p.points + ' 分/次 · 上限 ' + p.max_hits +
+              ' 次 · 命中 ' + p.hits.length + ' 次 · 计入 ' + p.counted + ' 次 = ' + p.earned + ' 分')),
           p.hits.length
             ? h('div', null,
                 h('div', { className: 'rt-section', style: { padding: '6px 0 0' } }, '命中记录 · ' + p.hits.length),
@@ -1806,7 +1844,11 @@ window.__ModuleLoader__.load({
           h('div', { className: 'rt-score-form' },
             h('input', { className: 'rt-input', placeholder: '名称（必填）', value: form.name, onChange: (e) => setField('name', e.target.value) }),
             h('input', { className: 'rt-input', placeholder: '分类，如 账号权限', value: form.category, onChange: (e) => setField('category', e.target.value) }),
-            h('input', { className: 'rt-input', type: 'number', placeholder: '分值', value: form.points, onChange: (e) => setField('points', Number(e.target.value)) }),
+            h('input', { className: 'rt-input', type: 'number', placeholder: '单次分值', value: form.points, onChange: (e) => setField('points', Number(e.target.value)) }),
+            h('input', {
+              className: 'rt-input', type: 'number', min: 1, placeholder: '最多计几次', title: '同一类得分可叠加，但最多计几次（超过的命中仍会记录，只是不计分）',
+              value: form.max_hits, onChange: (e) => setField('max_hits', Number(e.target.value)),
+            }),
             h('select', { className: 'rt-input', value: form.enabled ? '1' : '0', onChange: (e) => setField('enabled', e.target.value === '1') },
               h('option', { value: '1' }, '启用'),
               h('option', { value: '0' }, '停用'))),
@@ -1820,7 +1862,8 @@ window.__ModuleLoader__.load({
             h('button', { className: 'rt-btn', onClick: () => setForm(null) }, '取消'))) : null,
         h('div', { className: 'rt-table' },
           h('div', { className: 'rt-score-row head' },
-            h('span', null, ''), h('span', null, '分值'), h('span', null, '得分点'), h('span', null, '状态'), h('span', null, '命中')),
+            h('span', null, ''), h('span', null, '分值'), h('span', null, '得分点'),
+            h('span', null, '计入 / 上限'), h('span', null, '状态'), h('span', { style: { textAlign: 'right' } }, '命中')),
           rows,
           !items.length ? h('div', { className: 'rt-empty' }, '暂无得分点，点右上角「新增得分点」') : null),
         h('div', { className: 'rt-foot' }, h('span', null, '得分点可编辑；智能体按分值优先级推进，拿下成果用 redteam_score_hit 记分')))
@@ -1992,11 +2035,11 @@ window.__ModuleLoader__.load({
           '更新于 ' + at.toLocaleTimeString('zh-CN', { hour12: false })) : null,
         h('button', {
           className: 'rt-btn', style: { padding: '0 7px', fontSize: 11 }, title: '展开最近动过与待测队列',
-          onClick: () => collapse.setAll(['recent:' + eng, 'queue:' + eng], true),
+          onClick: () => collapse.setAll(['testing:' + eng, 'recent:' + eng, 'queue:' + eng], true),
         }, '全部展开'),
         h('button', {
           className: 'rt-btn', style: { padding: '0 7px', fontSize: 11 }, title: '只留正在测',
-          onClick: () => collapse.setAll(['recent:' + eng, 'queue:' + eng], false),
+          onClick: () => collapse.setAll(['testing:' + eng, 'recent:' + eng, 'queue:' + eng], false),
         }, '全部收起'),
         h('button', {
           className: 'rt-btn' + (auto ? ' rt-btn-primary' : ''), style: { padding: '0 7px', fontSize: 11 },
@@ -2007,9 +2050,11 @@ window.__ModuleLoader__.load({
       const body = []
       /* 正在测：常显，完整展开（不可折叠） */
       body.push(h(Section, {
-        key: 'testing', always: true, tone: 'test', title: '正在测',
+        key: 'testing', tone: 'test', title: '正在测',
         count: testing.length + ' 台',
         sub: testing.length ? 'agent 正在打这些资产' : 'agent 开始测某台资产后会实时出现在这里',
+        open: collapse.isOpen('testing:' + eng, true),
+        onToggle: collapse.toggle('testing:' + eng, true),
       }, testing.length
         ? testing.map((a) => card(a, false))
         : h('div', { className: 'rt-atest-meta', style: { paddingBottom: 4 } }, '当前没有资产处于「测试中」')))

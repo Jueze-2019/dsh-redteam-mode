@@ -742,14 +742,17 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'redteam_score_hit',
-    description: '记录一次得分（拿下某个得分点）。必须先写清证据：账号/回显/数据量/路径。拿下成果后**立即调用**，不要攒着——指挥者按它判断进度。',
+    description: '记录一次得分（同类得分可以叠加，但每类最多计 max_hits 次，超出仍会记录只是不计分）。**证据只写结果**：目标资产 + 拿到了什么（账号/密码/权限/数据量），不要写取得过程与路径——过程由攻击得分链路负责。能指向"用哪个漏洞拿到的"时请带上 vuln_id，报告会自动附上该漏洞的原始请求。',
     parameters: {
       engagement: { type: 'string' },
-      code: { type: 'string', description: '得分点代码，如 web-account-admin / rce / server-shell / db-access / sensitive-data / boundary / internal-pivot / core-system' },
-      point_id: { type: 'number', description: '得分点 id（与 code 二选一）' },
-      asset_id: { type: 'number' },
-      target: { type: 'string', description: '拿下的目标，如 https://oa.xxx.cn 或 1.2.3.4:8080' },
-      evidence: { type: 'string', required: true, description: '证据：账号名/权限、命令回显、数据条数、文件路径等' },
+      code: { type: 'string', description: '得分点 code（或 point_id / point_name 任选其一）' },
+      point_id: { type: 'number' },
+      point_name: { type: 'string' },
+      target: { type: 'string', description: '目标资产：URL / ip:port / 主机名' },
+      asset_id: { type: 'number', description: '目标资产在库里的 id' },
+      vuln_id: { type: 'number', description: '【建议填】用哪个漏洞拿到的分（报告据此附原始请求）' },
+      step_id: { type: 'number', description: '对应的攻击链步骤 id（可选）' },
+      evidence: { type: 'string', required: true, description: '【必填】结果：拿到的东西，例如「后台管理员 tomcat/Tomcat@2024」「数据库账号 root/xxx」「导出 1.2 万条用户数据」' },
       note: { type: 'string' },
       recorded_by: { type: 'string' },
     },
@@ -841,6 +844,9 @@ export function apply(ctx) {
       access_id: { type: 'number' },
       evidence_ref: { type: 'string', description: '证据文件/会话引用，例如 runs/session-vnc.md' },
       recorded_by: { type: 'string' },
+      point_code: { type: 'string', description: '【这一步拿了分就填】得分点 code，服务端会自动记一次分并把步骤与得分互相挂上' },
+      evidence: { type: 'string', description: '配合 point_code 使用：这一分拿到了什么（目标资产 + 账号/权限/数据量）' },
+      target: { type: 'string', description: '配合 point_code 使用：目标资产' },
       seq: { type: 'number', description: '不填则自动追加到链尾' },
     },
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
@@ -903,7 +909,7 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'redteam_report_targets',
-    description: '按目标查看成果报告（每个 IP / URL / C 段一份）：成果漏洞（含可粘贴进 Burp/Yakit 的原始请求）、已获权限、凭据、攻击文件、攻击链。用于按目标汇报或检查某个目标还缺什么。',
+    description: '【已弃用，改用 redteam_score_report】按目标查看成果报告（每个 IP / URL / C 段一份）：成果漏洞（含可粘贴进 Burp/Yakit 的原始请求）、已获权限、凭据、攻击文件、攻击链。用于按目标汇报或检查某个目标还缺什么。',
     parameters: {
       engagement: { type: 'string' },
       target: { type: 'string', description: '只看某个目标的报告' },
@@ -921,8 +927,29 @@ export function apply(ctx) {
   }))
 
   ctx.tools.register(defineTool({
+    name: 'redteam_score_report',
+    description: '攻击得分链路复现报告：只收录"拿到了分"的成果（没得分的漏洞不进报告），每一项都尽量附上可直接粘贴进 Yakit Repeater 复现的原始请求。需要交付报告时用这个，而不是 redteam_report。',
+    parameters: {
+      engagement: { type: 'string' },
+      limit: { type: 'number', description: '最多多少项，默认 500' },
+      markdown: { type: 'boolean', description: 'true=返回 markdown 全文（默认 true）；false=只返回条目摘要' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      const r = store.scoreReport(id, { limit: args.limit })
+      if (args.markdown === false) {
+        return JSON.stringify({ ok: true, engagement: id, summary: r.summary,
+          items: r.items.map((x) => ({ seq: x.seq, point: x.point_name, points: x.points, counted: x.counted,
+            target: x.target, gained: x.gained, requests: x.requests.length, missing_evidence: x.missing_evidence })) }, null, 2)
+      }
+      return JSON.stringify({ ok: true, engagement: id, summary: r.summary, markdown: r.markdown }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
     name: 'redteam_report',
-    description: '生成成果报告（Markdown）：只收录**已验证/已利用且中危以上**的成果漏洞（每条附可粘贴进 Burp/Yakit 的原始请求）、攻击链、已获权限与凭据、修复建议。信息收集的资产清单、待验证/误报、低危与信息级水洞都不会出现在报告里。想让发现进报告：先 redteam_vuln_update 置为 confirmed（验证通过）或 exploited（利用成功），再 redteam_http_evidence_add 补原始请求。',
+    description: '【已弃用，改用 redteam_score_report】生成成果报告（Markdown）：只收录**已验证/已利用且中危以上**的成果漏洞（每条附可粘贴进 Burp/Yakit 的原始请求）、攻击链、已获权限与凭据、修复建议。信息收集的资产清单、待验证/误报、低危与信息级水洞都不会出现在报告里。想让发现进报告：先 redteam_vuln_update 置为 confirmed（验证通过）或 exploited（利用成功），再 redteam_http_evidence_add 补原始请求。',
     parameters: { engagement: { type: 'string' } },
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
     async execute(args, exec) {

@@ -138,6 +138,7 @@ CREATE TABLE IF NOT EXISTS score_point (
   name TEXT NOT NULL,
   category TEXT,
   points INTEGER DEFAULT 0,
+  max_hits INTEGER DEFAULT 1,
   description TEXT,
   enabled INTEGER DEFAULT 1,
   sort_order INTEGER DEFAULT 0,
@@ -148,7 +149,7 @@ CREATE TABLE IF NOT EXISTS score_point (
 CREATE TABLE IF NOT EXISTS score_hit (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   point_id INTEGER NOT NULL,
-  asset_id INTEGER, target TEXT,
+  asset_id INTEGER, vuln_id INTEGER, step_id INTEGER, target TEXT,
   evidence TEXT, note TEXT,
   recorded_by TEXT, recorded_at TEXT
 );
@@ -212,8 +213,8 @@ CREATE TABLE IF NOT EXISTS attack_file (
 CREATE TABLE IF NOT EXISTS attack_step (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   seq INTEGER, stage TEXT, title TEXT, detail TEXT,
-  asset_id INTEGER, vuln_id INTEGER, access_id INTEGER, evidence_ref TEXT,
-  recorded_by TEXT, recorded_at TEXT
+  asset_id INTEGER, vuln_id INTEGER, access_id INTEGER, point_id INTEGER,
+  evidence_ref TEXT, recorded_by TEXT, recorded_at TEXT
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS asset_fts USING fts5(
@@ -292,8 +293,9 @@ function migrate(db) {
     }
   }
   const ensure = (table, column, ddl) => {
-    if (has(table, column)) return
+    if (has(table, column)) return false
     try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`) } catch { /* 并发迁移时忽略 */ }
+    return true
   }
   ensure('vuln', 'target', 'TEXT')
   ensure('vuln', 'found_by_agent', 'TEXT')
@@ -317,6 +319,20 @@ function migrate(db) {
   ensure('vuln', 'gained', 'TEXT')
   /* 凭据明文：面板要直接显示口令，不再只存引用（库在本机，禁止导出/提交） */
   ensure('credential', 'secret_value', 'TEXT')
+  /* 得分上限：同一类得分可叠加，但每类最多计几次 */
+  /* 上限列刚加上时，按内置默认给老靶标回填一次（之后尊重用户改动，不再覆盖） */
+  if (ensure('score_point', 'max_hits', 'INTEGER DEFAULT 1')) {
+    try {
+      const stmt = db.prepare('UPDATE score_point SET max_hits = ? WHERE code = ? AND COALESCE(max_hits, 1) = 1')
+      for (const point of DEFAULT_SCORE_POINTS) {
+        if (point.max_hits && point.max_hits > 1) stmt.run(point.max_hits, point.code)
+      }
+    } catch { /* 忽略 */ }
+  }
+  /* 得分 ↔ 漏洞/步骤 关联：报告取原始请求、流程图连线用 */
+  ensure('score_hit', 'vuln_id', 'INTEGER')
+  ensure('score_hit', 'step_id', 'INTEGER')
+  ensure('attack_step', 'point_id', 'INTEGER')
   /* 老库回填：按 IP 归属自动区分内外网 */
   try {
     db.exec(`UPDATE asset SET scope = (${SCOPE_SQL}) WHERE scope IS NULL OR scope = ''`)
@@ -406,16 +422,16 @@ function writeMeta(path, meta) {
 
 /** 攻防演练默认得分点（用户可在「得分目标」面板里编辑分值/启用/增删）。 */
 export const DEFAULT_SCORE_POINTS = [
-  { code: 'web-account-user', name: '获取 Web 普通账号权限', category: '账号权限', points: 10, description: '拿到任意站点/系统的普通用户账号（注册、撞库、越权、短信绕过等）' },
-  { code: 'web-account-admin', name: '获取 Web 管理员账号权限', category: '账号权限', points: 20, description: '拿到后台/管理端管理员账号，可登录管理功能' },
-  { code: 'webshell', name: '上传 WebShell 并维持访问', category: '服务器权限', points: 20, description: '落地可用 WebShell（冰蝎/哥斯拉/蚁剑可连）并稳定访问' },
-  { code: 'rce', name: 'RCE / 命令执行', category: '服务器权限', points: 30, description: '在目标服务器执行任意命令（含框架/中间件 Nday RCE、反序列化、模板注入等）' },
-  { code: 'server-shell', name: '获取服务器权限', category: '服务器权限', points: 25, description: '获得主机 Shell（反弹/交互式），可读写文件与执行命令' },
-  { code: 'db-access', name: '获取数据库权限', category: '数据库', points: 25, description: '可读写目标数据库（注入拖库、暴露库弱口令、连接串泄露）' },
-  { code: 'sensitive-data', name: '获取大量敏感信息', category: '数据', points: 20, description: '批量导出用户/订单/身份/配置/源码等敏感数据' },
-  { code: 'boundary', name: '互联网边界突破', category: '网络突破', points: 30, description: '从互联网侧进入目标内网（VPN/网关/暴露服务被拿下并可达内网）' },
-  { code: 'internal-pivot', name: '突破逻辑内网（横向移动）', category: '网络突破', points: 35, description: '以内网可达身份横向到其他主机/网段，扩大控制范围' },
-  { code: 'core-system', name: '拿下核心系统', category: '核心目标', points: 40, description: '域控、堡垒机、运维平台、邮件/门户核心、代码仓库等关键系统' },
+  { code: 'web-account-user', name: '获取 Web 普通账号权限', category: '账号权限', points: 10, max_hits: 5, description: '拿到任意站点/系统的普通用户账号（注册、撞库、越权、短信绕过等）' },
+  { code: 'web-account-admin', name: '获取 Web 管理员账号权限', category: '账号权限', points: 20, max_hits: 3, description: '拿到后台/管理端管理员账号，可登录管理功能' },
+  { code: 'webshell', name: '上传 WebShell 并维持访问', category: '服务器权限', points: 20, max_hits: 3, description: '落地可用 WebShell（冰蝎/哥斯拉/蚁剑可连）并稳定访问' },
+  { code: 'rce', name: 'RCE / 命令执行', category: '服务器权限', points: 30, max_hits: 2, description: '在目标服务器执行任意命令（含框架/中间件 Nday RCE、反序列化、模板注入等）' },
+  { code: 'server-shell', name: '获取服务器权限', category: '服务器权限', points: 25, max_hits: 2, description: '获得主机 Shell（反弹/交互式），可读写文件与执行命令' },
+  { code: 'db-access', name: '获取数据库权限', category: '数据库', points: 25, max_hits: 2, description: '可读写目标数据库（注入拖库、暴露库弱口令、连接串泄露）' },
+  { code: 'sensitive-data', name: '获取大量敏感信息', category: '数据', points: 20, max_hits: 5, description: '批量导出用户/订单/身份/配置/源码等敏感数据' },
+  { code: 'boundary', name: '互联网边界突破', category: '网络突破', points: 30, max_hits: 1, description: '从互联网侧进入目标内网（VPN/网关/暴露服务被拿下并可达内网）' },
+  { code: 'internal-pivot', name: '突破逻辑内网（横向移动）', category: '网络突破', points: 35, max_hits: 2, description: '以内网可达身份横向到其他主机/网段，扩大控制范围' },
+  { code: 'core-system', name: '拿下核心系统', category: '核心目标', points: 40, max_hits: 1, description: '域控、堡垒机、运维平台、邮件/门户核心、代码仓库等关键系统' },
 ]
 
 /* ------------------------------------------------------------------ 默认内容 */
@@ -444,6 +460,12 @@ export const DEFAULT_PROMPTS = {
 - **不要手搓 HTTP 爆破循环或端口扫描脚本**；现成工具确实不适用时才写，并说明理由。
 - 开工前先 \`redteam_sessions\` 看有没有现成 WebShell / 隧道 / 凭据可直接复用。
 
+## 记分纪律（所有角色都遵守）
+- \`redteam_score_hit\` 的 evidence **只写结果**：目标资产 + 拿到的东西（账号/密码/权限/数据量）。**不要写取得过程与路径**（那是攻击得分链路的事）。
+- 能指向漏洞就带 \`vuln_id\`，报告才能附上可复现的原始请求。
+- 同一类得分可叠加但有上限（\`max_hits\`），超上限的命中不计分——把得分分散在真实目标上。
+- 写 \`redteam_chain_add\` 时如果这一步拿了分，直接带 \`point_code\` + \`evidence\`，一次调用同时完成记分与关联。
+
 ## 打之前先查库（禁止重复打）
 动手测任何一个目标之前，先花 30 秒查三样东西，确认没人打过：
 1. \`redteam_asset_query\`（或 \`redteam_asset_get\`）——看该资产的 test_status（untested/testing/tested/abandoned）、test_notes、blocked_count、已有端口与指纹；
@@ -464,6 +486,12 @@ export const DEFAULT_PROMPTS = {
 - \`reason\`：依据（指纹命中 Nday、接口未鉴权、暴露数据库、弱口令管理端、WAF 强弱、是否管理后台…）
 
 排序口径（高分优先）：命中已知 **Nday RCE** 的中间件/框架 > 未授权接口或管理后台 > 暴露的数据库/缓存 > 弱口令管理端 > 官网静态站。
+
+## 记分纪律（所有角色都遵守）
+- \`redteam_score_hit\` 的 evidence **只写结果**：目标资产 + 拿到的东西（账号/密码/权限/数据量）。**不要写取得过程与路径**（那是攻击得分链路的事）。
+- 能指向漏洞就带 \`vuln_id\`，报告才能附上可复现的原始请求。
+- 同一类得分可叠加但有上限（\`max_hits\`），超上限的命中不计分——把得分分散在真实目标上。
+- 写 \`redteam_chain_add\` 时如果这一步拿了分，直接带 \`point_code\` + \`evidence\`，一次调用同时完成记分与关联。
 
 ## 落库要求（强制）
 - 每个资产 \`redteam_asset_add\`：端口带 service / product / version / banner / **url / title**；域名写进 names 并附判定依据。
@@ -515,6 +543,12 @@ Nday 打不通或已覆盖，转接口：
    - 遇到图形验证码 / 滑块 / 算术验证码，**你可以直接自己识别**：把图片取下来（截图、\`curl\` 下载图片 URL、或 browser-automation 技能截图），用你自己的视觉能力读出内容，不需要打码平台或第三方绕过技术；失败就换一张重试。
 4. 常规高危：SQL 注入、文件上传、任意文件读取、命令执行、SSRF、反序列化、模板注入。
 
+## 记分纪律（所有角色都遵守）
+- \`redteam_score_hit\` 的 evidence **只写结果**：目标资产 + 拿到的东西（账号/密码/权限/数据量）。**不要写取得过程与路径**（那是攻击得分链路的事）。
+- 能指向漏洞就带 \`vuln_id\`，报告才能附上可复现的原始请求。
+- 同一类得分可叠加但有上限（\`max_hits\`），超上限的命中不计分——把得分分散在真实目标上。
+- 写 \`redteam_chain_add\` 时如果这一步拿了分，直接带 \`point_code\` + \`evidence\`，一次调用同时完成记分与关联。
+
 ## 证据与落库（强制）
 - 每条漏洞 \`redteam_vuln_add\`：severity、cve/cnvd、target、evidence、confidence、status。
 - **每条确认漏洞必须配 \`redteam_http_evidence_add\`**：完整原始请求（含请求行、Host、Cookie/Token、body），供报告在 Burp/Yakit 复现。
@@ -560,6 +594,12 @@ Nday 打不通或已覆盖，转接口：
 3. **数据库权限** → SQL 注入拖库、写文件、提权；暴露数据库弱口令直连导出。
 4. **敏感数据** → 用户表、订单、身份信息、配置与密钥、源码、备份；导出后统计条数与字段（**明文数据只写 runs/ 证据文件，库里记引用与条数**）。
 5. **内网突破** → 拿到一台机器后立即建隧道 + 收集凭据，转交内网渗透。
+
+## 记分纪律（所有角色都遵守）
+- \`redteam_score_hit\` 的 evidence **只写结果**：目标资产 + 拿到的东西（账号/密码/权限/数据量）。**不要写取得过程与路径**（那是攻击得分链路的事）。
+- 能指向漏洞就带 \`vuln_id\`，报告才能附上可复现的原始请求。
+- 同一类得分可叠加但有上限（\`max_hits\`），超上限的命中不计分——把得分分散在真实目标上。
+- 写 \`redteam_chain_add\` 时如果这一步拿了分，直接带 \`point_code\` + \`evidence\`，一次调用同时完成记分与关联。
 
 ## 落库（强制）
 - 利用成功的漏洞置 \`exploited\`（\`redteam_vuln_update\`）；\`redteam_access_add\` 记录会话；\`redteam_credential_add\` 记录凭据（**明文写 secret_value**，同时给 secret_ref 证据引用）。
@@ -674,6 +714,7 @@ export function dispatch(store, req = {}) {
     if (op === 'deleteScorePoint') return Object.assign({ ok: true }, store.deleteScorePoint(id, req.id))
     if (op === 'addScoreHit') return Object.assign({ ok: true }, store.addScoreHit(id, req.hit || req))
     if (op === 'scoreChain') return Object.assign({ ok: true }, store.scoreChain(id, req))
+    if (op === 'scoreReport') return Object.assign({ ok: true }, store.scoreReport(id, req))
     if (op === 'activeTests') return Object.assign({ ok: true }, store.activeTests(id, req))
     if (op === 'testStats') return { ok: true, stats: store.testStats(id) }
     if (op === 'reportTargets') return Object.assign({ ok: true }, store.reportTargets(id, req))
@@ -1012,9 +1053,9 @@ export class RedteamStore {
     if (n > 0) return { seeded: 0 }
     let order = 0
     for (const point of DEFAULT_SCORE_POINTS) {
-      db.prepare(`INSERT INTO score_point(code, name, category, points, description, enabled, sort_order, created_at, updated_at)
-        VALUES(?,?,?,?,?,1,?,?,?)`).run(
-        point.code, point.name, point.category, point.points, point.description, order++, nowIso(), nowIso(),
+      db.prepare(`INSERT INTO score_point(code, name, category, points, max_hits, description, enabled, sort_order, created_at, updated_at)
+        VALUES(?,?,?,?,?,?,1,?,?,?)`).run(
+        point.code, point.name, point.category, point.points, point.max_hits || 1, point.description, order++, nowIso(), nowIso(),
       )
     }
     return { seeded: DEFAULT_SCORE_POINTS.length }
@@ -1033,40 +1074,55 @@ export class RedteamStore {
     }
     const items = rows
       .filter((r) => f.enabledOnly !== true || r.enabled === 1)
-      .map((r) => ({
-        id: r.id, code: r.code, name: r.name, category: r.category, points: r.points,
-        description: r.description || '', enabled: r.enabled === 1, sort_order: r.sort_order,
-        hits: (byPoint.get(r.id) || []).map((h) => ({ id: h.id, asset_id: h.asset_id, target: h.target, evidence: h.evidence, note: h.note, recorded_by: h.recorded_by, recorded_at: h.recorded_at })),
-      }))
-    const achieved = items.filter((p) => p.hits.length > 0 && p.enabled)
+      .map((r) => {
+        const list = (byPoint.get(r.id) || []).map((h) => ({
+          id: h.id, asset_id: h.asset_id, vuln_id: h.vuln_id, step_id: h.step_id,
+          target: h.target, evidence: h.evidence, note: h.note,
+          recorded_by: h.recorded_by, recorded_at: h.recorded_at,
+        }))
+        /* 同一类得分可叠加，但每类最多计 max_hits 次（默认 1，可在面板调） */
+        const maxHits = Math.max(1, Number(r.max_hits) || 1)
+        const counted = Math.min(list.length, maxHits)
+        return {
+          id: r.id, code: r.code, name: r.name, category: r.category, points: r.points,
+          max_hits: maxHits, counted: counted, earned: counted * r.points,
+          potential: maxHits * r.points,
+          description: r.description || '', enabled: r.enabled === 1, sort_order: r.sort_order,
+          hits: list,
+        }
+      })
+    const enabled = items.filter((p) => p.enabled)
     return {
       items,
       summary: {
-        totalPoints: items.filter((p) => p.enabled).reduce((n, p) => n + p.points, 0),
-        achievedPoints: achieved.reduce((n, p) => n + p.points, 0),
-        achievedCount: achieved.length,
-        pointCount: items.filter((p) => p.enabled).length,
-        hitCount: hits.length,
+        totalPoints: enabled.reduce((n, p) => n + p.potential, 0),
+        achievedPoints: enabled.reduce((n, p) => n + p.earned, 0),
+        achievedCount: enabled.filter((p) => p.counted > 0).length,
+        pointCount: enabled.length,
+        hitCount: items.reduce((n, p) => n + p.hits.length, 0),
+        countedHits: enabled.reduce((n, p) => n + p.counted, 0),
       },
     }
   }
 
   /** 新增或更新得分点（带 id 更新，不带 id 新增）。 */
+  /** 保存得分点（含每类上限 max_hits，默认 1 次）。 */
   saveScorePoint(id, point = {}) {
     const db = this.db(id)
     const name = String(point.name || '').trim()
     if (name === '') throw new Error('score point name required')
     const points = Number.isFinite(Number(point.points)) ? Number(point.points) : 0
     const enabled = point.enabled === false ? 0 : 1
+    const maxHits = Math.max(1, Number.isFinite(Number(point.max_hits)) ? Number(point.max_hits) : 1)
     if (point.id !== undefined && point.id !== null && Number(point.id) > 0) {
-      db.prepare(`UPDATE score_point SET name = ?, category = ?, points = ?, description = ?, enabled = ?, sort_order = COALESCE(?, sort_order), updated_at = ? WHERE id = ?`)
-        .run(name, point.category ?? null, points, point.description ?? null, enabled, point.sort_order ?? null, nowIso(), Number(point.id))
+      db.prepare(`UPDATE score_point SET name = ?, category = ?, points = ?, max_hits = ?, description = ?, enabled = ?, sort_order = COALESCE(?, sort_order), updated_at = ? WHERE id = ?`)
+        .run(name, point.category ?? null, points, maxHits, point.description ?? null, enabled, point.sort_order ?? null, nowIso(), Number(point.id))
       return { id: Number(point.id), updated: true }
     }
     const next = db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM score_point').get().n
-    const r = db.prepare(`INSERT INTO score_point(code, name, category, points, description, enabled, sort_order, created_at, updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?)`).run(
-      point.code ?? null, name, point.category ?? null, points, point.description ?? null, enabled, next, nowIso(), nowIso(),
+    const r = db.prepare(`INSERT INTO score_point(code, name, category, points, max_hits, description, enabled, sort_order, created_at, updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?)`).run(
+      point.code ?? null, name, point.category ?? null, points, maxHits, point.description ?? null, enabled, next, nowIso(), nowIso(),
     )
     return { id: Number(r.lastInsertRowid), updated: false }
   }
@@ -1093,9 +1149,10 @@ export class RedteamStore {
     if (pointId === null) throw new Error('score point not found：请用 point_id / code / point_name 指定得分点')
     const evidence = String(hit.evidence || '').trim()
     if (evidence === '') throw new Error('score hit evidence required：得分必须写明证据（账号/回显/数据量/路径）')
-    const r = db.prepare(`INSERT INTO score_hit(point_id, asset_id, target, evidence, note, recorded_by, recorded_at)
-      VALUES(?,?,?,?,?,?,?)`).run(
-      pointId, hit.asset_id ?? null, hit.target ?? null, evidence, hit.note ?? null,
+    const r = db.prepare(`INSERT INTO score_hit(point_id, asset_id, vuln_id, step_id, target, evidence, note, recorded_by, recorded_at)
+      VALUES(?,?,?,?,?,?,?,?,?)`).run(
+      pointId, hit.asset_id ?? null, hit.vuln_id ?? null, hit.step_id ?? null,
+      hit.target ?? null, evidence, hit.note ?? null,
       hit.recorded_by ?? null, nowIso(),
     )
     const point = db.prepare('SELECT name, points FROM score_point WHERE id = ?').get(pointId)
@@ -1469,35 +1526,214 @@ export class RedteamStore {
   }
 
   /**
+   * 攻击得分链路复现报告：只收录"拿到了分"的成果，平铺成列表。
+   * 每条都尽量带上能直接粘进 Yakit Repeater 的原始请求：
+   *   ① 显式关联的漏洞（score_hit.vuln_id）→ 该漏洞的 http_evidence（最准）
+   *   ② 兜底：同资产 + 按目标 URL 路径匹配（标注为自动匹配）
+   *   ③ 都没有 → 只给证据文本，并标 missing_evidence
+   */
+  scoreReport(id, options = {}) {
+    const db = this.db(id)
+    const meta = readMeta(this.metaPathOf(id)) || {}
+    const limit = Math.min(Number(options.limit) || 500, 2000)
+    const rows = db.prepare(`SELECT h.*, p.name AS point_name, p.points, p.category, p.max_hits,
+        a.ip AS asset_ip, v.title AS vuln_title, v.cve AS vuln_cve, v.gained AS vuln_gained, v.severity AS vuln_severity
+      FROM score_hit h
+      LEFT JOIN score_point p ON p.id = h.point_id
+      LEFT JOIN asset a ON a.id = h.asset_id
+      LEFT JOIN vuln v ON v.id = h.vuln_id
+      ORDER BY h.recorded_at, h.id LIMIT ?`).all(limit)
+
+    /* 上限口径：同一类得分可叠加，但每类最多计 max_hits 次 */
+    const perPoint = new Map()
+    const eviByVuln = db.prepare(`SELECT id, label, method, url, status, request, response, note, captured_at
+      FROM http_evidence WHERE vuln_id = ? ORDER BY id`)
+
+    const clip = (t, n) => {
+      const s = t === null || t === undefined ? '' : String(t)
+      return s.length > n ? s.slice(0, n) + '\n…（截断，完整内容见证据文件）' : s
+    }
+
+    const items = rows.map((h, i) => {
+      const seen = perPoint.get(h.point_id) || 0
+      perPoint.set(h.point_id, seen + 1)
+      const maxHits = Math.max(1, Number(h.max_hits) || 1)
+      const counted = seen < maxHits
+
+      /* 原始请求：先按显式关联的漏洞取 */
+      let requests = h.vuln_id === null || h.vuln_id === undefined ? [] : eviByVuln.all(h.vuln_id).map((e) => ({
+        label: e.label || (e.method || '') + ' ' + (e.url || ''), method: e.method, url: e.url, status: e.status,
+        request: clip(e.request, 20000), response: clip(e.response, 8000), note: e.note, source: 'linked',
+      }))
+      /* 兜底：同资产 + 目标路径逐级降级匹配（先精确到两级路径，再退到一级、再到整个授权） */
+      if (requests.length === 0 && h.target) {
+        const full = String(h.target).trim()
+        const um = /^([a-z][a-z0-9+.-]*:\/\/)([^/?#\s]+)(\/[^?#\s]*)?/i.exec(full)
+        const candidates = []
+        if (um !== null) {
+          const authority = um[2]
+          const segs = (um[3] || '').split('/').filter(Boolean)
+          if (segs.length >= 2) candidates.push('%' + authority + '/' + segs.slice(0, 2).join('/') + '%')
+          if (segs.length >= 1) candidates.push('%' + authority + '/' + segs[0] + '%')
+          candidates.push('%' + authority + '%')
+          if (segs.length >= 2) candidates.push('%/' + segs.slice(0, 2).join('/') + '%')
+        } else {
+          const auth = full.split('/')[0].split('?')[0]
+          if (auth !== '') candidates.push('%' + auth + '%')
+        }
+        const SQL = 'SELECT id, label, method, url, status, request, response, note FROM http_evidence WHERE url LIKE ? ORDER BY id LIMIT 3'
+        const SQL_ASSET = 'SELECT id, label, method, url, status, request, response, note FROM http_evidence WHERE asset_id = ? AND url LIKE ? ORDER BY id LIMIT 3'
+        let rows2 = []
+        if (h.asset_id !== null && h.asset_id !== undefined) {
+          for (const like of candidates) {
+            rows2 = db.prepare(SQL_ASSET).all(h.asset_id, like)
+            if (rows2.length > 0) break
+          }
+        }
+        if (rows2.length === 0) {
+          for (const like of candidates) {
+            rows2 = db.prepare(SQL).all(like)
+            if (rows2.length > 0) break
+          }
+        }
+        requests = rows2.map((e) => ({
+          label: e.label || (e.method || '') + ' ' + (e.url || ''), method: e.method, url: e.url, status: e.status,
+          request: clip(e.request, 20000), response: clip(e.response, 8000), note: e.note, source: 'auto',
+        }))
+      }
+      return {
+        seq: i + 1,
+        id: h.id,
+        point_id: h.point_id,
+        point_name: h.point_name || '（已删除的得分点）',
+        category: h.category || '',
+        points: h.points || 0,
+        max_hits: maxHits,
+        counted: counted,
+        nth_of_point: seen + 1,
+        target: h.target || '',
+        asset_ip: h.asset_ip || '',
+        gained: h.vuln_gained || '',
+        vuln: h.vuln_id === null || h.vuln_id === undefined ? null : { id: h.vuln_id, title: h.vuln_title || '', cve: h.vuln_cve || null, severity: h.vuln_severity || null },
+        evidence: h.evidence || '',
+        note: h.note || '',
+        recorded_by: h.recorded_by || '',
+        recorded_at: h.recorded_at || '',
+        requests: requests,
+        missing_evidence: requests.length === 0,
+      }
+    })
+
+    const summary = {
+      count: items.length,
+      points: items.reduce((n, x) => n + (x.counted ? x.points : 0), 0),
+      withRequests: items.filter((x) => x.requests.length > 0).length,
+      autoMatched: items.filter((x) => x.requests.some((r) => r.source === 'auto')).length,
+      missingRequests: items.filter((x) => x.missing_evidence).length,
+    }
+
+    /* markdown（给复制/下载，也方便智能体直接交付） */
+    const md = []
+    md.push('# 攻击得分链路复现报告 — ' + ((meta && meta.target_name) || id), '')
+    md.push('合计 **' + summary.points + ' 分** · ' + summary.count + ' 项得分 · ' +
+      summary.withRequests + '/' + summary.count + ' 项带原始请求' +
+      (summary.missingRequests > 0 ? '（' + summary.missingRequests + ' 项缺原始请求）' : ''), '')
+    const CIRCLED = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲', '⑳']
+    for (const x of items) {
+      md.push('---', '')
+      md.push('## ' + (CIRCLED[x.seq - 1] || ('#' + x.seq)) + ' ' + x.point_name + '（+' + x.points + ' 分' + (x.counted ? '' : '，超出上限不计分') + '）', '')
+      if (x.target) md.push('- **目标**：' + x.target)
+      if (x.asset_ip) md.push('- **资产**：' + x.asset_ip)
+      if (x.gained) md.push('- **拿到**：' + x.gained)
+      if (x.vuln) md.push('- **利用的漏洞**：' + (x.vuln.cve ? x.vuln.cve + ' — ' : '') + x.vuln.title +
+        (x.vuln.severity ? '（' + x.vuln.severity + '）' : ''))
+      if (x.evidence) md.push('- **结果**：' + String(x.evidence).replace(/\n+/g, ' '))
+      if (x.nth_of_point > 1) md.push('- **同类第 ' + x.nth_of_point + ' 次**（上限 ' + x.max_hits + ' 次）')
+      if (x.recorded_at) md.push('- **记录**：' + x.recorded_at + (x.recorded_by ? ' · ' + x.recorded_by : ''))
+      md.push('')
+      if (x.requests.length === 0) {
+        md.push('> ⚠️ 这一项没有原始请求记录，无法直接复现；请补 `redteam_http_evidence_add`。', '')
+        continue
+      }
+      md.push('### 复现请求（可直接粘贴进 Yakit Repeater）', '')
+      x.requests.forEach((r, ri) => {
+        md.push('**请求 ' + (ri + 1) + '**' + (r.source === 'auto' ? '（按目标路径自动匹配，请核对）' : ''), '')
+        if (r.request) { md.push('```http', String(r.request).replace(/\r/g, '').trim(), '```', '') }
+        else if (r.url) { md.push('```http', (r.method || 'GET') + ' ' + r.url + ' HTTP/1.1', '```', '') }
+        if (r.response) { md.push('响应摘要：', '```http', String(r.response).replace(/\r/g, '').trim().slice(0, 1500), '```', '') }
+        if (r.note) md.push('> ' + r.note, '')
+      })
+    }
+    return { items, summary, markdown: md.join('\n'), target: (meta && meta.target_name) || id }
+  }
+
+  /**
    * 得分链路：把 score_hit 按时间拉平成一条链，只含"得分"相关的东西，不掺任何信息收集流水账。
    * 攻击链页面的「得分链路」视图用它。
    */
   scoreChain(id, f = {}) {
     const db = this.db(id)
     const limit = Math.min(Number(f.limit) || 500, 2000)
-    const items = db.prepare(`SELECT h.id, h.point_id, h.asset_id, h.target, h.evidence, h.note,
-        h.recorded_by, h.recorded_at,
+    const items = db.prepare(`SELECT h.id, h.point_id, h.asset_id, h.vuln_id, h.step_id, h.target,
+        h.evidence, h.note, h.recorded_by, h.recorded_at,
         p.code, p.name AS point_name, p.category, p.points, p.enabled,
-        a.ip AS asset_ip
+        a.ip AS asset_ip, v.title AS vuln_title, v.cve AS vuln_cve
       FROM score_hit h
       LEFT JOIN score_point p ON p.id = h.point_id
       LEFT JOIN asset a ON a.id = h.asset_id
+      LEFT JOIN vuln v ON v.id = h.vuln_id
       ORDER BY h.recorded_at, h.id LIMIT ?`).all(limit)
+    /* 每一步"靠什么动作拿到的"：① 显式关联的步骤 ② 同一资产上时间最近的步骤（标注为推断） */
+    const stepById = new Map(db.prepare('SELECT id, seq, stage, title, detail, asset_id, point_id, recorded_at FROM attack_step').all().map((x) => [x.id, x]))
+    const stepsByAsset = new Map()
+    for (const st of stepById.values()) {
+      if (st.asset_id === null || st.asset_id === undefined) continue
+      if (!stepsByAsset.has(st.asset_id)) stepsByAsset.set(st.asset_id, [])
+      stepsByAsset.get(st.asset_id).push(st)
+    }
+    for (const list of stepsByAsset.values()) list.sort((a, b) => String(a.recorded_at).localeCompare(String(b.recorded_at)))
+    for (const it of items) {
+      let step = it.step_id !== null && it.step_id !== undefined ? stepById.get(it.step_id) : undefined
+      let inferred = false
+      if (step === undefined) {
+        step = Array.from(stepById.values()).find((x) => x.point_id === it.point_id && x.asset_id === it.asset_id)
+      }
+      if (step === undefined && it.asset_id !== null && it.asset_id !== undefined) {
+        const cands = (stepsByAsset.get(it.asset_id) || []).filter((x) => String(x.recorded_at) <= String(it.recorded_at))
+        if (cands.length > 0) { step = cands[cands.length - 1]; inferred = true }
+      }
+      it.action = step === undefined ? null : { id: step.id, seq: step.seq, stage: step.stage, title: step.title, detail: step.detail }
+      it.action_inferred = inferred
+    }
+    /* 叠加计分口径：标出每次命中是"计入"还是"超出上限不计分" */
+    const maxHitsOf = new Map(db.prepare('SELECT id, COALESCE(max_hits, 1) AS m FROM score_point').all().map((r) => [r.id, Math.max(1, Number(r.m) || 1)]))
+    const seenOf = new Map()
+    for (const it of items) {
+      const seen = seenOf.get(it.point_id) || 0
+      seenOf.set(it.point_id, seen + 1)
+      it.max_hits = maxHitsOf.get(it.point_id) || 1
+      it.nth_of_point = seen + 1
+      it.counted = seen < it.max_hits
+    }
     /* 按得分点聚合出"哪些还没拿下"，方便一眼看出缺口 */
     const points = db.prepare('SELECT id, code, name, category, points, enabled FROM score_point ORDER BY sort_order, id').all()
     const hitPointIds = new Set(items.map((x) => x.point_id))
     const achieved = points.filter((p) => hitPointIds.has(p.id) && p.enabled === 1)
     const missing = points.filter((p) => !hitPointIds.has(p.id) && p.enabled === 1)
+    const scores = this.listScorePoints(id)
     return {
       items,
       achieved,
       missing,
       summary: {
         hits: items.length,
-        points: items.reduce((n, x) => n + (x.points || 0), 0),
+        /* 计分口径与得分面板一致：同类叠加但受上限封顶 */
+        points: scores.summary.achievedPoints,
+        totalPoints: scores.summary.totalPoints,
+        countedHits: scores.summary.countedHits,
         achievedCount: achieved.length,
         missingCount: missing.length,
-        missingPoints: missing.reduce((n, p) => n + (p.points || 0), 0),
+        missingPoints: missing.reduce((n, p) => n + (p.potential || p.points || 0), 0),
       },
     }
   }
@@ -1708,16 +1944,37 @@ export class RedteamStore {
 
   /* ---------- 攻击链 ---------- */
 
+  /**
+   * 写一步攻击链。如果这一步拿到了分，带上 point_code（或 point_id）即可：
+   * 服务端会自动记一条 score_hit 并把两者互相挂上，避免"写了步骤忘了记分/记了分说不清怎么拿的"。
+   */
   addChainStep(id, s = {}) {
     const db = this.db(id)
     const next = (db.prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM attack_step').get() || { n: 1 }).n
-    const result = db.prepare(`INSERT INTO attack_step(seq, stage, title, detail, asset_id, vuln_id, access_id, evidence_ref, recorded_by, recorded_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?)`).run(
-      s.seq ?? next, s.stage ?? 'other', s.title ?? '', s.detail ?? null,
-      s.asset_id ?? null, s.vuln_id ?? null, s.access_id ?? null, s.evidence_ref ?? null,
+    let pointId = s.point_id !== undefined && s.point_id !== null ? Number(s.point_id) : null
+    if (pointId === null && s.point_code) {
+      const row = db.prepare('SELECT id FROM score_point WHERE code = ?').get(String(s.point_code))
+      if (row !== undefined) pointId = row.id
+    }
+    const seq = s.seq ?? next
+    const result = db.prepare(`INSERT INTO attack_step(seq, stage, title, detail, asset_id, vuln_id, access_id, point_id, evidence_ref, recorded_by, recorded_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(
+      seq, s.stage ?? 'other', s.title ?? '', s.detail ?? null,
+      s.asset_id ?? null, s.vuln_id ?? null, s.access_id ?? null, pointId, s.evidence_ref ?? null,
       s.recorded_by ?? null, nowIso(),
     )
-    return { id: Number(result.lastInsertRowid), seq: s.seq ?? next }
+    const stepId = Number(result.lastInsertRowid)
+    let hit = null
+    /* 带 point_code 且给了 evidence → 顺手记分（同一次调用完成"动作 + 得分"） */
+    if (pointId !== null && typeof s.evidence === 'string' && s.evidence.trim() !== '') {
+      try {
+        hit = this.addScoreHit(id, {
+          point_id: pointId, asset_id: s.asset_id ?? null, vuln_id: s.vuln_id ?? null, step_id: stepId,
+          target: s.target ?? null, evidence: s.evidence, note: s.note ?? null, recorded_by: s.recorded_by ?? null,
+        })
+      } catch (error) { /* 记分失败不影响步骤入库 */ }
+    }
+    return { id: stepId, seq: seq, point_id: pointId, hit: hit }
   }
 
   listChain(id) {
