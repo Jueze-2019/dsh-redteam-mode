@@ -1665,6 +1665,33 @@ window.__ModuleLoader__.load({
     }
 
     /* ---------------------------------------------------------- 得分复现报告 */
+    /**
+     * 报告分组兜底：host 只给平铺条目时，用 scoreChain 的阶段信息把条目按攻击链顺序分组。
+     * 依据是两边共同的 score_hit id —— scoreChain 的每条 item 都带 stage_code，
+     * scoreReport 的每条 item 带同样的 id。这样即使 host 侧版本较旧或阶段行缺失，
+     * 报告页也能正常显示，而不是误报"还没有可交付的成果"。
+     */
+    function groupByStage(reportItems, chain) {
+      const byId = new Map((reportItems || []).map((x) => [x.id, x]))
+      const groups = []
+      const stageList = (chain && chain.stages) || []
+      stageList.forEach((st, si) => {
+        const items = (st.items || []).map((x) => byId.get(x.id)).filter(Boolean)
+        if (items.length === 0) return
+        groups.push({ code: st.code, name: st.name, color: st.color || '#64748b',
+          ordinal: st.ordinal || si + 1, points: st.points || 0, cumulative: st.cumulative || 0, items })
+      })
+      /* scoreChain 完全没有阶段信息时，至少把得分归到「其他」，不要让条目凭空消失 */
+      const grouped = new Set(groups.reduce((acc, g) => acc.concat(g.items.map((x) => x.id)), []))
+      const rest = (reportItems || []).filter((x) => !grouped.has(x.id))
+      if (rest.length > 0) {
+        groups.push({ code: 'other', name: '其他得分', color: '#64748b', ordinal: groups.length + 1,
+          points: rest.reduce((n, x) => n + (x.counted ? x.points : 0), 0),
+          cumulative: 0, items: rest })
+      }
+      return groups
+    }
+
     function ReportTab(props) {
       const eng = props.engagement
       const refreshKey = props.refreshKey || 0
@@ -1677,9 +1704,16 @@ window.__ModuleLoader__.load({
         if (!eng) return
         setBusy(true); setMsg(null)
         api({ op: 'scoreReport', engagement: eng }).then((r) => {
-          setBusy(false)
-          if (!r || r.ok === false) { setErr((r && r.error) || '生成失败'); return }
-          setErr(null); setData(r)
+          if (!r || r.ok === false) { setBusy(false); setErr((r && r.error) || '生成失败'); return }
+          /* 老 host 只给平铺条目、不给阶段分组（或阶段行缺失）：自己按攻击链分组，
+             否则报告页会误报"还没有可交付的成果"。分组数据取自 scoreChain。 */
+          if ((!r.stages || r.stages.length === 0) && (r.items || []).length > 0) {
+            api({ op: 'scoreChain', engagement: eng }).then((c) => {
+              setBusy(false); setErr(null); setData(Object.assign({}, r, { stages: groupByStage(r.items, c) }))
+            }, () => { setBusy(false); setErr(null); setData(r) })
+            return
+          }
+          setBusy(false); setErr(null); setData(r)
         }, (e) => { setBusy(false); setErr(String((e && e.message) || e)) })
       }
       React.useEffect(load, [eng, refreshKey])

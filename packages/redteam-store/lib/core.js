@@ -1222,10 +1222,12 @@ export class RedteamStore {
   listStages(id) {
     const db = this.db(id)
     this.seedStages(id)
-    return db.prepare('SELECT * FROM stage ORDER BY sort_order, code').all().map((r) => ({
+    return db.prepare('SELECT * FROM stage ORDER BY sort_order, code').all().map((r, i) => ({
       code: r.code, name: r.name, subtitle: r.subtitle || '', color: r.color || '#64748b',
       goal: r.goal || '', sections: parseJson(r.sections, []), tools: r.tools || '',
       transition: r.transition || '',
+      /* 链路里的真实位置（第几阶段）：界面画 ①②③ 与报告排序都用它，不要另行编号 */
+      ordinal: i + 1,
       updated_at: r.updated_at || null,
     }))
   }
@@ -2001,7 +2003,7 @@ export class RedteamStore {
 
     const stageDefs = this.listStages(id)
     let cumulative = 0
-    const stages = stageDefs.map((st) => {
+    const stages = stageDefs.map((st, si) => {
       const sItems = items.filter((x) => x.stage_code === st.code)
       const pts = sItems.reduce((n, x) => n + (x.counted ? (x.points || 0) : 0), 0)
       cumulative += pts
@@ -2019,6 +2021,7 @@ export class RedteamStore {
         })
       }).sort((a, b) => b.points - a.points || b.hits - a.hits)
       return Object.assign({}, st, {
+        ordinal: si + 1,
         items: sItems,
         hits: sItems.length,
         counted: sItems.filter((x) => x.counted).length,
