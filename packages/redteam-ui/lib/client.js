@@ -118,7 +118,7 @@ window.__ModuleLoader__.load({
 .rt-pri-high{color:#fff;background:#ef4444}
 .rt-pri-medium{color:#fff;background:#f59e0b}
 .rt-pri-low{color:#fff;background:#94a3b8}
-.rt-score-row{display:grid;grid-template-columns:56px 1fr 90px 64px;gap:8px;padding:7px 10px;
+.rt-score-row{display:grid;grid-template-columns:16px 56px 1fr 90px 64px;gap:8px;padding:7px 10px;
   border-bottom:1px solid var(--dsw-alias-border-l1);align-items:center;font-size:12.5px;cursor:pointer}
 .rt-score-row:hover{background:var(--dsw-alias-bg-layer-2)}
 .rt-score-row.head{cursor:default;color:var(--dsw-alias-label-secondary);font-size:11.5px;font-weight:600;
@@ -236,7 +236,7 @@ window.__ModuleLoader__.load({
 .rt-live-dot{width:8px;height:8px;border-radius:50%;background:#10b981;flex:none;animation:rt-pulse 1.6s ease-in-out infinite}
 .rt-live-dot.idle{background:#94a3b8;animation:none}
 @keyframes rt-pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 #10b98166}50%{opacity:.5;box-shadow:0 0 0 5px #10b98100}}
-.rt-live-body{padding:8px 12px 2px;border-bottom:1px solid var(--dsw-alias-border-l1);max-height:34vh;overflow:auto}
+.rt-live-body{padding:8px 12px 2px;max-height:44vh;overflow:auto}
 .rt-atest{border:1px solid var(--dsw-alias-border-l1);border-left:3px solid #10b981;border-radius:6px;
   padding:7px 10px;background:var(--dsw-alias-bg-layer-2);margin-bottom:6px}
 .rt-atest.past{border-left-color:#94a3b8;opacity:.85}
@@ -255,18 +255,46 @@ window.__ModuleLoader__.load({
 .rt-concl-i>span{color:var(--dsw-alias-label-secondary);font-size:11.5px}
 .rt-more{color:var(--dsw-alias-brand-primary);font-size:11.5px;cursor:pointer;user-select:none;margin-top:4px;display:inline-block}
 .rt-more:hover{text-decoration:underline}
-.rt-grp{display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;border-bottom:1px solid var(--dsw-alias-border-l1);
-  background:var(--dsw-alias-bg-layer-2)}
-.rt-grp:hover{background:var(--dsw-alias-bg-layer-1)}
-.rt-grp-t{font-family:ui-monospace,Menlo,monospace;font-weight:600;font-size:12.5px;word-break:break-all}
-.rt-grp-n{font-size:11.5px;color:var(--dsw-alias-label-secondary);white-space:nowrap}
 .rt-subtabs{display:flex;gap:4px;padding:6px 10px 0;border-bottom:1px solid var(--dsw-alias-border-l1);align-items:center}
 .rt-subtab{padding:4px 10px;border-radius:6px 6px 0 0;cursor:pointer;font-size:12px;color:var(--dsw-alias-label-secondary)}
 .rt-subtab.on{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);font-weight:600}
 .rt-sevbar{width:3px;border-radius:2px;align-self:stretch;flex:none;margin-right:2px}
-.rt-stagegrp{display:flex;align-items:center;gap:8px;padding:6px 10px;margin-top:6px;cursor:pointer;border-radius:6px;
-  background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1)}
-.rt-stagegrp:hover{border-color:var(--dsw-alias-border-l2)}
+/* ── 折叠层次体系 ─────────────────────────────────────────────────────────────
+   L1 折叠头 .rt-sec   ：通栏、无圆角无边框、左色条、深底 —— 永远是"扁"的
+   L2 内容卡 .rt-atest/.rt-hit/.rt-cred/.rt-evi：内缩、有边框、圆角 —— 立起来
+   L3 详情/长文本 .rt-clip-body / .rt-evi-body ：无边框、最浅、等宽
+   L4 子项容器 .rt-sec-body：左缩进 + 竖引导线，表明"属于上面那个头"
+   ──────────────────────────────────────────────────────────────────────────── */
+.rt-sec-wrap{margin:0}
+.rt-sec{display:flex;align-items:center;gap:8px;padding:7px 12px 7px 9px;cursor:pointer;
+  background:var(--dsw-alias-bg-layer-2);border-left:3px solid var(--dsw-alias-border-l2);
+  border-top:1px solid var(--dsw-alias-border-l1);user-select:none;outline:none}
+.rt-sec:hover{background:var(--dsw-alias-bg-layer-1)}
+.rt-sec:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.rt-sec.flat{cursor:default}
+.rt-sec.flat:hover{background:var(--dsw-alias-bg-layer-2)}
+.rt-sec-caret{flex:none;width:11px;font-size:10px;color:var(--dsw-alias-label-secondary);text-align:center}
+.rt-sec-title{font-weight:600;font-size:13px;white-space:nowrap}
+.rt-sec-count{font-size:11.5px;color:var(--dsw-alias-label-secondary);white-space:nowrap}
+.rt-sec-sub{font-size:11.5px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rt-sec-right{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-secondary);white-space:nowrap;flex:none}
+.rt-sec.t-stage{border-left-color:#8b5cf6}
+.rt-sec.t-target{border-left-color:#0ea5e9}
+.rt-sec.t-folder{border-left-color:#64748b}
+.rt-sec.t-test{border-left-color:#10b981}
+.rt-sec.t-queue{border-left-color:#f59e0b}
+.rt-sec.t-past{border-left-color:#94a3b8}
+.rt-sec-body{margin-left:12px;border-left:1px solid var(--dsw-alias-border-l1);padding:7px 0 3px 10px}
+.rt-sec-body>.rt-atest:last-child,.rt-sec-body>.rt-hit:last-child{margin-bottom:2px}
+/* 长文本折叠（L3）：默认预览 2 行并渐隐，展开后限高滚动 */
+.rt-clip{margin-top:6px}
+.rt-clip-head{display:flex;align-items:center;gap:6px}
+.rt-clip-label{font-size:11px;color:var(--dsw-alias-label-secondary);font-weight:600}
+.rt-clip-body{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.65;white-space:pre-wrap;
+  word-break:break-word;background:var(--dsw-alias-bg-base);border-radius:5px;padding:6px 8px;margin-top:3px}
+.rt-clip:not(.open) .rt-clip-body{max-height:46px;overflow:hidden;
+  -webkit-mask-image:linear-gradient(180deg,#000 55%,transparent);mask-image:linear-gradient(180deg,#000 55%,transparent)}
+.rt-clip.open .rt-clip-body{max-height:340px;overflow:auto}
 .rt-md{flex:1;overflow:auto;margin:0;padding:14px 16px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;
   line-height:1.65;white-space:pre-wrap;word-break:break-word;background:var(--dsw-alias-bg-base)}
 .rt-weblink{display:block;font-size:11.5px;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -612,9 +640,7 @@ window.__ModuleLoader__.load({
                 h('div', { style: { margin: '6px 0 3px', fontWeight: 600 } }, '指纹'),
                 h('div', null, fpRows.length ? fpRows : '—'),
                 noteLines.length
-                  ? h('div', null,
-                      h('div', { style: { margin: '6px 0 3px', fontWeight: 600 } }, '测试记录（' + noteLines.length + ' 条）'),
-                      h('div', { className: 'rt-atest-notes', style: { maxHeight: 220 } }, noteLines.join('\n')))
+                  ? h(Clip, { key: 'notes', label: '测试记录（' + noteLines.length + ' 条）', text: noteLines.join('\n') })
                   : null,
                 h('div', { style: { margin: '6px 0 3px', fontWeight: 600 } }, '采集溯源（最近 8 条）'),
                 h('div', null, obsRows.length ? obsRows : '—'))
@@ -1062,7 +1088,7 @@ window.__ModuleLoader__.load({
       const [subTab, setSubTab] = React.useState('vulns')
       /* 默认按目标聚合：322 条平铺没法读，先看"哪台被打下什么" */
       const [grouped, setGrouped] = React.useState(true)
-      const [openTarget, setOpenTarget] = React.useState({})
+      const collapse = useCollapse('findings:' + eng)
 
       const load = () => {
         if (!eng) return
@@ -1113,23 +1139,25 @@ window.__ModuleLoader__.load({
         h('span', null, '拿到什么'), h('span', null, '状态'), h('span', null, '置信'))
 
       /* 单条漏洞（行 + 展开详情），聚合视图与平铺视图共用 */
-      const vulnRows = (v) => {
+      const vulnRows = (v, compact) => {
         const out = []
         const gainedList = String(v.gained || '').split(/[、,;，；]/).map((x) => x.trim()).filter(Boolean)
+        const open = openId === v.id
         out.push(h('div', {
-          key: 'v' + v.id, className: 'rt-vrow',
-          style: { cursor: 'pointer' },
-          onClick: () => setOpenId(openId === v.id ? null : v.id),
+          key: 'v' + v.id, className: 'rt-vrow', role: 'button', tabIndex: 0,
+          style: compact ? { cursor: 'pointer', gridTemplateColumns: '58px minmax(0,1fr) 104px 68px' } : { cursor: 'pointer' },
+          onClick: () => setOpenId(open ? null : v.id),
+          onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenId(open ? null : v.id) } },
         },
           h('span', null, h('span', { className: sevClass(v.severity) }, SEV_LABEL[v.severity] || v.severity)),
-          h('span', { title: v.title || '' }, (v.cve ? v.cve + ' ' : '') + (v.title || '')),
-          h('span', { className: 'rt-mono', title: v.target || '' }, v.target || v.asset_ip || '—'),
+          h('span', { title: v.title || '' }, h('span', { className: 'rt-sec-caret' }, open ? '▾' : '▸'), (v.cve ? v.cve + ' ' : '') + (v.title || '')),
+          compact ? null : h('span', { className: 'rt-mono', title: v.target || '' }, v.target || v.asset_ip || '—'),
           h('span', { title: v.gained || '' },
             gainedList.length
               ? h('span', { className: 'rt-gain', style: { maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' } }, gainedList[0] + (gainedList.length > 1 ? ' +' + (gainedList.length - 1) : ''))
               : h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, '—')),
           h('span', null, h('span', { className: 'rt-tag' }, STATUS_LABEL[v.status] || v.status)),
-          h('span', null, v.confidence === null || v.confidence === undefined ? '—' : Math.round(v.confidence * 100) + '%')))
+          compact ? null : h('span', null, v.confidence === null || v.confidence === undefined ? '—' : Math.round(v.confidence * 100) + '%')))
         if (openId !== v.id) return out
         out.push(h('div', {
           key: 'vd' + v.id, className: 'rt-vrow',
@@ -1140,6 +1168,7 @@ window.__ModuleLoader__.load({
               ? h('span', null, gainedList.map((g, gi) => h('span', { key: 'g' + gi, className: 'rt-gain', style: { marginRight: 6 } }, g)))
               : h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } },
                   '未记录 —— 拿到权限/成果后请用 redteam_vuln_update 补 gained（例：服务器权限、内网隧道、后台管理员账号）')),
+          h('div', { className: 'rt-kv' }, h('b', null, '目标'), h('span', { className: 'rt-mono', style: { wordBreak: 'break-all' } }, v.target || '—')),
           h('div', { className: 'rt-kv' }, h('b', null, '资产'), h('span', null, (v.asset_ip || '—') + ' · ' + (v.segment_cidr || ''))),
           h('div', { className: 'rt-kv' }, h('b', null, '来源'), h('span', null, (v.source || '—') + ' · ' + (v.found_by_agent || '—') + ' · ' + fmt(v.found_at))),
           detailEvidence(v),
@@ -1169,23 +1198,23 @@ window.__ModuleLoader__.load({
           exploited: vs.filter((v) => v.status === 'exploited').length,
         })).sort((a, b) => (SEV_RANK[a.top.severity] ?? 9) - (SEV_RANK[b.top.severity] ?? 9) || b.vulns.length - a.vulns.length)
         for (const g of list) {
-          const isOpen = openTarget[g.key] === true
-          rows.push(h('div', {
-            key: 'g' + g.key, className: 'rt-grp',
-            onClick: () => setOpenTarget((o) => Object.assign({}, o, { [g.key]: !o[g.key] })),
-          },
-            h('span', { style: { flex: 'none', color: 'var(--dsw-alias-label-secondary)' } }, isOpen ? '▾' : '▸'),
-            h('span', { className: 'rt-sev rt-sev-' + g.top.severity }, SEV_LABEL[g.top.severity] || g.top.severity),
-            h('span', { className: 'rt-grp-t' }, g.key),
-            h('span', { className: 'rt-grp-n' }, g.vulns.length + ' 个漏洞'),
-            g.exploited ? h('span', { className: 'rt-grp-n', style: { color: '#10b981' } }, '已利用 ' + g.exploited) : null,
-            g.top.asset_ip && g.top.asset_ip !== g.key ? h('span', { className: 'rt-grp-n' }, '资产 ' + g.top.asset_ip) : null,
-            h('div', { className: 'rt-spacer' }),
-            g.gained.length
-              ? h('span', null, g.gained.slice(0, 2).map((x, i) => h('span', { key: 'gg' + i, className: 'rt-gain', style: { marginLeft: 6 } }, x)),
-                  g.gained.length > 2 ? h('span', { className: 'rt-grp-n', style: { marginLeft: 4 } }, '+' + (g.gained.length - 2)) : null)
-              : h('span', { className: 'rt-grp-n' }, '未记录拿到的权限')))
-          if (isOpen) for (const v of g.vulns) rows.push(...vulnRows(v))
+          const key = 'target:' + g.key
+          const defOpen = false
+          rows.push(h(Section, {
+            key: 'sec:' + g.key, tone: 'target',
+            title: g.key,
+            count: g.vulns.length + ' 个漏洞',
+            sub: [
+              SEV_LABEL[g.top.severity] || g.top.severity,
+              g.exploited ? '已利用 ' + g.exploited : null,
+              g.top.asset_ip && g.top.asset_ip !== g.key ? '资产 ' + g.top.asset_ip : null,
+            ].filter(Boolean).join(' · '),
+            right: g.gained.length
+              ? g.gained.slice(0, 2).join(' / ') + (g.gained.length > 2 ? ' +' + (g.gained.length - 2) : '')
+              : '未记录权限',
+            open: collapse.isOpen(key, defOpen),
+            onToggle: collapse.toggle(key, defOpen),
+          }, g.vulns.map((v) => vulnRows(v, true))))
         }
         if (!list.length && !state.loading && !state.error) {
           rows.push(h('div', { key: 'none', className: 'rt-empty' }, '暂无漏洞记录'))
@@ -1267,6 +1296,14 @@ window.__ModuleLoader__.load({
           subTabBtn('creds', '凭据', creds.length),
           subTabBtn('access', '访问会话', accesses.length),
           h('div', { className: 'rt-spacer' }),
+          grouped ? h('button', {
+            className: 'rt-btn', title: '展开所有目标',
+            onClick: () => collapse.setAll((state.items || []).map((v) => 'target:' + targetKeyOf(v)), true),
+          }, '全部展开') : null,
+          grouped ? h('button', {
+            className: 'rt-btn', title: '收起所有目标',
+            onClick: () => collapse.setAll((state.items || []).map((v) => 'target:' + targetKeyOf(v)), false),
+          }, '全部收起') : null,
           h('button', {
             className: 'rt-btn' + (grouped ? ' rt-btn-primary' : ''),
             title: grouped ? '当前：按目标聚合（先看哪台被打下什么）' : '当前：平铺每条漏洞',
@@ -1279,7 +1316,7 @@ window.__ModuleLoader__.load({
           ? h('div', { className: 'rt-body', style: { overflow: 'auto' } }, credSection)
           : subTab === 'access'
             ? h('div', { className: 'rt-body', style: { overflow: 'auto' } }, accessSection)
-            : h('div', { className: 'rt-table' }, head, rows,
+            : h('div', { className: 'rt-table' }, grouped ? null : head, rows,
                 !state.loading && !state.items.length && !state.error ? h('div', { className: 'rt-empty' }, '暂无漏洞记录') : null))
     }
 
@@ -1297,8 +1334,8 @@ window.__ModuleLoader__.load({
       const [mode, setMode] = React.useState('attack')
       /* 展示顺序：默认倒序（最新的一步在最上面），可切换为正序 */
       const [desc, setDesc] = React.useState(true)
-      /* 阶段分组折叠：undefined=默认只展开最近活跃阶段，null=全折叠，字符串=展开该阶段 */
-      const [openStage, setOpenStage] = React.useState(undefined)
+      /* 阶段折叠状态按「页签 + 靶标」记忆；默认只展开最近活跃阶段 */
+      const collapse = useCollapse('chain:' + eng)
       /* 单步展开（默认只占一行） */
       const [openStep, setOpenStep] = React.useState(null)
 
@@ -1367,21 +1404,18 @@ window.__ModuleLoader__.load({
         g.list.push(s)
       }
       const currentStage = groups.length ? groups[0].key : null
-      const activeStage = openStage === undefined ? currentStage : openStage
-      const steps = []
-      for (const g of groups) {
-        const isOpen = activeStage === g.key
-        steps.push(h('div', {
-          key: 'g' + g.key, className: 'rt-stagegrp',
-          onClick: () => setOpenStage((cur) => ((cur === undefined ? currentStage : cur) === g.key ? null : g.key)),
-        },
-          h('span', { className: 'rt-stage-tag rt-st-' + g.key }, g.label),
-          h('span', { className: 'rt-grp-n' }, g.list.length + ' 步'),
-          h('div', { className: 'rt-spacer' }),
-          h('span', { className: 'rt-grp-n' }, fmt(g.list[0] && g.list[0].recorded_at)),
-          h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, isOpen ? '▾' : '▸')))
-        if (isOpen) for (let i = 0; i < g.list.length; i++) steps.push(stepNode(g.list[i], i))
-      }
+      const stageKeys = groups.map((g) => 'stage:' + g.key)
+      const steps = groups.map((g) => {
+        const key = 'stage:' + g.key
+        const defOpen = g.key === currentStage
+        return h(Section, {
+          key: 'sec:' + g.key, tone: 'stage', title: g.label,
+          count: g.list.length + ' 步',
+          sub: g.list[0] ? fmt(g.list[0].recorded_at) : null,
+          open: collapse.isOpen(key, defOpen),
+          onToggle: collapse.toggle(key, defOpen),
+        }, g.list.map((s, i) => stepNode(s, i)))
+      })
 
       /* 得分链路：只呈现"得分"这条线，不含任何信息收集/未得分的过程 */
       const scoreItems = (score && score.items) || []
@@ -1429,6 +1463,14 @@ window.__ModuleLoader__.load({
             : null,
           h('div', { className: 'rt-spacer' }),
           h('button', {
+            className: 'rt-btn', title: '展开所有阶段',
+            onClick: () => collapse.setAll(stageKeys, true),
+          }, '全部展开'),
+          h('button', {
+            className: 'rt-btn', title: '收起所有阶段',
+            onClick: () => collapse.setAll(stageKeys, false),
+          }, '全部收起'),
+          h('button', {
             className: 'rt-btn',
             title: desc ? '当前：最新的一步在最上面（默认），点击切换为正序' : '当前：从第 1 步开始，点击切换为倒序',
             onClick: () => setDesc((d) => !d),
@@ -1454,8 +1496,7 @@ window.__ModuleLoader__.load({
       const [data, setData] = React.useState(null)
       const [err, setErr] = React.useState(null)
       const [busy, setBusy] = React.useState(false)
-      const [openTarget, setOpenTarget] = React.useState({})
-      const [closedGroup, setClosedGroup] = React.useState({})
+      const collapse = useCollapse('report:' + eng)
       const [msg, setMsg] = React.useState(null)
 
       const load = () => {
@@ -1493,37 +1534,30 @@ window.__ModuleLoader__.load({
       const groups = (data && data.groups) || []
 
       const groupNodes = groups.map((g) => {
-        const closed = closedGroup[g.cidr] === true
+        const gKey = 'cidr:' + g.cidr
         const vulnSum = g.targets.reduce((n, t) => n + t.stats.vulns, 0)
-        const rows = []
-        rows.push(h('div', {
-          key: 'g' + g.cidr, className: 'rt-vrow', style: { gridTemplateColumns: '1fr auto auto', cursor: 'pointer', background: 'var(--dsw-alias-bg-layer-2)' },
-          onClick: () => setClosedGroup((o) => Object.assign({}, o, { [g.cidr]: !o[g.cidr] })),
-        },
-          h('span', { className: 'rt-mono', style: { fontWeight: 600 } }, (closed ? '▸ ' : '▾ ') + g.cidr),
-          h('span', { className: 'rt-tag' }, g.targets.length + ' 个目标'),
-          h('span', { className: 'rt-tag rt-sev-high', style: { color: '#fff' } }, '漏洞 ' + vulnSum)))
-        if (closed) return rows
+        const childs = []
         for (const t of g.targets) {
-          const open = openTarget[t.key] === true
-          rows.push(h('div', {
-            key: 't' + t.key, className: 'rt-vrow', style: { gridTemplateColumns: '1fr auto auto auto' },
-            onClick: () => setOpenTarget((o) => Object.assign({}, o, { [t.key]: !o[t.key] })),
-          },
-            h('span', { className: 'rt-mono' }, (open ? '▾ ' : '▸ ') + t.label),
-            h('span', { className: 'rt-tag' }, '漏洞 ' + t.stats.vulns),
-            t.stats.accesses ? h('span', { className: 'rt-tag rt-tag-active' }, '已控 ' + t.stats.accesses) : null,
-            t.stats.files ? h('span', { className: 'rt-tag' }, '文件 ' + t.stats.files) : null))
-          if (!open) continue
-          rows.push(h('div', {
-            key: 'td' + t.key, className: 'rt-vrow', style: { cursor: 'default', gridTemplateColumns: '1fr' },
-          }, h('div', { className: 'rt-vdetail' },
-            h('div', { className: 'rt-actions', style: { marginTop: 0, marginBottom: 6 } },
+          const tKey = 'target:' + t.key
+          childs.push(h(Section, {
+            key: 'sec:' + t.key, tone: 'target', title: t.label,
+            count: '漏洞 ' + t.stats.vulns,
+            sub: [t.stats.accesses ? '已控 ' + t.stats.accesses : null, t.stats.credentials ? '凭据 ' + t.stats.credentials : null,
+              t.stats.files ? '文件 ' + t.stats.files : null, t.stats.chainSteps ? '链路 ' + t.stats.chainSteps : null].filter(Boolean).join(' · '),
+            open: collapse.isOpen(tKey, false), onToggle: collapse.toggle(tKey, false),
+          }, [
+            h('div', { key: 'acts' + t.key, className: 'rt-actions', style: { marginTop: 0, marginBottom: 6 } },
               h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); copy(t.markdown, t.label) } }, '复制'),
               h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); download(t.markdown, t.label) } }, '下载 .md')),
-            h('pre', { className: 'rt-md', style: { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 6, maxHeight: '46vh', padding: '10px 12px' } }, t.markdown || '（无内容）'))))
+            h('pre', { key: 'md' + t.key, className: 'rt-md', style: { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 6, maxHeight: '46vh', padding: '10px 12px' } }, t.markdown || '（无内容）'),
+          ]))
         }
-        return rows
+        return h(Section, {
+          key: 'sec:' + g.cidr, tone: 'folder', title: g.cidr,
+          count: g.targets.length + ' 个目标',
+          sub: '漏洞 ' + vulnSum,
+          open: collapse.isOpen(gKey, true), onToggle: collapse.toggle(gKey, true),
+        }, childs)
       })
 
       return h('div', { className: 'rt-main' },
@@ -1532,6 +1566,14 @@ window.__ModuleLoader__.load({
           h('span', { className: 'rt-tag' }, totals.targets + ' 个目标'),
           h('span', { className: 'rt-tag' }, '漏洞 ' + totals.vulns),
           h('div', { className: 'rt-spacer' }),
+          h('button', {
+            className: 'rt-btn', title: '展开所有目标',
+            onClick: () => collapse.setAll(groups.flatMap((g) => ['cidr:' + g.cidr].concat(g.targets.map((t) => 'target:' + t.key))), true),
+          }, '全部展开'),
+          h('button', {
+            className: 'rt-btn', title: '收起所有目标',
+            onClick: () => collapse.setAll(groups.flatMap((g) => ['cidr:' + g.cidr].concat(g.targets.map((t) => 'target:' + t.key))), false),
+          }, '全部收起'),
           h('button', { className: 'rt-btn', disabled: busy, onClick: load }, busy ? '生成中…' : '重新生成'),
           h('button', {
             className: 'rt-btn rt-btn-primary',
@@ -1563,7 +1605,7 @@ window.__ModuleLoader__.load({
       const [folders, setFolders] = React.useState([])
       const [err, setErr] = React.useState(null)
       const [busy, setBusy] = React.useState(false)
-      const [closed, setClosed] = React.useState({})
+      const collapse = useCollapse('files:' + eng)
       const [detail, setDetail] = React.useState(null)
 
       const load = () => {
@@ -1589,25 +1631,21 @@ window.__ModuleLoader__.load({
 
       const rows = []
       for (const folder of folders) {
-        const isClosed = closed[folder.folder] === true
-        rows.push(h('div', {
-          key: 'f' + folder.folder, className: 'rt-vrow',
-          style: { gridTemplateColumns: '1fr auto', cursor: 'pointer', background: 'var(--dsw-alias-bg-layer-2)' },
-          onClick: () => setClosed((o) => Object.assign({}, o, { [folder.folder]: !o[folder.folder] })),
-        },
-          h('span', { className: 'rt-mono', style: { fontWeight: 600 } }, (isClosed ? '▸ ' : '▾ ') + folder.folder + '/'),
-          h('span', { className: 'rt-tag' }, folder.count + ' 个文件')))
-        if (isClosed) continue
+        const fKey = 'folder:' + folder.folder
+        const fileNodes = []
         for (const f of folder.files) {
-          rows.push(h('div', {
-            key: 'a' + f.id, className: 'rt-vrow', style: { gridTemplateColumns: '1.2fr 60px 1.6fr' },
+          fileNodes.push(h('div', {
+            key: 'a' + f.id, className: 'rt-vrow', style: { gridTemplateColumns: '18px 1.2fr 60px 1.6fr', cursor: 'pointer' },
+            role: 'button', tabIndex: 0,
             onClick: () => openFile(f),
+            onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFile(f) } },
           },
-            h('span', { className: 'rt-mono' }, (detail && detail.id === f.id ? '▾ ' : '▸ ') + f.name),
+            h('span', { className: 'rt-sec-caret' }, detail && detail.id === f.id ? '▾' : '▸'),
+            h('span', { className: 'rt-mono' }, f.name),
             h('span', null, h('span', { className: 'rt-tag rt-tag-active' }, FILE_KIND[f.kind] || f.kind || '—')),
             h('span', { style: { fontSize: 11.5, color: 'var(--dsw-alias-label-secondary)' }, title: f.description || '' }, f.description || '—')))
           if (!detail || detail.id !== f.id) continue
-          rows.push(h('div', {
+          fileNodes.push(h('div', {
             key: 'ad' + f.id, className: 'rt-vrow', style: { cursor: 'default', gridTemplateColumns: '1fr' },
           }, h('div', { className: 'rt-vdetail' },
             h('div', { className: 'rt-kv' }, h('b', null, '效果'), h('span', null, detail.evidence || '—')),
@@ -1615,6 +1653,11 @@ window.__ModuleLoader__.load({
             h('div', { className: 'rt-kv' }, h('b', null, '记录'), h('span', null, fmt(detail.created_at) + (detail.created_by ? ' · ' + detail.created_by : ''))),
             h('pre', { className: 'rt-md', style: { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 6, maxHeight: '40vh', padding: '10px 12px' } }, detail.content || '（空）'))))
         }
+        rows.push(h(Section, {
+          key: 'sec:' + folder.folder, tone: 'folder', title: folder.folder + '/',
+          count: folder.count + ' 个文件',
+          open: collapse.isOpen(fKey, true), onToggle: collapse.toggle(fKey, true),
+        }, fileNodes.length ? fileNodes : h('div', { className: 'rt-atest-meta' }, '（空）')))
       }
 
       const total = folders.reduce((n, f) => n + f.count, 0)
@@ -1692,14 +1735,16 @@ window.__ModuleLoader__.load({
         const achieved = p.hits.length > 0
         const open = openId === p.id
         rows.push(h('div', {
-          key: 'sp' + p.id, className: 'rt-score-row',
+          key: 'sp' + p.id, className: 'rt-score-row', role: 'button', tabIndex: 0,
           onClick: () => setOpenId(open ? null : p.id),
+          onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenId(open ? null : p.id) } },
         },
+          h('span', { className: 'rt-sec-caret' }, open ? '▾' : '▸'),
           h('span', null, h('span', {
             className: achieved ? 'rt-pri rt-pri-high' : 'rt-pri rt-pri-low',
             style: achieved ? {} : { background: 'var(--dsw-alias-bg-layer-2)', color: 'var(--dsw-alias-label-secondary)' },
           }, p.points + '分')),
-          h('span', { title: p.description || '' }, (open ? '▾ ' : '▸ ') + p.name + (p.category ? '（' + p.category + '）' : '')),
+          h('span', { title: p.description || '' }, p.name + (p.category ? '（' + p.category + '）' : '')),
           h('span', null, achieved
             ? h('span', { className: 'rt-tag rt-tag-live' }, '已拿下')
             : h('span', { className: 'rt-tag' }, p.enabled ? '待争取' : '停用')),
@@ -1775,10 +1820,94 @@ window.__ModuleLoader__.load({
             h('button', { className: 'rt-btn', onClick: () => setForm(null) }, '取消'))) : null,
         h('div', { className: 'rt-table' },
           h('div', { className: 'rt-score-row head' },
-            h('span', null, '分值'), h('span', null, '得分点'), h('span', null, '状态'), h('span', null, '命中')),
+            h('span', null, ''), h('span', null, '分值'), h('span', null, '得分点'), h('span', null, '状态'), h('span', null, '命中')),
           rows,
           !items.length ? h('div', { className: 'rt-empty' }, '暂无得分点，点右上角「新增得分点」') : null),
         h('div', { className: 'rt-foot' }, h('span', null, '得分点可编辑；智能体按分值优先级推进，拿下成果用 redteam_score_hit 记分')))
+    }
+
+    /* ---------------------------------------------------------- 折叠底座 */
+    /**
+     * 折叠状态按「页签 + 靶标」持久化到 localStorage，切页签/刷新后保持不变。
+     * 只记录用户显式点过的键；没点过的用调用方给的默认值。
+     */
+    const COLLAPSE_KEY = 'rt-collapse:'
+    const collapseLoad = (prefix) => {
+      try {
+        const raw = window.localStorage.getItem(COLLAPSE_KEY + prefix)
+        const parsed = raw ? JSON.parse(raw) : null
+        return parsed && typeof parsed === 'object' ? parsed : {}
+      } catch (e) { return {} }
+    }
+    const collapseSave = (prefix, value) => {
+      try { window.localStorage.setItem(COLLAPSE_KEY + prefix, JSON.stringify(value)) } catch (e) { /* 隐私模式等 */ }
+    }
+
+    /** 一个页签一个 hook：isOpen(key, defaultOpen) / toggle(key, defaultOpen) / setAll(keys, open) */
+    function useCollapse(prefix) {
+      const [state, setState] = React.useState(() => collapseLoad(prefix))
+      React.useEffect(() => { setState(collapseLoad(prefix)) }, [prefix])
+      const write = (next) => { collapseSave(prefix, next); setState(next) }
+      const isOpen = (key, defaultOpen) => {
+        const v = state[key]
+        return v === undefined ? defaultOpen !== false : v === true
+      }
+      const toggle = (key, defaultOpen) => (e) => {
+        if (e && e.stopPropagation) e.stopPropagation()
+        write(Object.assign({}, state, { [key]: !isOpen(key, defaultOpen) }))
+      }
+      const setAll = (keys, open) => {
+        const next = Object.assign({}, state)
+        for (const k of keys) next[k] = open
+        write(next)
+      }
+      return { isOpen: isOpen, toggle: toggle, setAll: setAll }
+    }
+
+    /**
+     * 统一折叠头（L1）：▾ 固定在最左、标题加粗、计数紧跟、右侧放时间或操作，
+     * 内容缩进 12px 并带一条竖引导线。always=true 表示"常显"（不可折叠）。
+     */
+    function Section(props) {
+      const always = props.always === true
+      const open = always || props.open === true
+      const head = h('div', {
+        className: 'rt-sec t-' + (props.tone || 'target') + (always ? ' flat' : ''),
+        role: always ? undefined : 'button',
+        tabIndex: always ? undefined : 0,
+        'aria-expanded': always ? undefined : (open ? 'true' : 'false'),
+        onClick: always ? undefined : props.onToggle,
+        onKeyDown: always ? undefined : (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (props.onToggle) props.onToggle(e) }
+        },
+      },
+        h('span', { className: 'rt-sec-caret' }, always ? '▍' : (open ? '▾' : '▸')),
+        props.title ? h('span', { className: 'rt-sec-title' }, props.title) : null,
+        props.count !== undefined && props.count !== null ? h('span', { className: 'rt-sec-count' }, String(props.count)) : null,
+        props.sub ? h('span', { className: 'rt-sec-sub' }, props.sub) : null,
+        props.right ? h('span', { className: 'rt-sec-right' }, props.right) : null)
+      return h('div', { className: 'rt-sec-wrap' }, head,
+        open && props.children ? h('div', { className: 'rt-sec-body' }, props.children) : null)
+    }
+
+    /** 长文本折叠（L3）：固定预览高度 + 渐隐 + 展开/复制。 */
+    function Clip(props) {
+      const [open, setOpen] = React.useState(false)
+      const text = String(props.text === undefined || props.text === null ? '' : props.text)
+      if (text.trim() === '') return null
+      return h('div', { className: 'rt-clip' + (open ? ' open' : '') },
+        h('div', { className: 'rt-clip-head' },
+          props.label ? h('span', { className: 'rt-clip-label' }, props.label) : null,
+          h('div', { className: 'rt-spacer' }),
+          h('button', {
+            className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
+            onClick: (e) => { e.stopPropagation(); try { navigator.clipboard.writeText(text) } catch (err) { /* ignore */ } },
+          }, '复制'),
+          h('button', {
+            className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
+            onClick: (e) => { e.stopPropagation(); setOpen((v) => !v) },
+          }, open ? '收起' : '展开')),
+        h('div', { className: 'rt-clip-body' }, text))
     }
 
     /* ---------------------------------------------------------- 当前测试（实时） */
@@ -1798,8 +1927,8 @@ window.__ModuleLoader__.load({
       const [err, setErr] = React.useState(null)
       const [at, setAt] = React.useState(null)
       const [auto, setAuto] = React.useState(true)
-      /* 折叠状态：正在测不参与折叠 */
-      const [closed, setClosed] = React.useState({ recent: true, queue: true })
+      /* 折叠状态按「页签 + 靶标」记忆；正在测永远常显，不参与折叠 */
+      const collapse = useCollapse('testing:' + eng)
 
       const load = () => {
         if (!eng) return
@@ -1846,21 +1975,9 @@ window.__ModuleLoader__.load({
           chips.length ? h('div', null, chips) : null,
           a.test_surface ? h('div', { className: 'rt-atest-meta' }, '测试面：' + a.test_surface) : null,
           a.potential ? h('div', { className: 'rt-atest-meta' }, '预期得分：' + a.potential) : null,
-          noteLines.length ? h('div', { className: 'rt-atest-notes' }, noteLines.join('\n')) : null)
+          noteLines.length ? h(Clip, { label: '测试记录', text: noteLines.join('\n') }) : null)
       }
 
-      const section = (key, title, n, tone, hint) => {
-        const isClosed = closed[key] === true
-        return h('div', {
-          key: 'sec' + key, className: 'rt-stagegrp',
-          onClick: () => setClosed((o) => Object.assign({}, o, { [key]: !o[key] })),
-        },
-          h('span', { className: 'rt-stage-tag rt-st-' + tone }, title),
-          h('span', { className: 'rt-grp-n' }, n + ' 台'),
-          hint ? h('span', { className: 'rt-grp-n', style: { marginLeft: 10, fontWeight: 400 } }, hint) : null,
-          h('div', { className: 'rt-spacer' }),
-          h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, isClosed ? '▸' : '▾'))
-      }
 
       const concl = (label, value, tone) => h('span', { key: label, className: 'rt-concl-i', style: { cursor: 'default' } },
         h('b', null, String(value || 0)), h('span', null, label))
@@ -1874,34 +1991,49 @@ window.__ModuleLoader__.load({
         at ? h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)' } },
           '更新于 ' + at.toLocaleTimeString('zh-CN', { hour12: false })) : null,
         h('button', {
+          className: 'rt-btn', style: { padding: '0 7px', fontSize: 11 }, title: '展开最近动过与待测队列',
+          onClick: () => collapse.setAll(['recent:' + eng, 'queue:' + eng], true),
+        }, '全部展开'),
+        h('button', {
+          className: 'rt-btn', style: { padding: '0 7px', fontSize: 11 }, title: '只留正在测',
+          onClick: () => collapse.setAll(['recent:' + eng, 'queue:' + eng], false),
+        }, '全部收起'),
+        h('button', {
           className: 'rt-btn' + (auto ? ' rt-btn-primary' : ''), style: { padding: '0 7px', fontSize: 11 },
           title: '每 5 秒自动刷新', onClick: () => setAuto((x) => !x),
         }, auto ? '实时 · 5s' : '已暂停'),
         h('button', { className: 'rt-btn', style: { padding: '0 7px', fontSize: 11 }, onClick: load }, '刷新'))
 
       const body = []
-      /* 正在测：不折叠，完整展开 */
-      body.push(section('testing', '正在测', testing.length, 'access',
-        testing.length ? null : '（agent 开始测某台资产后会实时出现在这里）'))
-      if (testing.length) body.push(h('div', { key: 'testingList', className: 'rt-live-body', style: { borderBottom: 'none', paddingTop: 6 } }, testing.map((a) => card(a, false))))
-      else body.push(h('div', { key: 'testingEmpty', className: 'rt-empty', style: { padding: 14 } },
-        '当前没有资产处于「测试中」。下面是最近动过的与待测队列。'))
+      /* 正在测：常显，完整展开（不可折叠） */
+      body.push(h(Section, {
+        key: 'testing', always: true, tone: 'test', title: '正在测',
+        count: testing.length + ' 台',
+        sub: testing.length ? 'agent 正在打这些资产' : 'agent 开始测某台资产后会实时出现在这里',
+      }, testing.length
+        ? testing.map((a) => card(a, false))
+        : h('div', { className: 'rt-atest-meta', style: { paddingBottom: 4 } }, '当前没有资产处于「测试中」')))
 
-      /* 最近动过（默认折叠） */
-      body.push(section('recent', '最近动过', recent.length, 'data'))
-      if (closed.recent !== true && recent.length) {
-        body.push(h('div', { key: 'recentList', className: 'rt-live-body', style: { borderBottom: 'none', paddingTop: 6 } }, recent.map((a) => card(a, true))))
-      }
+      /* 最近动过（默认折叠，可记忆） */
+      body.push(h(Section, {
+        key: 'recent', tone: 'past', title: '最近动过', count: recent.length + ' 台',
+        sub: '已测过的资产',
+        open: collapse.isOpen('recent:' + eng, false),
+        onToggle: collapse.toggle('recent:' + eng, false),
+      }, recent.length ? recent.map((a) => card(a, true)) : h('div', { className: 'rt-atest-meta' }, '暂无')))
 
-      /* 待测队列（默认折叠） */
-      body.push(section('queue', '待测队列', data ? (data.untested || 0) : 0, 'other',
-        queue.length ? '按易打性与端口数排出先打哪几台' : null))
-      if (closed.queue !== true && queue.length) {
-        body.push(h('div', { key: 'queueList', className: 'rt-live-body', style: { borderBottom: 'none', paddingTop: 6 } },
-          queue.map((a) => card(a, true)),
-          h('div', { key: 'queueHint', className: 'rt-atest-meta', style: { padding: '4px 2px 10px' } },
-            '完整清单（含筛选与排序）见「资产测绘」页')))
-      }
+      /* 待测队列（默认折叠，可记忆） */
+      body.push(h(Section, {
+        key: 'queue', tone: 'queue', title: '待测队列',
+        count: (data ? (data.untested || 0) : 0) + ' 台',
+        sub: '按易打性与端口数排出先打哪几台',
+        open: collapse.isOpen('queue:' + eng, false),
+        onToggle: collapse.toggle('queue:' + eng, false),
+      }, queue.length
+        ? queue.map((a) => card(a, true)).concat([
+            h('div', { key: 'queueHint', className: 'rt-atest-meta', style: { paddingTop: 4 } },
+              '完整清单（含筛选与排序）见「资产测绘」页')])
+        : h('div', { className: 'rt-atest-meta' }, '没有待测资产')))
 
       return h('div', { className: 'rt-main' },
         conclusion,
@@ -1966,6 +2098,7 @@ window.__ModuleLoader__.load({
           .then(() => load(), (e) => setMsg({ err: String((e && e.message) || e) }))
       }
 
+      const sessCollapse = useCollapse('sessions:' + eng)
       const totals = (data && data.totals) || {}
       const shells = (data && data.webshells) || []
       const tunnels = (data && data.tunnels) || []
@@ -2052,16 +2185,22 @@ window.__ModuleLoader__.load({
                 h('div', { style: { marginTop: 6, fontSize: 12 } },
                   '拿到 WebShell 用 redteam_webshell_add；建好隧道用 redteam_tunnel_add（suo5 / socks5 / ssh -R）；之后智能体用 redteam_sessions 就能看到。'))
             : null,
-          shells.length
-            ? h('div', null,
-                h('div', { className: 'rt-section' }, 'WebShell（已上线的可控入口）· ' + shells.length),
-                h('div', { className: 'rt-sess-grid' }, shellCards))
-            : null,
-          tunnels.length
-            ? h('div', null,
-                h('div', { className: 'rt-section' }, '内网隧道（可直接给扫描器当代理用）· ' + tunnels.length),
-                h('div', { className: 'rt-sess-grid' }, tunnelCards))
-            : null))
+          h(Section, {
+            key: 'webshells', tone: 'queue', title: 'WebShell',
+            count: (totals.webshellsOnline || 0) + '/' + (totals.webshells || 0) + ' 在线',
+            sub: '已上线的可控入口',
+            open: sessCollapse.isOpen('shells', true), onToggle: sessCollapse.toggle('shells', true),
+          }, shells.length
+            ? h('div', { className: 'rt-sess-grid', style: { padding: 0 } }, shellCards)
+            : h('div', { className: 'rt-atest-meta' }, '暂无（拿到 WebShell 后用 redteam_webshell_add 登记）')),
+          h(Section, {
+            key: 'tunnels', tone: 'test', title: '内网隧道',
+            count: (totals.tunnelsActive || 0) + '/' + (totals.tunnels || 0) + ' 可用',
+            sub: '可直接给扫描器当代理用',
+            open: sessCollapse.isOpen('tunnels', true), onToggle: sessCollapse.toggle('tunnels', true),
+          }, tunnels.length
+            ? h('div', { className: 'rt-sess-grid', style: { padding: 0 } }, tunnelCards)
+            : h('div', { className: 'rt-atest-meta' }, '暂无（建好隧道后用 redteam_tunnel_add 登记）'))))
 
     }
 
