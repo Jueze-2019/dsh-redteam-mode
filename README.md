@@ -146,7 +146,7 @@ redteam_attack_file_add/list     攻击文件归档（强制要求证据引用�
 redteam_score_list / redteam_score_hit / redteam_score_point_save   得分目标与得分记录
                                  同类得分可叠加，每类上限 max_hits 可设；记分带 vuln_id 供报告复现
 redteam_score_report             攻击得分链路复现报告（只收录得分的成果，附可粘进 Yakit 的原始请求）
-redteam_stages                   五个作战阶段的目标/手段/工具/ATT&CK + 本阶段实际得分
+redteam_attack_chain             攻击链五阶段（信息收集→互联网资产权限→边界突破→内网资产权限→靶标权限）+ 各阶段得分与累计分
 redteam_role_prompt / redteam_roles / redteam_role_prompt_reset     四个角色的系统提示词
 redteam_report_targets / redteam_report 【已弃用】旧的按目标报告
 ```
@@ -168,7 +168,7 @@ redteam_report_targets / redteam_report 【已弃用】旧的按目标报告
 | 资产测绘 | C 段按**内网 / 外网**分组；列表 / 域名 / Web / 图谱四种视图；易打性评估与测试状态 |
 | 会话隧道 | WebShell 与内网隧道的在线状态、最后检测时间与延迟、一键实测连通性、走隧道的现成扫描命令 |
 | 漏洞战果 | 按严重级排序；**拿到什么权限**列；详情直接渲染可复现的原始 HTTP 请求/响应 |
-| 攻击链 | **全链路攻击路径图**：五个作战阶段（外网打点→撕破口子→隧道搭建·内网漫游→拿下资产权限→靶标系统权限），每阶段含阶段目标 / 实际战果 / 手段 / 工具 / ATT&CK；A 竖向 + B 横向两种布局 |
+| 攻击链 | **五阶段攻击链**：信息收集 → 互联网资产权限 → 边界突破 → 内网资产权限 → 靶标权限；每阶段给阶段目标、拿到多少分（含累计）、涉及资产、边界突破阶段的真实隧道；A 竖向 + B 横向 |
 | 得分目标 | 显示**已得总分 / 满分**，可编辑得分点 |
 | 报告 | 攻击得分链路复现报告：平铺列表，只收录得分成果，每条附可粘进 Yakit 的原始请求 |
 | 攻击文件 | 按目标文件夹组织，只收录实际生效的脚本 / POC / EXP |

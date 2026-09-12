@@ -418,6 +418,16 @@ window.__ModuleLoader__.load({
   border-radius:4px;padding:0 4px}
 .rt-hcol-attck{font-family:ui-monospace,Menlo,monospace;font-size:9.5px;color:var(--dsw-alias-label-secondary);
   padding:4px 8px;border-top:1px solid var(--dsw-alias-border-l1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rt-ap-cum{font-size:11px;color:var(--dsw-alias-label-secondary);white-space:nowrap}
+.rt-ap-sub{font-size:11px;font-weight:600;color:var(--dsw-alias-label-secondary);margin:6px 0 3px}
+.rt-ap-assets,.rt-ap-tunnels{display:flex;flex-direction:column;gap:3px}
+.rt-ap-asset{display:flex;align-items:center;gap:6px;font-size:11.5px;padding:3px 6px;border-radius:5px;
+  background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1)}
+.rt-ap-tunnel{display:flex;align-items:center;gap:6px;font-size:11.5px;padding:4px 7px;border-radius:5px;
+  background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-left:3px solid #f59e0b}
+.rt-hcol-sub{font-size:10.5px;color:var(--dsw-alias-label-secondary);margin-bottom:2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;gap:5px;align-items:center}
+.rt-hcol-sub.off{opacity:.6}
 .rt-md{flex:1;overflow:auto;margin:0;padding:14px 16px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;
   line-height:1.65;white-space:pre-wrap;word-break:break-word;background:var(--dsw-alias-bg-base)}
 .rt-weblink{display:block;font-size:11.5px;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1446,11 +1456,12 @@ window.__ModuleLoader__.load({
     /* ---------------------------------------------------------- 攻击链 */
     const STAGE_LABEL = { recon: '信息收集', vuln: '漏洞发现', exploit: '漏洞利用', access: '获得权限', pivot: '内网突破', data: '敏感数据', other: '其他' }
 
-    /* ---------------------------------------------------------- 攻击得分链路（全链路攻击路径图） */
+    /* ---------------------------------------------------------- 攻击链（五阶段） */
     /**
-     * 按五个作战阶段组织：外网打点 → 撕破口子 → 隧道搭建·内网漫游 → 拿下资产权限 → 靶标系统权限。
-     * 每个阶段 = 阶段目标 + 本阶段实际战果（得分节点）+ 手段 / 常用工具 / ATT&CK 技术号。
-     * A = 竖向路径图（逐阶段向下，带阶段过渡语）；B = 横向路径图（五列并排，简洁）。
+     * 按攻击面位置串成一条链：
+     * ① 信息收集 → ② 互联网资产权限 → ③ 边界突破 → ④ 内网资产权限 → ⑤ 靶标权限。
+     * 每阶段只讲两件事：这一步拿到多少分（累计多少）、涉及的资产/隧道是哪些。
+     * A = 竖向链（详细）；B = 横向链（一屏看完）。
      */
     function ChainTab(props) {
       const eng = props.engagement
@@ -1460,8 +1471,7 @@ window.__ModuleLoader__.load({
       const [loading, setLoading] = React.useState(false)
       const [view, setView] = React.useState('A')
       const [openId, setOpenId] = React.useState(null)
-      const [method, setMethod] = React.useState(true)
-      const collapse = useCollapse('path:' + eng)
+      const collapse = useCollapse('chain5:' + eng)
 
       const load = () => {
         if (!eng) return
@@ -1475,10 +1485,9 @@ window.__ModuleLoader__.load({
       React.useEffect(load, [eng, refreshKey])
 
       const stages = (data && data.stages) || []
-      const items = (data && data.items) || []
       const summary = (data && data.summary) || null
       const toggle = (id) => setOpenId((cur) => (cur === id ? null : id))
-      const CIRCLED = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮']
+      const CIRCLED = ['①', '②', '③', '④', '⑤', '⑥']
 
       /* 单次得分的详情 */
       const hitDetail = (x) => h('div', { className: 'rt-flow-detail' },
@@ -1490,8 +1499,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'rt-kv' }, h('b', null, '记录'), h('span', null, fmt(x.recorded_at) + (x.recorded_by ? ' · ' + x.recorded_by : ''))),
         x.evidence ? h(Clip, { label: '结果与证据', text: x.evidence }) : null)
 
-      /* 一条得分（阶段内） */
-      const hitRow = (x, i) => h('div', {
+      const hitRow = (x) => h('div', {
         key: 'h' + x.id,
         className: 'rt-ap-hit' + (x.counted ? '' : ' overflow') + (openId === x.id ? ' open' : ''),
         role: 'button', tabIndex: 0,
@@ -1509,95 +1517,137 @@ window.__ModuleLoader__.load({
           : null,
         openId === x.id ? hitDetail(x) : null)
 
-      /* 阶段的方法论部分（手段 / 工具 / ATT&CK） */
-      const stageMethod = (st) => [
-        h('div', { key: 'secs', className: 'rt-ap-secs' },
-          (st.sections || []).map((sec, si) => h('div', { key: 's' + si, className: 'rt-ap-sec' },
-            h('span', { className: 'rt-ap-sec-label' }, sec.label),
-            h('span', { className: 'rt-ap-sec-items' }, (sec.items || []).join(' · '))))),
-        st.tools ? h('div', { key: 'tools', className: 'rt-ap-meta' }, h('b', null, '常用工具 '), h('span', null, st.tools)) : null,
-        st.attck ? h('div', { key: 'attck', className: 'rt-ap-meta' }, h('b', null, 'ATT&CK '), h('span', { className: 'rt-mono' }, st.attck)) : null,
-      ]
+      /* 资产行（信息收集阶段 / 各阶段涉及资产） */
+      const assetRow = (a) => h('div', { key: 'a' + a.id, className: 'rt-ap-asset' },
+        h('span', { className: 'rt-scope rt-scope-' + (a.scope === 'internal' ? 'internal' : 'external') },
+          a.scope === 'internal' ? '内' : '外'),
+        h('span', { className: 'rt-mono', style: { fontWeight: 600 } }, a.ip),
+        a.segment_cidr ? h('span', { className: 'rt-ap-nth' }, a.segment_cidr) : null,
+        h('span', { className: 'rt-ap-nth' }, '端口 ' + (a.open_ports || 0)),
+        a.vulns ? h('span', { className: 'rt-ap-nth' }, '漏洞 ' + a.vulns) : null,
+        a.priority ? h('span', { className: 'rt-tag' }, '易打 ' + a.priority) : null,
+        h('div', { className: 'rt-spacer' }),
+        h('span', { className: 'rt-ap-pts' }, '+' + (a.points || 0) + ' 分'),
+        h('span', { className: 'rt-ap-nth' }, (a.hits || 0) + ' 次'))
 
-      /* ── A：竖向路径图 ─────────────────────────────────────────── */
-      const stageBlockA = (st, i) => {
-        const openMethod = collapse.isOpen('m:' + st.code, true)
+      const methodBlock = (st, key) => {
+        const openMethod = collapse.isOpen('m:' + key, false)
+        return [
+          h('div', {
+            key: 'tg', className: 'rt-ap-method-toggle', role: 'button', tabIndex: 0,
+            onClick: () => collapse.toggle('m:' + key, false)(),
+            onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); collapse.toggle('m:' + key, false)() } },
+          }, h('span', { className: 'rt-sec-caret' }, openMethod ? '▾' : '▸'),
+            h('span', null, '打法要点 · 常用工具')),
+          openMethod
+            ? h('div', { key: 'mb', className: 'rt-ap-method', style: { borderLeftColor: st.color } },
+                h('div', { className: 'rt-ap-secs' }, (st.sections || []).map((sec, si) => h('div', { key: 's' + si, className: 'rt-ap-sec' },
+                  h('span', { className: 'rt-ap-sec-label' }, sec.label),
+                  h('span', { className: 'rt-ap-sec-items' }, (sec.items || []).join(' · '))))),
+                st.tools ? h('div', { className: 'rt-ap-meta' }, h('b', null, '常用工具 '), h('span', null, st.tools)) : null)
+            : null,
+        ]
+      }
+
+      /* ── A：竖向攻击链 ─────────────────────────────────────────── */
+      const stageA = (st, i) => {
+        const isRecon = st.code === 'recon'
+        const body = []
+        if (isRecon) {
+          body.push(h('div', { key: 'at', className: 'rt-ap-sub' }, '拿到分数的资产 · ' + st.assetCount + ' 台'))
+          body.push(h('div', { key: 'al', className: 'rt-ap-assets' },
+            st.assets.length ? st.assets.map(assetRow) : h('div', { className: 'rt-ap-none' }, '还没有产生得分的资产')))
+        } else {
+          body.push(h('div', { key: 'ht', className: 'rt-ap-sub' },
+            '本阶段得分 ' + st.counted + ' / ' + st.hits + ' 次' + (st.points ? ' · +' + st.points + ' 分' : '')))
+          body.push(h('div', { key: 'hl', className: 'rt-ap-hits' },
+            st.items.length ? st.items.map(hitRow) : h('div', { className: 'rt-ap-none' }, '本阶段还没有得分')))
+          if (st.code === 'boundary') {
+            body.push(h('div', { key: 'tt', className: 'rt-ap-sub' }, '实际隧道 · ' + st.tunnels.length + ' 条'))
+            body.push(h('div', { key: 'tl', className: 'rt-ap-tunnels' },
+              st.tunnels.length
+                ? st.tunnels.map((t) => h('div', { key: 't' + t.id, className: 'rt-ap-tunnel' },
+                    h('span', { className: 'rt-tag rt-tag-passive' }, t.kind || 'tunnel'),
+                    h('span', { className: 'rt-mono', style: { fontWeight: 600 } }, t.listen || '—'),
+                    h('span', {
+                      className: 'rt-tag ' + (t.status === 'active' ? 'rt-tag-live' : ''),
+                      style: t.status === 'active' ? {} : { opacity: .7 },
+                    }, t.status === 'active' ? '可用' : (t.status || '未知')),
+                    h('span', { className: 'rt-ap-nth', style: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' } },
+                      '可达 ' + (t.reach || '—'))))
+                : h('div', { className: 'rt-ap-none' }, '还没有建立隧道（建好后用 redteam_tunnel_add 登记）')))
+          }
+          if (st.assets.length && st.code !== 'boundary') {
+            body.push(h('div', { key: 'at', className: 'rt-ap-sub' }, '涉及资产 · ' + st.assetCount + ' 台'))
+            body.push(h('div', { key: 'al', className: 'rt-ap-assets' }, st.assets.map(assetRow)))
+          }
+        }
+        body.push(h('div', { key: 'mm' }, methodBlock(st, st.code)))
+
         return h('div', { key: 'st' + st.code, className: 'rt-ap-stage' },
           h('div', { className: 'rt-ap-head', style: { borderLeftColor: st.color } },
-            h('span', { className: 'rt-ap-no', style: { background: st.color } }, ('0' + (i + 1)).slice(-2)),
+            h('span', { className: 'rt-ap-no', style: { background: st.color } }, CIRCLED[i] || ('0' + (i + 1))),
             h('span', { className: 'rt-ap-name' }, st.name),
             st.subtitle ? h('span', { className: 'rt-ap-en' }, st.subtitle) : null,
             h('div', { className: 'rt-spacer' }),
-            h('span', { className: 'rt-ap-phase' }, '阶段 ' + (i + 1) + '/' + stages.length)),
+            st.points > 0 ? h('span', { className: 'rt-ap-pts', style: { background: st.color + '22', color: st.color, borderColor: st.color + '66' } }, '+' + st.points) : null,
+            h('span', { className: 'rt-ap-cum' }, '累计 ' + st.cumulative + ' 分')),
           h('div', { className: 'rt-ap-goal', style: { borderLeftColor: st.color } },
             h('span', { className: 'rt-ap-goal-tag', style: { color: st.color, borderColor: st.color + '66' } }, '阶段目标'),
             h('span', null, st.goal)),
-          /* 实际战果 */
-          h('div', { className: 'rt-ap-result' },
-            h('div', { className: 'rt-ap-result-head' },
-              h('span', { style: { fontWeight: 600, fontSize: 12.5 } }, '实际战果'),
-              st.points > 0 ? h('span', { className: 'rt-ap-pts', style: { background: st.color + '22', color: st.color, borderColor: st.color + '66' } }, '+' + st.points + ' 分') : null,
-              h('span', { className: 'rt-ap-nth' }, st.counted + ' 次计入 / ' + st.hits + ' 次命中'),
-              st.steps.length ? h('span', { className: 'rt-ap-nth' }, '攻击步骤 ' + st.steps.length + ' 步') : null),
-            st.items.length
-              ? st.items.map(hitRow)
-              : h('div', { className: 'rt-ap-none' }, '本阶段无直接得分')),
-          /* 手段 */
-          h('div', {
-            className: 'rt-ap-method-toggle', role: 'button', tabIndex: 0,
-            onClick: () => collapse.toggle('m:' + st.code, true)(),
-            onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); collapse.toggle('m:' + st.code, true)() } },
-          }, h('span', { className: 'rt-sec-caret' }, openMethod ? '▾' : '▸'),
-            h('span', null, '阶段手段 · 常用工具 · ATT&CK 技术号')),
-          openMethod
-            ? h('div', { className: 'rt-ap-method', style: { borderLeftColor: st.color } }, stageMethod(st))
-            : null,
-          /* 到下一阶段的过渡 */
+          h('div', { className: 'rt-ap-result', style: { borderLeftColor: st.color } }, body),
           i < stages.length - 1
             ? h('div', { className: 'rt-ap-trans' },
                 h('span', { className: 'rt-flow-arrow' }, '▼'),
-                st.transition ? h('span', { className: 'rt-ap-trans-t' }, st.transition) : null)
-            : h('div', { className: 'rt-ap-trans' }, h('span', { className: 'rt-flow-arrow' }, '▼'),
+                st.transition ? h('span', { className: 'rt-ap-trans-t' }, st.transition) : null,
+                h('span', { className: 'rt-ap-trans-t', style: { marginLeft: 'auto' } }, '累计 ' + st.cumulative + ' 分'))
+            : h('div', { className: 'rt-ap-trans' },
+                h('span', { className: 'rt-flow-arrow' }, '▼'),
                 h('span', { className: 'rt-ap-trans-t' }, '合计 ' + ((summary && summary.points) || 0) + ' 分')))
       }
 
-      /* ── B：横向路径图（五列并排，简洁） ───────────────────────── */
-      const stageColB = (st, i) => h('div', { key: 'col' + st.code, className: 'rt-ap-col' },
+      /* ── B：横向攻击链（一屏看完） ─────────────────────────────── */
+      const stageB = (st, i) => h('div', { key: 'c' + st.code, className: 'rt-ap-col' },
         i > 0 ? h('span', { className: 'rt-ap-col-arrow' }, '▶') : null,
         h('div', { className: 'rt-hcol', style: { borderTopColor: st.color } },
           h('div', { className: 'rt-ap-head', style: { borderLeftColor: st.color, padding: '5px 8px' } },
-            h('span', { className: 'rt-ap-no', style: { background: st.color, width: 15, height: 15, fontSize: 10 } }, ('0' + (i + 1)).slice(-2)),
+            h('span', { className: 'rt-ap-no', style: { background: st.color, width: 16, height: 16, fontSize: 10 } }, String(i + 1)),
             h('span', { className: 'rt-ap-name', style: { fontSize: 12 } }, st.name),
             h('div', { className: 'rt-spacer' }),
-            h('span', { className: 'rt-ap-pts' + (st.points > 0 ? '' : ' off') }, '+' + st.points)),
+            h('span', { className: 'rt-ap-cum', style: { fontWeight: 700 } }, st.cumulative)),
           h('div', { className: 'rt-hcol-goal', title: st.goal }, st.goal),
           h('div', { className: 'rt-hcol-body' },
-            st.items.length
-              ? st.items.slice(0, 6).map((x) => h('div', {
-                  key: 'c' + x.id, className: 'rt-hcol-hit' + (x.counted ? '' : ' off'),
-                  title: x.point_name + '  ' + (x.target || ''),
-                }, h('span', { className: 'rt-hcol-pts' }, (x.counted ? '+' : '') + x.points), h('span', { className: 'rt-hcol-name' }, x.point_name)))
-              : h('div', { className: 'rt-hcol-none' }, '无直接得分'),
-            st.items.length > 6 ? h('div', { className: 'rt-hcol-none' }, '…另有 ' + (st.items.length - 6) + ' 次') : null,
-            h('div', { className: 'rt-hcol-secs' }, (st.sections || []).map((sec, si) => h('span', { key: 'x' + si, className: 'rt-hcol-sec' }, sec.label)))),
-          st.attck ? h('div', { className: 'rt-hcol-attck', title: st.attck }, st.attck) : null))
+            st.code === 'boundary'
+              ? h('div', null,
+                  h('div', { className: 'rt-hcol-hit' }, h('span', { className: 'rt-hcol-pts' }, '+' + st.points), h('span', { className: 'rt-hcol-name' }, '隧道 ' + st.tunnels.length + ' 条')),
+                  st.tunnels.slice(0, 3).map((t) => h('div', { key: 't' + t.id, className: 'rt-hcol-sub' }, '▸ ' + (t.kind || '') + ' ' + (t.listen || ''))))
+              : st.code === 'recon'
+                ? h('div', null,
+                    h('div', { className: 'rt-hcol-hit' }, h('span', { className: 'rt-hcol-pts' }, st.assetCount), h('span', { className: 'rt-hcol-name' }, '台资产拿到分')),
+                    st.assets.slice(0, 6).map((a) => h('div', { key: 'a' + a.id, className: 'rt-hcol-sub', title: a.ip + '  +' + a.points + ' 分' },
+                      (a.scope === 'internal' ? '内 ' : '外 ') + a.ip + '  +' + a.points)))
+                : h('div', null,
+                    h('div', { className: 'rt-hcol-hit' }, h('span', { className: 'rt-hcol-pts' }, '+' + st.points), h('span', { className: 'rt-hcol-name' }, st.counted + '/' + st.hits + ' 次命中')),
+                    st.items.slice(0, 6).map((x) => h('div', { key: 'c' + x.id, className: 'rt-hcol-sub' + (x.counted ? '' : ' off'), title: x.point_name + '  ' + (x.target || '') },
+                      h('span', { className: 'rt-hcol-pts' }, (x.counted ? '+' : '') + x.points), h('span', { className: 'rt-hcol-name' }, x.point_name))),
+                    st.items.length > 6 ? h('div', { className: 'rt-hcol-none' }, '…另有 ' + (st.items.length - 6) + ' 次') : null,
+                    st.assetCount ? h('div', { className: 'rt-hcol-none' }, '涉及 ' + st.assetCount + ' 台资产') : null))))
 
       return h('div', { className: 'rt-main' },
         h('div', { className: 'rt-toolbar' },
-          h('span', { style: { fontWeight: 600 } }, '攻击得分链路'),
-          h('span', { className: 'rt-tag', style: { fontSize: 10.5 } }, '5 个作战阶段 · MITRE ATT&CK'),
+          h('span', { style: { fontWeight: 600 } }, '攻击链'),
+          h('span', { className: 'rt-tag', style: { fontSize: 10.5 } }, '信息收集 → 互联网资产权限 → 边界突破 → 内网资产权限 → 靶标权限'),
           summary ? h('span', { className: 'rt-tag rt-tag-live' }, '总分 ' + summary.points + ' / ' + summary.totalPoints + ' 分') : null,
-          summary ? h('span', { className: 'rt-tag' }, summary.countedHits + ' 次计入 / 共 ' + summary.hits + ' 次命中') : null,
           h('div', { className: 'rt-spacer' }),
-          h('button', { className: 'rt-btn' + (view === 'A' ? ' rt-btn-primary' : ''), title: '竖向路径图：逐阶段向下，含阶段目标与手段', onClick: () => setView('A') }, '路径图 A'),
-          h('button', { className: 'rt-btn' + (view === 'B' ? ' rt-btn-primary' : ''), title: '横向路径图：五阶段并排，简洁', onClick: () => setView('B') }, '路径图 B'),
+          h('button', { className: 'rt-btn' + (view === 'A' ? ' rt-btn-primary' : ''), title: '竖向攻击链：逐阶段向下看细节', onClick: () => setView('A') }, '链路 A'),
+          h('button', { className: 'rt-btn' + (view === 'B' ? ' rt-btn-primary' : ''), title: '横向攻击链：一屏看完五个阶段', onClick: () => setView('B') }, '链路 B'),
           h('button', { className: 'rt-btn', disabled: loading, onClick: load }, loading ? '加载中…' : '刷新')),
         err ? h('div', { className: 'rt-err' }, err) : null,
         !stages.length && !err && data !== null
-          ? h('div', { className: 'rt-empty' }, '还没有得分记录。')
+          ? h('div', { className: 'rt-empty' }, '还没有得分记录。拿到成果后用 redteam_score_hit 记分，这条链才会长出来。')
           : view === 'A'
-            ? h('div', { className: 'rt-ap' }, stages.map(stageBlockA))
-            : h('div', { className: 'rt-ap-h' }, stages.map(stageColB)))
+            ? h('div', { className: 'rt-ap' }, stages.map(stageA))
+            : h('div', { className: 'rt-ap-h' }, stages.map(stageB)))
     }
 
     /* ---------------------------------------------------------- 得分复现报告 */
@@ -2438,7 +2488,7 @@ window.__ModuleLoader__.load({
       const stats = (snapshot && snapshot.stats) || {}
       const tabs = [
         ['assets', '资产测绘'], ['testing', '当前测试'], ['sessions', '会话隧道'], ['findings', '漏洞战果'],
-        ['chain', '攻击路径'], ['scores', '得分目标'], ['report', '报告'],
+        ['chain', '攻击链'], ['scores', '得分目标'], ['report', '报告'],
         ['attackfiles', '攻击文件'], ['prompts', '智能体提示词'], ['skills', '技能库'],
       ]
       const full = isFullWindow()
