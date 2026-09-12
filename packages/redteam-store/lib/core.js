@@ -357,10 +357,12 @@ function migrate(db) {
   if (has('stage', 'attck')) {
     try { db.exec('ALTER TABLE stage DROP COLUMN attck') } catch { /* 老 SQLite 不支持则保留 */ }
   }
-  /* 攻击步骤上的阶段：老值是上一版的阶段 code，清掉以便按 legacy stage 重新映射 */
+  /* 攻击步骤上的阶段：老值是上一版的阶段 code，清掉以便按 legacy stage 重新映射。
+     注意：'target' 在新版里仍是合法阶段（⑤ 靶标权限），不能一起清——否则每次打开
+     靶标都会把「显式指定 ⑤」的步骤与得分打回自动推导。 */
   try {
-    db.prepare("UPDATE attack_step SET stage_code = NULL WHERE stage_code IN ('external','foothold','tunnel','privilege','target')").run()
-    db.prepare("UPDATE score_hit SET stage_code = NULL WHERE stage_code IN ('external','foothold','tunnel','privilege','target')").run()
+    db.prepare("UPDATE attack_step SET stage_code = NULL WHERE stage_code IN ('external','foothold','tunnel','privilege')").run()
+    db.prepare("UPDATE score_hit SET stage_code = NULL WHERE stage_code IN ('external','foothold','tunnel','privilege')").run()
   } catch { /* 忽略 */ }
   /* 阶段归属改为按每条得分自动推导，得分点上的 stage_code 已废弃 */
   if (has('score_point', 'stage_code')) {
