@@ -119,11 +119,12 @@ host 平面新增了服务与表结构，**必须重启** `dsh web`（客户端 
 1. 新建会话，选择预设 **红队模式**。
 2. 直接发靶标单位名称（有范围就补一句，例如某个 C 段）。
 3. 主会话把任务派给角色子智能体；资产测绘页签实时长出数据，会话隧道页签记录拿到的 WebShell 与隧道。
-4. 报告页签按目标分组出报告，攻击文件页签按目标分目录保存真正有效的脚本 / POC / EXP。
+4. 报告页签出「攻击得分链路复现报告」：按攻击链五阶段顺序排，每条得分都附可直接粘进 Yakit Repeater 的原始请求。
+5. 攻击文件页签按目标分目录保存真正有效的脚本 / POC / EXP。
 
 ## 5. 能力清单
 
-**40 个工具**（节选）：
+**42 个工具**（节选）：
 
 ```
 redteam_engagement_open          绑定本次演练靶标，创建工作区
@@ -199,7 +200,8 @@ export FOFA_KEY=你的key       # skills/fofa-recon.md 里的客户端只读这�
 .
 ├── packages/
 │   ├── redteam-store/       # SQLite 事实库 + ctx.redteam 服务 + CLI + 连通性探测
-│   ├── redteam-tools/       # 40 个 redteam_* 模型工具
+│   │   └── test/            # 零依赖回归测试（node test/stages.test.mjs）
+│   ├── redteam-tools/       # 42 个 redteam_* 模型工具
 │   └── redteam-ui/          # 常驻右侧栏控制台（host 桥接 + 客户端 UI）
 ├── preset/                  # DSH agent preset（红队人设与工具行）
 ├── skills/                  # 13 个 DSH 原生技能
@@ -207,7 +209,22 @@ export FOFA_KEY=你的key       # skills/fofa-recon.md 里的客户端只读这�
 └── redteam-proto/           # 原型脚本与演示数据（RFC 5737 文档地址）
 ```
 
-## 9. 合规声明
+## 9. 版本与回归测试
+
+版本以 tag / Release 形式发布（[全部版本](https://github.com/Jueze-2019/dsh-redteam-mode/releases)），
+当前为 **v0.4.2**。改的是本机正在用的那三个包时，记得 host 侧改动要重启 `dsh web` 才生效。
+
+零依赖回归测试（不需要装任何东西）：
+
+```bash
+node packages/redteam-store/test/stages.test.mjs   # 阶段表自愈 + 得分归阶段 + 报告序号
+```
+
+它覆盖的是一类**静默算错分**的故障：攻击链与报告按阶段表分组，阶段行一旦缺失，
+挂在那个阶段的得分会被无声丢弃（v0.4.2 修的正是 ⑤靶标权限 被旧迁移误删、
+攻击链少算 40 分而得分面板仍显示 490 分的问题）。所以改迁移或阶段表后，务必跑一遍。
+
+## 10. 合规声明
 
 本项目面向**授权范围内的安全评估**：攻防演练、红蓝对抗、企业自检、教学研究。
 
@@ -215,6 +232,6 @@ export FOFA_KEY=你的key       # skills/fofa-recon.md 里的客户端只读这�
 * 使用前请确认授权书、测试范围（资产清单 / 时间窗 / 允许的手段）与免责条款。
 * 请遵守目标所在司法辖区的法律，以及 GitHub 的服务条款。
 
-## 10. License
+## 11. License
 
 MIT，见 [LICENSE](LICENSE)。
