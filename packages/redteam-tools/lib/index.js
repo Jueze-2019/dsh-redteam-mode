@@ -929,7 +929,7 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'redteam_stages',
-    description: '全链路攻击路径的五个作战阶段（外网打点 → 撕破口子 → 隧道搭建·内网漫游 → 拿下资产权限 → 靶标系统权限）：每阶段的目标、手段、常用工具、ATT&CK 技术号、蓝队检测视角，以及**本阶段实际拿到的分与命中**。开工前看它明确"现在在哪一阶段、下一步该打哪一阶段"，汇报时按阶段给结论。',
+    description: '全链路攻击路径的五个作战阶段（外网打点 → 撕破口子 → 隧道搭建·内网漫游 → 拿下资产权限 → 靶标系统权限）：每阶段的目标、手段、常用工具、ATT&CK 技术号，以及**本阶段实际拿到的分与命中**。开工前看它明确"现在在哪一阶段、下一步该打哪一阶段"，汇报时按阶段给结论。',
     parameters: { engagement: { type: 'string' } },
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
     async execute(args, exec) {
@@ -941,7 +941,7 @@ export function apply(ctx) {
         stages: (chain.stages || []).map((st) => ({
           code: st.code, name: st.name, goal: st.goal,
           points: st.points, counted: st.counted, hits: st.hits,
-          tools: st.tools, attck: st.attck, blue_team: st.blue_team,
+          tools: st.tools, attck: st.attck,
           methods: (st.sections || []).map((x) => x.label + '：' + (x.items || []).join('、')),
           scored: st.items.map((x) => ({ point: x.point_name, points: x.points, counted: x.counted, target: x.target })),
           steps: st.steps.length,

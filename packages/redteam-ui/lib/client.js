@@ -395,9 +395,6 @@ window.__ModuleLoader__.load({
 .rt-ap-sec-items{color:var(--dsw-alias-label-secondary);word-break:break-word}
 .rt-ap-meta{font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:3px}
 .rt-ap-meta b{color:var(--dsw-alias-label-primary);font-weight:600}
-.rt-ap-blue{font-size:11px;margin-top:4px;padding:4px 8px;border-radius:5px;background:var(--dsw-alias-bg-layer-2);
-  border:1px dashed var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary)}
-.rt-ap-blue b{color:#0ea5e9;font-weight:600}
 .rt-ap-trans{display:flex;align-items:center;gap:7px;padding:2px 0 2px 14px}
 .rt-ap-trans-t{font-size:11px;color:var(--dsw-alias-label-secondary)}
 /* 横向路径图 */
@@ -421,9 +418,6 @@ window.__ModuleLoader__.load({
   border-radius:4px;padding:0 4px}
 .rt-hcol-attck{font-family:ui-monospace,Menlo,monospace;font-size:9.5px;color:var(--dsw-alias-label-secondary);
   padding:4px 8px;border-top:1px solid var(--dsw-alias-border-l1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rt-hcol-blue{font-size:10.5px;color:var(--dsw-alias-label-secondary);padding:5px 8px;margin-top:4px;
-  border-top:1px dashed var(--dsw-alias-border-l1);width:228px}
-.rt-hcol-blue b{color:#0ea5e9;font-weight:600}
 .rt-md{flex:1;overflow:auto;margin:0;padding:14px 16px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;
   line-height:1.65;white-space:pre-wrap;word-break:break-word;background:var(--dsw-alias-bg-base)}
 .rt-weblink{display:block;font-size:11.5px;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1455,7 +1449,7 @@ window.__ModuleLoader__.load({
     /* ---------------------------------------------------------- 攻击得分链路（全链路攻击路径图） */
     /**
      * 按五个作战阶段组织：外网打点 → 撕破口子 → 隧道搭建·内网漫游 → 拿下资产权限 → 靶标系统权限。
-     * 每个阶段 = 阶段目标 + 本阶段实际战果（得分节点）+ 手段 / 常用工具 / ATT&CK / 蓝队检测视角。
+     * 每个阶段 = 阶段目标 + 本阶段实际战果（得分节点）+ 手段 / 常用工具 / ATT&CK 技术号。
      * A = 竖向路径图（逐阶段向下，带阶段过渡语）；B = 横向路径图（五列并排，简洁）。
      */
     function ChainTab(props) {
@@ -1515,7 +1509,7 @@ window.__ModuleLoader__.load({
           : null,
         openId === x.id ? hitDetail(x) : null)
 
-      /* 阶段的方法论部分（手段 / 工具 / ATT&CK / 蓝队视角） */
+      /* 阶段的方法论部分（手段 / 工具 / ATT&CK） */
       const stageMethod = (st) => [
         h('div', { key: 'secs', className: 'rt-ap-secs' },
           (st.sections || []).map((sec, si) => h('div', { key: 's' + si, className: 'rt-ap-sec' },
@@ -1523,7 +1517,6 @@ window.__ModuleLoader__.load({
             h('span', { className: 'rt-ap-sec-items' }, (sec.items || []).join(' · '))))),
         st.tools ? h('div', { key: 'tools', className: 'rt-ap-meta' }, h('b', null, '常用工具 '), h('span', null, st.tools)) : null,
         st.attck ? h('div', { key: 'attck', className: 'rt-ap-meta' }, h('b', null, 'ATT&CK '), h('span', { className: 'rt-mono' }, st.attck)) : null,
-        st.blue_team ? h('div', { key: 'blue', className: 'rt-ap-blue' }, h('b', null, '蓝队检测视角 '), h('span', null, st.blue_team)) : null,
       ]
 
       /* ── A：竖向路径图 ─────────────────────────────────────────── */
@@ -1555,7 +1548,7 @@ window.__ModuleLoader__.load({
             onClick: () => collapse.toggle('m:' + st.code, true)(),
             onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); collapse.toggle('m:' + st.code, true)() } },
           }, h('span', { className: 'rt-sec-caret' }, openMethod ? '▾' : '▸'),
-            h('span', null, '阶段手段 · 工具 · ATT&CK · 蓝队视角')),
+            h('span', null, '阶段手段 · 常用工具 · ATT&CK 技术号')),
           openMethod
             ? h('div', { className: 'rt-ap-method', style: { borderLeftColor: st.color } }, stageMethod(st))
             : null,
@@ -1587,8 +1580,7 @@ window.__ModuleLoader__.load({
               : h('div', { className: 'rt-hcol-none' }, '无直接得分'),
             st.items.length > 6 ? h('div', { className: 'rt-hcol-none' }, '…另有 ' + (st.items.length - 6) + ' 次') : null,
             h('div', { className: 'rt-hcol-secs' }, (st.sections || []).map((sec, si) => h('span', { key: 'x' + si, className: 'rt-hcol-sec' }, sec.label)))),
-          st.attck ? h('div', { className: 'rt-hcol-attck', title: st.attck }, st.attck) : null),
-        h('div', { className: 'rt-hcol-blue' }, h('b', null, '蓝队'), h('span', null, st.blue_team || '—')))
+          st.attck ? h('div', { className: 'rt-hcol-attck', title: st.attck }, st.attck) : null))
 
       return h('div', { className: 'rt-main' },
         h('div', { className: 'rt-toolbar' },

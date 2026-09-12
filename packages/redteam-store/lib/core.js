@@ -156,7 +156,6 @@ CREATE TABLE IF NOT EXISTS stage (
   sections TEXT,
   tools TEXT,
   attck TEXT,
-  blue_team TEXT,
   transition TEXT,
   sort_order INTEGER DEFAULT 0,
   updated_at TEXT
@@ -349,6 +348,10 @@ function migrate(db) {
   ensure('score_hit', 'vuln_id', 'INTEGER')
   ensure('score_hit', 'step_id', 'INTEGER')
   ensure('attack_step', 'point_id', 'INTEGER')
+  /* 蓝队视角已从作战阶段中移除：老库把这一列删掉（失败则忽略，不影响使用） */
+  if (has('stage', 'blue_team')) {
+    try { db.exec('ALTER TABLE stage DROP COLUMN blue_team') } catch { /* 老 SQLite 不支持则保留 */ }
+  }
   /* 阶段归属：得分点与攻击步骤各自挂在哪个作战阶段（刚加列时按默认映射回填一次） */
   if (ensure('score_point', 'stage_code', 'TEXT')) {
     try {
@@ -477,7 +480,7 @@ export const DEFAULT_SCORE_POINTS = [
 
 /**
  * 全链路攻击路径的五个作战阶段（默认内容，可在界面里改）。
- * 阶段结构：阶段目标 + 手段分组 + 常用工具 + ATT&CK 技术号 + 蓝队检测视角 + 进入下一阶段的过渡语。
+ * 阶段结构：阶段目标 + 手段分组 + 常用工具 + ATT&CK 技术号 + 进入下一阶段的过渡语。
  */
 export const DEFAULT_STAGES = [
   {
@@ -492,7 +495,6 @@ export const DEFAULT_STAGES = [
     ],
     tools: 'ARL / 灯塔、fscan、OneForAll、ENScan、Goby、Burp、Nuclei',
     attck: 'T1590 T1596 T1595 T1593 T1594 T1592',
-    blue_team: '测绘扫描告警、敏感端口暴露、泄露凭据入库比对、钓鱼邮件附件关联',
     transition: '锁定突破口',
   },
   {
@@ -507,7 +509,6 @@ export const DEFAULT_STAGES = [
     ],
     tools: '蚁剑 / 冰蝎 / 哥斯拉、sqlmap、Nuclei、Cobalt Strike / Sliver / Havoc、内核 EXP',
     attck: 'T1190 T1133 T1505.003 T1059 T1543 T1068 T1070',
-    blue_team: 'Webshell / 内存马查杀、异常子进程、EDR 告警、计划任务与服务创建',
     transition: '获得稳定立足点 → 建立隧道出口',
   },
   {
@@ -522,7 +523,6 @@ export const DEFAULT_STAGES = [
     ],
     tools: 'frp / Stowaway / Neo-reGeorg / Venom / GOST、gogo / fscan、BloodHound、proxychains、suo5',
     attck: 'T1572 T1090 T1095 T1021 T1018 T1046 T1087 T1082',
-    blue_team: '异常长连接与心跳、DNS 隧道特征、代理工具指纹、内网大范围扫描行为',
     transition: '横向移动提权',
   },
   {
@@ -537,7 +537,6 @@ export const DEFAULT_STAGES = [
     ],
     tools: 'Mimikatz / LaZagne、Impacket（PsExec / WMIExec / SMBExec）、RDP / SSH、BloodHound',
     attck: 'T1003 T1550 T1558 T1021.002 T1078.002 T1482',
-    blue_team: 'LSASS 访问审计、异常登录与票据异常、非办公时段提权、特权账号使用偏离',
     transition: '靶标系统优先',
   },
   {
@@ -553,7 +552,6 @@ export const DEFAULT_STAGES = [
     ],
     tools: '证据链归档与报告（截图 / 配置文件 / 业务数据取证）',
     attck: 'T1078 T1098 T1560 T1005 T1082 T1119',
-    blue_team: '特权操作审计、批量数据访问、核心配置变更、主机完整性校验与告警',
     transition: '',
   },
 ]
@@ -1196,11 +1194,11 @@ export class RedteamStore {
     const db = this.db(id)
     if (db.prepare('SELECT COUNT(*) AS n FROM stage').get().n > 0) return { seeded: 0 }
     let order = 0
-    const stmt = db.prepare(`INSERT INTO stage(code, name, subtitle, color, goal, sections, tools, attck, blue_team, transition, sort_order, updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
+    const stmt = db.prepare(`INSERT INTO stage(code, name, subtitle, color, goal, sections, tools, attck, transition, sort_order, updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
     for (const st of DEFAULT_STAGES) {
       stmt.run(st.code, st.name, st.subtitle, st.color, st.goal, JSON.stringify(st.sections),
-        st.tools, st.attck, st.blue_team, st.transition, order++, nowIso())
+        st.tools, st.attck, st.transition, order++, nowIso())
     }
     return { seeded: DEFAULT_STAGES.length }
   }
@@ -1211,22 +1209,22 @@ export class RedteamStore {
     return db.prepare('SELECT * FROM stage ORDER BY sort_order, code').all().map((r) => ({
       code: r.code, name: r.name, subtitle: r.subtitle || '', color: r.color || '#64748b',
       goal: r.goal || '', sections: parseJson(r.sections, []), tools: r.tools || '',
-      attck: r.attck || '', blue_team: r.blue_team || '', transition: r.transition || '',
+      attck: r.attck || '', transition: r.transition || '',
       updated_at: r.updated_at || null,
     }))
   }
 
-  /** 编辑阶段内容（名称/目标/手段分组/工具/ATT&CK/蓝队视角/过渡语）。 */
+  /** 编辑阶段内容（名称/目标/手段分组/工具/ATT&CK/过渡语）。 */
   saveStage(id, patch = {}) {
     const db = this.db(id)
     if (!patch.code) throw new Error('stage.code required')
     const cur = db.prepare('SELECT * FROM stage WHERE code = ?').get(String(patch.code))
-    db.prepare(`INSERT INTO stage(code, name, subtitle, color, goal, sections, tools, attck, blue_team, transition, sort_order, updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+    db.prepare(`INSERT INTO stage(code, name, subtitle, color, goal, sections, tools, attck, transition, sort_order, updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(code) DO UPDATE SET
         name = excluded.name, subtitle = excluded.subtitle, color = excluded.color, goal = excluded.goal,
         sections = excluded.sections, tools = excluded.tools, attck = excluded.attck,
-        blue_team = excluded.blue_team, transition = excluded.transition, updated_at = excluded.updated_at`).run(
+        transition = excluded.transition, updated_at = excluded.updated_at`).run(
       String(patch.code),
       patch.name ?? (cur ? cur.name : String(patch.code)),
       patch.subtitle ?? (cur ? cur.subtitle : ''),
@@ -1235,7 +1233,6 @@ export class RedteamStore {
       patch.sections !== undefined ? JSON.stringify(patch.sections) : (cur ? cur.sections : '[]'),
       patch.tools ?? (cur ? cur.tools : ''),
       patch.attck ?? (cur ? cur.attck : ''),
-      patch.blue_team ?? (cur ? cur.blue_team : ''),
       patch.transition ?? (cur ? cur.transition : ''),
       patch.sort_order ?? (cur ? cur.sort_order : 0),
       nowIso(),
@@ -1922,7 +1919,7 @@ export class RedteamStore {
     const hitPointIds = new Set(items.map((x) => x.point_id))
     const achieved = points.filter((p) => hitPointIds.has(p.id) && p.enabled === 1)
     const missing = points.filter((p) => !hitPointIds.has(p.id) && p.enabled === 1)
-    /* ── 按五个作战阶段组织：阶段目标 + 本阶段实际战果 + 手段/工具/ATT&CK/蓝队视角 ── */
+    /* ── 按五个作战阶段组织：阶段目标 + 本阶段实际战果 + 手段 / 工具 / ATT&CK ── */
     const stages = this.listStages(id).map((st) => {
       const sItems = items.filter((x) => (x.stage_code || 'external') === st.code)
       return Object.assign({}, st, {
