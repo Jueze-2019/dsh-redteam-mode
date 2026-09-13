@@ -57,7 +57,7 @@ ok(list.items.map((t) => String(t.legit)).join(',') === 'null,true,false',
 /* 攻击链带分时同样遵守规则 */
 const stepSelf = await call('redteam_chain_add', { stage: 'vuln', title: '注册进后台', point_code: 'web-account-admin', evidence: '自建 ztest20 授权管理员', self_created: true })
 ok(stepSelf.hit && stepSelf.hit.counted === false, 'chain_add：自建账号带分也计 0 分')
-const stepReal = await call('redteam_chain_add', { stage: 'vuln', title: '拿下后台', point_code: 'web-account-admin', evidence: '厂商账号 zhy/Demo@2024' })
+const stepReal = await call('redteam_chain_add', { stage: 'vuln', title: '拿下后台', point_code: 'web-account-admin', evidence: '厂商账号 svc-demo/Demo@2024' })
 ok(stepReal.hit && stepReal.hit.counted === true, 'chain_add：真实账号带分照常计分')
 
 rmSync(root, { recursive: true, force: true })

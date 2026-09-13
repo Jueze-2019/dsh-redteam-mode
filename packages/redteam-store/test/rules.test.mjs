@@ -99,7 +99,7 @@ try {
   console.log('— 攻击链步骤带分（point_code + self_created）')
   const stepSelf = store.addChainStep(id, { stage: 'vuln', title: '注册账号进后台', point_code: 'web-account-admin', evidence: '自己注册 ztest20 并授权为管理员', self_created: true })
   ok(stepSelf.hit && stepSelf.hit.counted === false, '步骤里自建账号同样不计分')
-  const stepReal = store.addChainStep(id, { stage: 'vuln', title: '拿下管理后台', point_code: 'web-account-admin', evidence: '管理员 zhy/Demo@2024（厂商账号）' })
+  const stepReal = store.addChainStep(id, { stage: 'vuln', title: '拿下管理后台', point_code: 'web-account-admin', evidence: '管理员 svc-demo/Demo@2024（厂商账号）' })
   ok(stepReal.hit && stepReal.hit.counted === true, '步骤里真实账号照常计分')
 } finally {
   rmSync(root, { recursive: true, force: true })
