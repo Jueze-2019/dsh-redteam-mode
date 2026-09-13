@@ -86,8 +86,13 @@ const preset = presetSource
   # 红队技能随包分发：__REDTEAM_SKILLS_DIR__ 由插件首次启动时替换成包内 skills/ 的绝对路径。
   # $DSH_HOME/skills 等默认根仍然生效（includeDefaultRoots 默认 true），用户自己的技能照旧优先。
   config:
+    # 只扫描"本插件自带的 + $DSH_HOME/skills"两个根：
+    # 关掉 includeDefaultRoots，避免把 .agents/skills、项目级的大技能包（动辄数百个）
+    # 一起吞进红队会话——那既污染模型上下文，也让技能页看起来像被塞了几百个技能。
+    includeDefaultRoots: false
     customSkillDirs:
-      - {{REDTEAM_SKILLS_DIR}}`)
+      - {{REDTEAM_SKILLS_DIR}}
+      - !!js dshHomePath('skills')`)
 if (!preset.includes('{{REDTEAM_SKILLS_DIR}}')) throw new Error('技能目录占位符注入失败')
 write('presets/redteam/agent.cordis.yml', preset)
 const presetMeta = readFileSync(join(packagesDir, '../preset/preset.yml'), 'utf8')

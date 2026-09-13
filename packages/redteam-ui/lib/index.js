@@ -13,12 +13,18 @@
  * 跨源请求由 Origin/Host 校验挡住（同源 POST 才放行）。
  */
 import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
 import { dispatch, dispatchAsync } from '../../redteam-store/lib/core.js'
 
 /** 本包自带技能目录（随包分发；dev 安装的 UI 包没有 skills/，此时恒为 false）。 */
 const PLUGIN_SKILLS_DIR = (() => {
-  try { return fileURLToPath(new URL('../skills/', import.meta.url)) } catch { return null }
+  try { return resolve(fileURLToPath(new URL('../skills/', import.meta.url))) } catch { return null }
 })()
+/** 目录比较要规范化：注册表给的是 `/a/b/skills`，URL 拼出来可能带结尾斜杠。 */
+const sameDir = (a, b) => {
+  if (a === null || b === null) return false
+  try { return resolve(a) === resolve(b) } catch { return false }
+}
 
 /** Cordis 插件名。 */
 export const name = 'redteam-ui'
@@ -96,7 +102,7 @@ async function handleSkillOp(ctx, request) {
         dir: dir,
         modelInvocable: s.invocation ? s.invocation.modelInvocable !== false : true,
         userInvocable: s.invocation ? s.invocation.userInvocable !== false : true,
-        fromPlugin: dir !== null && dir === PLUGIN_SKILLS_DIR,
+        fromPlugin: sameDir(dir, PLUGIN_SKILLS_DIR),
       }
     })
     return {

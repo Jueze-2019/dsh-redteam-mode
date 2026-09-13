@@ -1179,10 +1179,6 @@ window.__ModuleLoader__.load({
             '共 ' + items.length + ' 个技能 · 来自 ' + ((meta.byDir || []).length) + ' 个目录',
             items.length > 100 ? h('div', { style: { marginTop: 3 } },
               '（技能多来自其它插件注册的根或你自己的技能目录；本插件只自带 ' + (meta.fromPlugin || 0) + ' 个）') : null),
-          dirs.length
-            ? h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)', marginBottom: 8, lineHeight: 1.6 } },
-                dirs.map((d) => h('div', { key: d.key, title: d.key }, d.n + ' 个 · ' + d.key)))
-            : null,
           listItems),
         h('div', { className: 'rt-main' },
           h('div', { className: 'rt-toolbar' },
@@ -1204,8 +1200,12 @@ window.__ModuleLoader__.load({
             : h('div', { className: 'rt-pane' },
                 h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)', marginBottom: 8 } },
                   meta.note || '技能由 DSH 原生 skill 体系管理，红队智能体通过 skill 工具调用。'),
-                (meta.byDir || []).slice(0, 8).map((d) => h('div', { key: d.key, className: 'rt-mono', style: { fontSize: 11.5 } },
+                (meta.byDir || []).slice(0, 6).map((d) => h('div', { key: d.key, className: 'rt-mono', style: { fontSize: 11, marginBottom: 2, overflowWrap: 'anywhere' } },
                   d.n + ' 个 · ' + d.key)),
+                (meta.byDir || []).length > 6
+                  ? h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)' } },
+                      '…另有 ' + ((meta.byDir || []).length - 6) + ' 个目录（共 ' + items.length + ' 个技能）')
+                  : null,
                 h('div', { className: 'rt-empty' }, '左侧选择技能查看内容')))
       )
     }

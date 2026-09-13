@@ -80,6 +80,8 @@ console.log('— 预设')
 const preset = readFileSync(join(root, 'presets/redteam/agent.cordis.yml'), 'utf8')
 ok(preset.includes('name: dsh-redteam-mode/tools'), '工具行指向本包子路径')
 ok(preset.includes('{{REDTEAM_SKILLS_DIR}}'), '技能目录是待替换占位符')
+ok(/includeDefaultRoots: false/.test(preset), '关掉默认技能根（否则会把 .agents/skills 等几百个技能一起吞进来）')
+ok(/dshHomePath\('skills'\)/.test(preset), '额外只放行 $DSH_HOME/skills')
 ok(/红队（RedTeam）作战指挥智能体/.test(preset), '人设正文在')
 ok(!preset.includes('/home/'), '预设里没有本机绝对路径')
 
