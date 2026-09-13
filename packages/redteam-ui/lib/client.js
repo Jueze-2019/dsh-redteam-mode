@@ -1114,9 +1114,10 @@ window.__ModuleLoader__.load({
     function SkillsTab(props) {
       const refreshKey = props.refreshKey || 0
       const [items, setItems] = React.useState([])
-      const [roots, setRoots] = React.useState([])
+      const [meta, setMeta] = React.useState({})
       const [err, setErr] = React.useState(null)
       const [q, setQ] = React.useState('')
+      const [srcOnly, setSrcOnly] = React.useState(false)
       const [active, setActive] = React.useState(null)
       const [detail, setDetail] = React.useState(null)
       const [busy, setBusy] = React.useState(false)
@@ -1127,7 +1128,7 @@ window.__ModuleLoader__.load({
           setBusy(false)
           if (!r || r.ok === false) { setErr((r && r.error) || '读取失败'); return }
           setErr(null)
-          setRoots(r.roots || [])
+          setMeta(r || {})
           setItems(r.items || [])
         }, (e) => { setBusy(false); setErr(String((e && e.message) || e)) })
       }
@@ -1144,9 +1145,12 @@ window.__ModuleLoader__.load({
       }
 
       const needle = q.trim().toLowerCase()
-      const filtered = needle
+      let filtered = needle
         ? items.filter((s) => (s.name + ' ' + s.description + ' ' + s.whenToUse).toLowerCase().indexOf(needle) >= 0)
         : items
+      if (srcOnly) filtered = filtered.filter((s) => s.fromPlugin === true)
+      /* 目录聚合：一眼看出"这么多技能是哪来的"（本项目/别的插件/自带根…） */
+      const dirs = (meta.byDir || []).filter((d) => d.n > 0).slice(0, 6)
       const needRestart = err !== null && String(err).indexOf('unknown op') >= 0
 
       const listItems = filtered.map((s) => h('div', {
@@ -1155,7 +1159,12 @@ window.__ModuleLoader__.load({
       },
         h('div', { className: 'rt-item-name' }, s.name,
           s.modelInvocable === false ? h('span', { className: 'rt-tag', style: { marginLeft: 6 } }, '仅人工') : null),
-        h('div', { className: 'rt-item-desc' }, s.description || '（无描述）')))
+        h('div', { className: 'rt-item-desc' }, s.description || '（无描述）'),
+        h('div', { className: 'rt-kb-sub' },
+          [s.source ? '来源 ' + s.source : null,
+            s.fromPlugin ? '本插件自带' : null,
+            s.provider ? s.provider : null,
+            s.dir ? s.dir : null].filter(Boolean).join(' · '))))
 
       return h('div', { className: 'rt-split' },
         h('div', { className: 'rt-list' },
@@ -1163,8 +1172,17 @@ window.__ModuleLoader__.load({
             className: 'rt-input', style: { width: '100%', marginBottom: 8, boxSizing: 'border-box' },
             placeholder: '过滤技能', value: q, onChange: (e) => setQ(e.target.value),
           }),
-          h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)', marginBottom: 8 } },
-            '共 ' + items.length + ' 个 · 由 DSH 管理'),
+          h('label', { className: 'rt-kb-check', style: { display: 'flex', margin: '0 0 8px' } },
+            h('input', { type: 'checkbox', checked: srcOnly, onChange: (e) => setSrcOnly(e.target.checked) }),
+            '只看本插件自带（' + (meta.fromPlugin || 0) + ' 个）'),
+          h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)', marginBottom: 6 } },
+            '共 ' + items.length + ' 个技能 · 来自 ' + ((meta.byDir || []).length) + ' 个目录',
+            items.length > 100 ? h('div', { style: { marginTop: 3 } },
+              '（技能多来自其它插件注册的根或你自己的技能目录；本插件只自带 ' + (meta.fromPlugin || 0) + ' 个）') : null),
+          dirs.length
+            ? h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)', marginBottom: 8, lineHeight: 1.6 } },
+                dirs.map((d) => h('div', { key: d.key, title: d.key }, d.n + ' 个 · ' + d.key)))
+            : null,
           listItems),
         h('div', { className: 'rt-main' },
           h('div', { className: 'rt-toolbar' },
@@ -1185,8 +1203,9 @@ window.__ModuleLoader__.load({
                 h('pre', { className: 'rt-md', style: { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 6, maxHeight: '52vh' } }, detail.content || '（空）'))
             : h('div', { className: 'rt-pane' },
                 h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)', marginBottom: 8 } },
-                  '技能由 harness 的 skill 体系管理，红队智能体通过原生 skill 工具调用。技能根：'),
-                h('div', { style: { fontSize: 12, marginBottom: 12 } }, roots.map((r) => h('div', { key: r, className: 'rt-mono' }, '· ' + r))),
+                  meta.note || '技能由 DSH 原生 skill 体系管理，红队智能体通过 skill 工具调用。'),
+                (meta.byDir || []).slice(0, 8).map((d) => h('div', { key: d.key, className: 'rt-mono', style: { fontSize: 11.5 } },
+                  d.n + ' 个 · ' + d.key)),
                 h('div', { className: 'rt-empty' }, '左侧选择技能查看内容')))
       )
     }
