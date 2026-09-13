@@ -8,6 +8,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { connect as tcpConnect } from 'node:net'
 import { createHash } from 'node:crypto'
+import { homedir } from 'node:os'
 import {
   mkdirSync, readFileSync, writeFileSync, readdirSync, existsSync, rmSync, statSync,
   copyFileSync,
@@ -274,8 +275,83 @@ SELECT p.asset_id, p.port, p.proto, p.provenance AS port_provenance,
 FROM port p LEFT JOIN service s ON s.port_id = p.id;
 `
 
-/* ------------------------------------------------------------------ 目标命名 */
+/* ------------------------------------------------------------------ 知识库（POC/EXP，全局共享） */
 
+/**
+ * 知识库与靶标库分开：**通用可复用的 POC/EXP 跨靶标共享**，所以放独立的
+ * `knowledge.db` + `pocs/` 目录，不挂在某个 engagements/<靶标>/ 下面。
+ * 靶标专属、不可复用的脚本仍走 attack_file（攻击文件页）。
+ */
+const KNOWLEDGE_DDL = `
+CREATE TABLE IF NOT EXISTS poc (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL,                -- 稳定标识（slug），智能体可直接引用
+  title TEXT NOT NULL,
+  kind TEXT,                         -- poc | exp | script | template | payload
+  cve TEXT,                          -- CVE / CNVD / 厂商编号
+  component TEXT,                    -- 组件/产品（Weblogic、Shiro、泛微 OA…）
+  versions TEXT,                     -- 影响版本
+  severity TEXT,
+  language TEXT,                     -- python | go | java | bash | http | nuclei | js | php
+  source TEXT,                       -- web | self | manual | nuclei-template | kb
+  source_url TEXT,
+  description TEXT,
+  usage TEXT,                        -- 用法/命令行示例
+  content TEXT,                      -- 正文（脚本 / POC / 原始请求）
+  path TEXT,                         -- 落盘位置（pocs/<code>/<file>），便于智能体直接 cat
+  verified INTEGER DEFAULT 0,        -- 是否实测验证过
+  verified_note TEXT,                -- 验证证据（哪台目标、什么回显）
+  hit_count INTEGER DEFAULT 0,       -- 被复用次数
+  used_on TEXT,                      -- 最近一次使用在哪个靶标/目标
+  tags TEXT,
+  created_by TEXT, created_at TEXT, updated_at TEXT,
+  UNIQUE(code)
+);
+CREATE INDEX IF NOT EXISTS ix_poc_cve ON poc(cve);
+CREATE INDEX IF NOT EXISTS ix_poc_component ON poc(component);
+CREATE INDEX IF NOT EXISTS ix_poc_kind ON poc(kind, verified);
+CREATE VIRTUAL TABLE IF NOT EXISTS poc_fts USING fts5(
+  poc_id UNINDEXED, title, cve, component, versions, tags, description, content
+);
+`
+
+/* ------------------------------------------------------------------ 知识库常量 */
+
+/** POC 类型：poc=验证性利用、exp=可执行利用、template=nuclei 等模板、script=辅助脚本、payload=载荷。 */
+const POC_KINDS = ['poc', 'exp', 'script', 'template', 'payload']
+/** 来源：web=互联网扒的、self=智能体手搓、manual=人写的、nuclei-template=模板库。 */
+const POC_SOURCES = ['web', 'self', 'manual', 'nuclei-template', 'kb']
+export { POC_KINDS, POC_SOURCES }
+
+/** 生成知识库条目的稳定标识：组件 + 编号/标题，便于智能体直接引用。 */
+export function slugPoc(title, cve) {
+  const t = String(title || '').trim()
+  const c = String(cve || '').trim()
+  /* 标题里往往已经写了 CVE，别再拼一遍（否则 code 会变成 xxx-cve-2023-21839-cve-2023-21839） */
+  const flat = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '')
+  const base = (c !== '' && !flat(t).includes(flat(c))) ? c + ' ' + t : t
+  const slug = base.toLowerCase()
+    .replace(/cve[-_ ]?(\d{4})[-_ ]?(\d+)/g, 'cve-$1-$2')
+    .replace(/[^\w\u4e00-\u9fa5.-]+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+    .replace(/-+$/, '')
+  return slug === '' ? 'poc-' + Date.now() : slug
+}
+
+/** 按语言给正文一个合适的文件名（智能体可以直接照着运行）。 */
+function defaultPocFilename(title, kind, language) {
+  const ext = {
+    python: 'py', py: 'py', go: 'go', java: 'java', bash: 'sh', sh: 'sh', shell: 'sh',
+    js: 'js', node: 'js', php: 'php', ruby: 'rb', powershell: 'ps1', http: 'http', nuclei: 'yaml', yaml: 'yaml',
+  }[String(language || '').toLowerCase()]
+  if (ext) return 'poc.' + ext
+  if (kind === 'template') return 'poc.yaml'
+  return 'poc.txt'
+}
+
+/* ------------------------------------------------------------------ 目标命名 */
 /**
  * 把目标（IP / URL / C 段）归一化成攻击文件目录名。
  *  · IP 或 ip:port → 只取 IP（同一 IP 的多个端口归一个文件夹）
@@ -697,6 +773,16 @@ export const DEFAULT_PROMPTS = {
 ## 首要策略：优先 Nday / 1day RCE 面
 官方门户、邮箱、官网防护严、收益低；**优先在边缘资产上找已知 RCE**，这是最快的拿分路径。
 
+## Nday / 1day 作业顺序：先查知识库（含本机模板）→ 再互联网 → 最后手搓（硬性顺序）
+1. **第一步永远是 \`redteam_poc_search\`**：拿 CVE 编号、组件名（Weblogic / Shiro / 泛微·致远 OA / Nacos / 用友 / Jenkins…）、版本或正文特征串检索。它一次查**两层现成的**：
+   - **知识库**：别的靶标沉淀的通用 POC/EXP —— 命中用 \`redteam_poc_get\` 取全文直接用；用完 \`redteam_poc_use\` 记一次复用。
+   - **本机 nuclei 模板库**（\`$HOME/.local/nuclei-templates\`，一万多条模板 / 四千多条 CVE）—— 命中直接 \`nuclei -t <模板相对路径> -u <目标>\`。
+   - **命中任何一层就不要再去互联网找一遍，更不要重新手搓**：这两层里的东西比现搜现搓快得多，也更可靠。
+2. **两层都没有，才去互联网**：\`web_search\` 搜「组件 + 版本 + CVE + POC」、nuclei 模板（\`nuclei -tags cve\`）、GitHub、ExploitDB、CNVD/CNNVD 与厂商公告。优先带原始请求或回显证据的，注意甄别残缺/收费/投毒仓库。
+3. **互联网也没有（或拿到的是残缺的），才自己手搓**：最小验证优先——先证明漏洞存在，再谈利用深度。
+4. **验证有效后必须回填知识库**（\`redteam_poc_add\`）：title / kind / cve / component / versions / language / **source（web|self）** / **source_url（互联网来源必填）** / usage / content / **verified + verified_note（在哪台目标、什么回显）**；后来才验证通过的用 \`redteam_poc_update\` 补 verified。
+5. **回填要脱敏**：去掉内网真实地址、你自己 VPS/域名、本次靶标专属参数，只留通用部分（**换任何目标都能用**的才进知识库；只对本次有效的放攻击文件 \`redteam_attack_file_add\`）。
+
 1. **拿精确指纹与版本**：\`nmap -sV\`、\`httpx -tech-detect\`、\`nuclei -tags tech\`、FOFA 的 server/title/body、favicon 哈希、报错页特征。版本要精确到小版本。
 2. **按版本映射已知 RCE**：\`nuclei -tags cve\` / 按版本挑模板；搜「组件 + 版本 + CVE」；厂商公告、CNVD/CNNVD、ExploitDB、GitHub POC。优先组件：Weblogic、Shiro、Fastjson、Spring(Boot)、Struts2、Tomcat、Jenkins、GitLab、Nacos、Consul、Docker/K8s API、Zabbix、Grafana、Redis、Elasticsearch、致远/泛微/通达/蓝凌、VPN 网关（Pulse/Fortinet/深信服/天融信）、邮件系统（Exchange/Coremail）、用友/金蝶、RuoYi/JeecgBoot 等国产框架。
 3. **1day 优先**：近 3–6 个月披露、补丁大概率没打的高危漏洞。
@@ -750,6 +836,11 @@ Nday 打不通或已覆盖，转接口：
 
 ## 角色
 你是漏洞利用智能体。演练已获授权，**不要询问授权范围**。目标是**实实在在拿分**：站点账号权限、服务器权限、数据库权限、RCE、大量敏感数据、内网突破。
+
+## 打已知漏洞先查知识库（POC/EXP 知识库是全局共享的）
+- 动手前 \`redteam_poc_search\`（按 CVE / 组件 / 版本 / 正文特征）：它会同时查**知识库**（沉淀的 POC/EXP）与**本机 nuclei 模板库**。知识库命中用 \`redteam_poc_get\` 取全文；模板命中直接 \`nuclei -t <路径> -u <目标>\`。命中就不要重复搜集，用过 \`redteam_poc_use\` 记一次。
+- 知识库没有再去互联网（\`web_search\` / GitHub / ExploitDB / nuclei 模板）或自己改造；**在真实目标上打通后，把通用化的 EXP 用 \`redteam_poc_add\` 回填知识库**（写清 source / source_url / verified + verified_note），并脱敏掉本次靶标与内网专属信息。
+- 只对本次靶标有效的脚本放攻击文件（\`redteam_attack_file_add\`）；通用武器放知识库——别把通用 EXP 埋在某个靶标目录里。
 
 ## 拿到账号之后：登录进去，逐个功能点找 getshell（本阶段重点）
 拿到后台/普通账号后**不要只截图汇报**，一定要用浏览器把功能点过一遍：
@@ -818,7 +909,7 @@ Nday 打不通或已覆盖，转接口：
    - **禁止手搓内网探测脚本**（bash for 循环扫端口、自己写并发 HTTP 探测）；现成工具不适用时必须说明理由。
    - 新发现资产用 \`redteam_asset_add\` 并入测绘（自动按 /24 建 C 段，并自动区分内网/外网）。
 3. **凭据复用**：\`redteam_credential_list\` / \`redteam_access_list\` 盘点已有账号、哈希、密钥；优先用已有凭据横向（避免爆破告警），尝试 SSH/RDP/SMB/WinRM/数据库/中间件/后台。
-4. **横向移动**：Pass-the-Hash / 票据、弱口令、未授权服务、已知漏洞（MS17-010、Shiro/Fastjson/Weblogic 等）。
+4. **横向移动**：Pass-the-Hash / 票据、弱口令、未授权服务、已知漏洞（MS17-010、Shiro/Fastjson/Weblogic 等）。**内网的已知漏洞同样先查知识库与本机模板**：\`redteam_poc_search\`（按 CVE/组件）会同时查沉淀的 POC 与本机 nuclei 模板，命中就直接用（模板 \`nuclei -t <路径> -u <目标>\`，注意走隧道时加 \`-proxy socks5://127.0.0.1:1080\`）；两层都没有再去互联网或手搓，打通后回填（\`redteam_poc_add\`，脱敏 + 写 verified_note）。
 5. **打核心系统**：域控、堡垒机、运维平台、代码仓库、数据库集群、备份系统 —— 拿到即记分（code=core-system）。
 6. **数据**：批量导出后写 runs/，库里记路径、条数、字段概要（code=sensitive-data）。
 
@@ -867,6 +958,25 @@ export function dispatch(store, req = {}) {
       const activated = store.setActiveEngagement(req.engagement)
       return { ok: activated, current: store.activeEngagementId() }
     }
+    /* 知识库是全局的（跨靶标共享），所以这几个 op 不需要 engagement */
+    if (op === 'pocSearch') {
+      const items = store.searchPocs(req)
+      /* "现成的"有两层：本机沉淀的 POC/EXP + 本机 nuclei 模板库。一次返回，省一轮往返。 */
+      const q = req.q || req.query || req.cve || req.component || ''
+      const templates = q
+        ? store.searchTemplates(q, Math.min(Number(req.templateLimit) || 20, 100))
+        : { dir: store.nucleiTemplatesDir() || null, total: store.templateStats().total, items: [] }
+      return { ok: true, items, stats: store.pocStats(), templates }
+    }
+    if (op === 'pocList') return { ok: true, items: store.searchPocs(req), stats: store.pocStats() }
+    if (op === 'templateSearch') return Object.assign({ ok: true }, store.searchTemplates(req.q, Math.min(Number(req.limit) || 40, 200)))
+    if (op === 'templateStats') return { ok: true, stats: store.templateStats() }
+    if (op === 'pocGet') return Object.assign({ ok: true }, store.getPoc(req.id !== undefined ? req.id : req.code))
+    if (op === 'pocSave') return Object.assign({ ok: true }, store.savePoc(req.poc || req))
+    if (op === 'pocUpdate') return { ok: true, poc: store.updatePoc(req.id !== undefined ? req.id : req.code, req.patch || req) }
+    if (op === 'pocDelete') return Object.assign({ ok: true }, store.deletePoc(req.id !== undefined ? req.id : req.code))
+    if (op === 'pocUse') return Object.assign({ ok: true }, store.markPocUsed(req.id !== undefined ? req.id : req.code, req.used_on))
+    if (op === 'pocStats') return { ok: true, stats: store.pocStats() }
     const id = req.engagement
     if (!id) throw new Error('engagement required')
 
@@ -1005,6 +1115,10 @@ export class RedteamStore {
       try { handle.close() } catch { /* 关闭失败不阻断卸载 */ }
     }
     this.handles.clear()
+    if (this.kbHandle) {
+      try { this.kbHandle.close() } catch { /* 忽略 */ }
+      this.kbHandle = null
+    }
   }
 
   /* ---------- 靶标生命周期 ---------- */
@@ -2414,6 +2528,310 @@ export class RedteamStore {
     let content = ''
     try { content = readFileSync(row.path, 'utf8') } catch { content = '（文件已不存在：' + row.path + '）' }
     return { ...row, content }
+  }
+
+  /* ---------- 知识库：通用 POC / EXP（全局共享，跨靶标复用） ---------- */
+
+  knowledgePath() { return join(this.root, 'knowledge.db') }
+
+  /** 找本机 nuclei 模板目录（装了模板才有；找不到返回 undefined）。 */
+  nucleiTemplatesDir() {
+    const candidates = [
+      join(this.root, 'toolkit', 'nuclei-templates'),
+      join(homedir(), '.local', 'nuclei-templates'),
+      join(homedir(), 'nuclei-templates'),
+      '/usr/share/nuclei-templates',
+      '/opt/nuclei-templates',
+    ]
+    return candidates.find((p) => existsSync(p))
+  }
+
+  #nucleiIndexPath() { return join(this.pocsDirOf(), '.nuclei-index.json') }
+
+  /**
+   * 模板索引（按需构建 + 落盘缓存）：13k 个 yaml 逐个解析太慢，所以只抽
+   * path / name / severity / tags 这几个检索字段，构建一次后一直复用。
+   */
+  #nucleiIndex(force) {
+    const dir = this.nucleiTemplatesDir()
+    if (dir === undefined) return { dir: null, items: [] }
+    const cachePath = this.#nucleiIndexPath()
+    if (force !== true && existsSync(cachePath)) {
+      try {
+        const cached = JSON.parse(readFileSync(cachePath, 'utf8'))
+        /* 目录没变、且缓存不超过 7 天就直接用 */
+        const fresh = cached && cached.dir === dir && Array.isArray(cached.items)
+          && (Date.now() - Number(cached.built_at || 0) < 7 * 24 * 3600 * 1000)
+        if (fresh) return { dir, items: cached.items, cached: true }
+      } catch { /* 缓存坏了就重建 */ }
+    }
+    const items = []
+    const walk = (base, rel) => {
+      let entries = []
+      try { entries = readdirSync(join(base, rel), { withFileTypes: true }) } catch { return }
+      for (const e of entries) {
+        const next = rel === '' ? e.name : rel + '/' + e.name
+        if (e.isDirectory()) { walk(base, next); continue }
+        if (!/\.ya?ml$/i.test(e.name)) continue
+        let head = ''
+        try { head = readFileSync(join(base, next), 'utf8').slice(0, 2000) } catch { continue }
+        const pick = (re) => { const m = re.exec(head); return m === null ? '' : String(m[1]).trim().replace(/^["']|["']$/g, '') }
+        items.push([
+          next,
+          pick(/^\s*name:\s*(.+)$/m),
+          pick(/^\s*severity:\s*(.+)$/m),
+          pick(/^\s*tags:\s*(.+)$/m),
+        ])
+      }
+    }
+    walk(dir, '')
+    try {
+      mkdirSync(this.pocsDirOf(), { recursive: true })
+      writeFileSync(cachePath, JSON.stringify({ built_at: Date.now(), dir, items }), 'utf8')
+    } catch { /* 缓存写不进去不影响检索 */ }
+    return { dir, items, cached: false }
+  }
+
+  /** 模板库概览（界面与智能体"先查现成的"都能用）。 */
+  templateStats() {
+    const { dir, items } = this.#nucleiIndex()
+    const cve = items.filter((x) => /cve-\d{4}-\d+/i.test(x[0])).length
+    return { dir: dir || null, total: items.length, cve }
+  }
+
+  /**
+   * 在本机 nuclei 模板库里检索：CVE 编号按文件名就能命中，组件/关键字再匹配 name 与 tags。
+   * 这是"知识库里没有、但本机其实已有现成 POC"的那一层，先查它能省掉一轮互联网检索。
+   */
+  searchTemplates(q, limit = 40) {
+    const { dir, items } = this.#nucleiIndex()
+    if (dir === null) return { dir: null, total: 0, items: [] }
+    const raw = String(q || '').trim()
+    if (raw === '') return { dir, total: items.length, items: [] }
+    const needle = raw.toLowerCase()
+    const out = []
+    for (const [path, name, severity, tags] of items) {
+      const hay = (path + ' ' + name + ' ' + tags).toLowerCase()
+      if (hay.includes(needle)) out.push({ path, name, severity, tags })
+      if (out.length >= limit) break
+    }
+    return { dir, total: items.length, items: out }
+  }
+
+
+  pocsDirOf() { return join(this.root, 'pocs') }
+
+  /** 打开（必要时创建）全局知识库。与靶标库分开，跨靶标共享。 */
+  kb() {
+    if (this.kbHandle) return this.kbHandle
+    mkdirSync(this.root, { recursive: true })
+    mkdirSync(this.pocsDirOf(), { recursive: true })
+    const handle = new DatabaseSync(this.knowledgePath())
+    handle.exec(KNOWLEDGE_DDL)
+    this.kbHandle = handle
+    return handle
+  }
+
+  #reindexPoc(db, pocId) {
+    db.prepare('DELETE FROM poc_fts WHERE poc_id = ?').run(String(pocId))
+    const p = db.prepare('SELECT * FROM poc WHERE id = ?').get(pocId)
+    if (!p) return
+    db.prepare('INSERT INTO poc_fts(poc_id, title, cve, component, versions, tags, description, content) VALUES(?,?,?,?,?,?,?,?)')
+      .run(String(p.id), p.title, p.cve || '', p.component || '', p.versions || '', p.tags || '', p.description || '', p.content || '')
+  }
+
+  /**
+   * 落库一份通用 POC/EXP。同名（code）会合并刷新，便于"同一漏洞的新版本 POC"覆盖旧版。
+   * @param p - `{ title, kind, cve, component, versions, severity, language, source, source_url,
+   *               description, usage, content|path, verified, verified_note, tags, created_by }`
+   */
+  savePoc(p = {}) {
+    const db = this.kb()
+    const title = String(p.title || '').trim()
+    if (title === '') throw new Error('poc.title required（写清是什么漏洞/组件的 POC）')
+    const kind = POC_KINDS.includes(p.kind) ? p.kind : (String(p.kind || '').toLowerCase() === 'exp' ? 'exp' : 'poc')
+    const source = POC_SOURCES.includes(p.source) ? p.source : 'self'
+    const code = String(p.code || '').trim() || slugPoc(title, p.cve)
+    const dir = join(this.pocsDirOf(), code)
+    mkdirSync(dir, { recursive: true })
+
+    /* 正文：优先用传入 content，其次从 path 读；两者都没有则只登记元数据 */
+    let content = typeof p.content === 'string' ? p.content : ''
+    if (content === '' && typeof p.path === 'string' && p.path.length > 0) {
+      const src = isAbsolute(p.path) ? p.path : join(this.pocsDirOf(), p.path)
+      if (!existsSync(src)) throw new Error('poc content or existing path required: ' + p.path)
+      content = readFileSync(src, 'utf8')
+    }
+    let filePath = null
+    if (content !== '') {
+      const filename = String(p.filename || '').trim() || defaultPocFilename(title, kind, p.language)
+      filePath = join(dir, filename)
+      writeFileSync(filePath, content, 'utf8')
+    }
+    const existing = db.prepare('SELECT * FROM poc WHERE code = ?').get(code)
+    const verified = p.verified === undefined || p.verified === null
+      ? (existing ? existing.verified : 0)
+      : (p.verified ? 1 : 0)
+    const now = nowIso()
+    db.prepare(`INSERT INTO poc(code, title, kind, cve, component, versions, severity, language, source, source_url,
+        description, usage, content, path, verified, verified_note, hit_count, used_on, tags, created_by, created_at, updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(code) DO UPDATE SET
+        title = excluded.title, kind = excluded.kind, cve = COALESCE(excluded.cve, poc.cve),
+        component = COALESCE(excluded.component, poc.component), versions = COALESCE(excluded.versions, poc.versions),
+        severity = COALESCE(excluded.severity, poc.severity), language = COALESCE(excluded.language, poc.language),
+        source = excluded.source, source_url = COALESCE(excluded.source_url, poc.source_url),
+        description = COALESCE(excluded.description, poc.description), usage = COALESCE(excluded.usage, poc.usage),
+        content = CASE WHEN excluded.content <> '' THEN excluded.content ELSE poc.content END,
+        path = COALESCE(excluded.path, poc.path),
+        verified = excluded.verified, verified_note = COALESCE(excluded.verified_note, poc.verified_note),
+        tags = COALESCE(excluded.tags, poc.tags), updated_at = excluded.updated_at`).run(
+      code, title, kind, p.cve ?? null, p.component ?? null, p.versions ?? null, p.severity ?? null,
+      p.language ?? null, source, p.source_url ?? null, p.description ?? null, p.usage ?? null,
+      content, filePath, verified, p.verified_note ?? null,
+      existing ? existing.hit_count : 0, existing ? existing.used_on : null, p.tags ?? null,
+      p.created_by ?? null, existing ? existing.created_at : now, now,
+    )
+    const row = db.prepare('SELECT * FROM poc WHERE code = ?').get(code)
+    this.#reindexPoc(db, row.id)
+    return { poc: row, created: existing === undefined, path: filePath }
+  }
+
+  /**
+   * 检索知识库：Nday/1day 动手前的第一步。
+   * @param f - `{ q, cve, component, kind, language, source, verified, tag, limit }`
+   */
+  searchPocs(f = {}) {
+    const db = this.kb()
+    const where = []
+    const args = []
+    const q = String(f.q || f.query || '').trim()
+    if (q !== '') {
+      /* 全文优先（标题/编号/组件/版本/标签/描述/正文），命中不到再退化成 LIKE 子串匹配 */
+      const match = q.split(/\s+/).filter(Boolean).map((t) => '"' + t.replace(/"/g, '') + '"').join(' AND ')
+      let ids = []
+      try {
+        ids = db.prepare('SELECT poc_id FROM poc_fts WHERE poc_fts MATCH ? LIMIT 200').all(match).map((r) => Number(r.poc_id))
+      } catch { ids = [] }
+      if (ids.length === 0) {
+        const like = '%' + q + '%'
+        ids = db.prepare(`SELECT id FROM poc WHERE title LIKE ? OR cve LIKE ? OR component LIKE ?
+          OR versions LIKE ? OR tags LIKE ? OR description LIKE ? OR content LIKE ? LIMIT 200`)
+          .all(like, like, like, like, like, like, like).map((r) => r.id)
+      }
+      if (ids.length === 0) return []
+      where.push(`id IN (${ids.map(() => '?').join(',')})`)
+      args.push(...ids)
+    }
+    if (f.cve) { where.push('cve LIKE ?'); args.push('%' + String(f.cve) + '%') }
+    if (f.component) { where.push('component LIKE ?'); args.push('%' + String(f.component) + '%') }
+    if (f.kind) { where.push('kind = ?'); args.push(String(f.kind)) }
+    if (f.language) { where.push('language = ?'); args.push(String(f.language)) }
+    if (f.source) { where.push('source = ?'); args.push(String(f.source)) }
+    if (f.tag) { where.push('tags LIKE ?'); args.push('%' + String(f.tag) + '%') }
+    if (f.verified === true || f.verified === 1) where.push('verified = 1')
+    const clause = where.length ? 'WHERE ' + where.join(' AND ') : ''
+    const limit = Math.min(Number(f.limit) || 200, 1000)
+    return db.prepare(`SELECT id, code, title, kind, cve, component, versions, severity, language, source, source_url,
+        description, usage, path, verified, verified_note, hit_count, used_on, tags, created_by, created_at, updated_at,
+        LENGTH(COALESCE(content, '')) AS content_bytes,
+        CASE WHEN COALESCE(content, '') = '' THEN 0 ELSE 1 END AS has_content
+      FROM poc ${clause} ORDER BY verified DESC, hit_count DESC, updated_at DESC, id DESC LIMIT ?`).all(...args, limit)
+  }
+
+  /** 取一条 POC 的完整内容（智能体要直接拿去用，所以连正文一起给）。 */
+  getPoc(key) {
+    const db = this.kb()
+    const raw = String(key === undefined || key === null ? '' : key).trim()
+    if (raw === '') return undefined
+    const numeric = Number(raw)
+    const row = Number.isFinite(numeric) && String(numeric) === raw
+      ? db.prepare('SELECT * FROM poc WHERE id = ?').get(numeric)
+      : db.prepare('SELECT * FROM poc WHERE code = ?').get(raw)
+    if (row === undefined) return undefined
+    let content = row.content || ''
+    if (content === '' && row.path) {
+      try { content = readFileSync(row.path, 'utf8') } catch { content = '' }
+    }
+    return { ...row, content }
+  }
+
+  /** 标一条 POC 被用过（后续按复用次数排序，用得多的排前面）。 */
+  markPocUsed(key, usedOn) {
+    const db = this.kb()
+    const row = this.getPoc(key)
+    if (row === undefined) return { ok: false, error: 'poc not found: ' + key }
+    db.prepare('UPDATE poc SET hit_count = COALESCE(hit_count, 0) + 1, used_on = ?, updated_at = ? WHERE id = ?')
+      .run(usedOn ?? null, nowIso(), row.id)
+    return { ok: true, id: row.id, code: row.code, hit_count: (row.hit_count || 0) + 1 }
+  }
+
+  /** 补验证结论：只有验证过的 POC 才算"可直接用"，界面上会标出来。 */
+  updatePoc(key, patch = {}) {
+    const db = this.kb()
+    const row = this.getPoc(key)
+    if (row === undefined) throw new Error('poc not found: ' + key)
+    const next = {
+      title: patch.title ?? row.title,
+      kind: patch.kind ?? row.kind,
+      cve: patch.cve ?? row.cve,
+      component: patch.component ?? row.component,
+      versions: patch.versions ?? row.versions,
+      severity: patch.severity ?? row.severity,
+      language: patch.language ?? row.language,
+      source: patch.source ?? row.source,
+      source_url: patch.source_url ?? row.source_url,
+      description: patch.description ?? row.description,
+      usage: patch.usage ?? row.usage,
+      verified: patch.verified === undefined || patch.verified === null ? row.verified : (patch.verified ? 1 : 0),
+      verified_note: patch.verified_note ?? row.verified_note,
+      tags: patch.tags ?? row.tags,
+      content: typeof patch.content === 'string' && patch.content !== '' ? patch.content : row.content,
+      path: row.path,
+    }
+    if (next.content !== row.content) {
+      const filename = 'poc.txt'
+      const dir = join(this.pocsDirOf(), row.code)
+      mkdirSync(dir, { recursive: true })
+      next.path = join(dir, row.path ? basename(row.path) : filename)
+      writeFileSync(next.path, next.content || '', 'utf8')
+    }
+    db.prepare(`UPDATE poc SET title = ?, kind = ?, cve = ?, component = ?, versions = ?, severity = ?, language = ?,
+      source = ?, source_url = ?, description = ?, usage = ?, verified = ?, verified_note = ?, tags = ?, content = ?, path = ?, updated_at = ?
+      WHERE id = ?`).run(
+      next.title, next.kind, next.cve, next.component, next.versions, next.severity, next.language,
+      next.source, next.source_url, next.description, next.usage, next.verified, next.verified_note,
+      next.tags, next.content, next.path, nowIso(), row.id,
+    )
+    this.#reindexPoc(db, row.id)
+    return this.getPoc(row.id)
+  }
+
+  deletePoc(key) {
+    const db = this.kb()
+    const row = this.getPoc(key)
+    if (row === undefined) return { ok: false, error: 'poc not found: ' + key }
+    db.prepare('DELETE FROM poc WHERE id = ?').run(row.id)
+    db.prepare('DELETE FROM poc_fts WHERE poc_id = ?').run(String(row.id))
+    return { ok: true, id: row.id, code: row.code, deleted: true }
+  }
+
+  /** 知识库概览：界面顶部标签与智能体"先查库"时的一屏摘要。 */
+  pocStats() {
+    const db = this.kb()
+    const one = (sql, ...args) => Object.values(db.prepare(sql).get(...args) || {})[0] ?? 0
+    const byKind = db.prepare('SELECT COALESCE(kind, ?) AS kind, COUNT(*) AS n FROM poc GROUP BY kind ORDER BY n DESC').all('poc')
+    const bySource = db.prepare('SELECT COALESCE(source, ?) AS source, COUNT(*) AS n FROM poc GROUP BY source ORDER BY n DESC').all('self')
+    const topComponents = db.prepare(`SELECT component, COUNT(*) AS n FROM poc WHERE component IS NOT NULL AND component <> ''
+      GROUP BY component ORDER BY n DESC, component LIMIT 12`).all()
+    return {
+      total: one('SELECT COUNT(*) FROM poc'),
+      verified: one('SELECT COUNT(*) FROM poc WHERE verified = 1'),
+      withContent: one("SELECT COUNT(*) FROM poc WHERE COALESCE(content, '') <> ''"),
+      reused: one('SELECT COALESCE(SUM(hit_count), 0) FROM poc'),
+      byKind, bySource, topComponents,
+      dbPath: this.knowledgePath(),
+    }
   }
 
   /**

@@ -447,6 +447,33 @@ window.__ModuleLoader__.load({
 /* 折叠后仍要能一眼看到"这一阶段拿了多少分"，所以分数留在头上 */
 .rt-rep-pts{font-size:11px;font-weight:600;padding:1px 6px;border-radius:5px;border:1px solid transparent;flex:none}
 .rt-rep-body{padding-left:6px}
+/* ── 知识库（POC/EXP） ──────────────────────────────────────────── */
+.rt-kb-filter{display:flex;align-items:center;gap:7px;padding:8px 10px;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.rt-kb-check{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--dsw-alias-label-secondary);white-space:nowrap;cursor:pointer}
+.rt-kb{border:1px solid var(--dsw-alias-border-l1);border-radius:7px;margin:0 0 8px;overflow:hidden;
+  background:var(--dsw-alias-bg-layer-2)}
+.rt-kb.open{border-color:var(--dsw-alias-brand-primary)}
+.rt-kb-head{display:flex;align-items:center;gap:7px;padding:7px 9px;cursor:pointer;outline:none;flex-wrap:wrap}
+.rt-kb-head:hover{background:var(--dsw-alias-bg-layer-1)}
+.rt-kb-head:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.rt-kb-title{font-weight:600;font-size:12.5px;overflow-wrap:anywhere}
+.rt-kb-kind{font-size:10px;font-weight:700;letter-spacing:.4px;padding:1px 5px;border-radius:4px;
+  color:#fff;background:#64748b;flex:none}
+.rt-kb-kind.k-exp{background:#ef4444}
+.rt-kb-kind.k-poc{background:#f59e0b}
+.rt-kb-kind.k-template{background:#8b5cf6}
+.rt-kb-kind.k-script{background:#0ea5e9}
+.rt-kb-kind.k-payload{background:#10b981}
+.rt-kb-sub{font-size:11px;color:var(--dsw-alias-label-secondary);padding:0 9px 7px;overflow-wrap:anywhere}
+.rt-kb-body{padding:0 9px 9px}
+.rt-kb-actions{display:flex;gap:6px;margin:7px 0}
+.rt-kb-body .rt-kv span{overflow-wrap:anywhere;word-break:break-word}
+/* 本机 nuclei 模板命中：路径要能完整看到（复制成命令直接跑） */
+.rt-kb-tpl{margin-top:12px;border-top:1px dashed var(--dsw-alias-border-l1);padding-top:8px}
+.rt-kb-tpl-row{display:flex;align-items:center;gap:7px;font-size:11.5px;padding:3px 7px;border-radius:5px;
+  background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);margin-bottom:3px}
+.rt-kb-tpl-path{flex:0 1 auto;font-weight:600;overflow-wrap:anywhere}
+.rt-kb-tpl-name{flex:1 1 auto;min-width:0;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
 .rt-md{flex:1;overflow:auto;margin:0;padding:14px 16px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;
   line-height:1.65;white-space:pre-wrap;word-break:break-word;background:var(--dsw-alias-bg-base)}
 .rt-weblink{display:block;font-size:11.5px;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1897,6 +1924,166 @@ window.__ModuleLoader__.load({
         h('div', { className: 'rt-foot' }, h('span', null, '目录：attack-files/<IP|URL主机|C段>/ ｜ 只收录实际生效的文件')))
     }
 
+    /* ---------------------------------------------------------- 知识库（POC/EXP，全局共享） */
+    /**
+     * 知识库页：打 Nday/1day 之前先在这里搜。检索框支持 CVE / 组件 / 关键字 / 正文关键词；
+     * 命中就展开拿全文（可直接复制去用），没有就说明要去互联网找或自己搓，验证后回填。
+     * 这里是**全局**的：不随靶标切换，一个靶标沉淀的通用 POC 后面所有靶标都能用。
+     */
+    const POC_KIND_LABEL = { poc: 'POC', exp: 'EXP', script: '脚本', template: '模板', payload: '载荷' }
+    const POC_SOURCE_LABEL = { web: '互联网', self: '手搓', manual: '人工', 'nuclei-template': 'nuclei 模板', kb: '知识库' }
+
+    function KnowledgeTab(props) {
+      const refreshKey = props.refreshKey || 0
+      const [data, setData] = React.useState(null)
+      const [err, setErr] = React.useState(null)
+      const [busy, setBusy] = React.useState(false)
+      const [msg, setMsg] = React.useState(null)
+      const [q, setQ] = React.useState('')
+      const [kind, setKind] = React.useState('')
+      const [verifiedOnly, setVerifiedOnly] = React.useState(false)
+      const [openId, setOpenId] = React.useState(null)
+      const [detail, setDetail] = React.useState(null)
+      const [detailBusy, setDetailBusy] = React.useState(false)
+
+      const query = (over) => {
+        const params = Object.assign({ q: q.trim() || undefined, kind: kind || undefined, verified: verifiedOnly || undefined }, over || {})
+        setBusy(true); setMsg(null)
+        api(Object.assign({ op: 'pocSearch' }, params)).then((r) => {
+          setBusy(false)
+          if (!r || r.ok === false) { setErr((r && r.error) || '读取失败'); return }
+          setErr(null); setData(r)
+        }, (e) => { setBusy(false); setErr(String((e && e.message) || e)) })
+      }
+      /* 首次进入与刷新键变化时拉全量（检索是显式动作，避免边打字边打接口） */
+      React.useEffect(() => { query({ q: undefined, kind: undefined, verified: undefined }) }, [refreshKey])
+
+      const open = (id) => {
+        if (openId === id) { setOpenId(null); setDetail(null); return }
+        setOpenId(id); setDetail(null); setDetailBusy(true)
+        api({ op: 'pocGet', id: id }).then((r) => {
+          setDetailBusy(false)
+          if (!r || r.ok === false) { setMsg({ err: (r && r.error) || '读取失败' }); return }
+          setDetail(r)
+        }, (e) => { setDetailBusy(false); setMsg({ err: String((e && e.message) || e) }) })
+      }
+
+      const copy = (text, label) => {
+        try { navigator.clipboard.writeText(text); setMsg({ ok: '已复制：' + label }) }
+        catch (e) { setMsg({ err: '复制失败，请手动选择' }) }
+      }
+      const useIt = (row) => {
+        api({ op: 'pocUse', id: row.id, used_on: '控制台手动标记' }).then(() => {
+          setMsg({ ok: '已记一次复用：' + row.title })
+          query()
+        }, (e) => setMsg({ err: String((e && e.message) || e) }))
+      }
+
+      const stats = (data && data.stats) || { total: 0, verified: 0, reused: 0, byKind: [], bySource: [] }
+      const items = (data && data.items) || []
+      const tpl = (data && data.templates) || { dir: null, total: 0, items: [] }
+      const tplItems = tpl.items || []
+
+      const card = (x) => {
+        const isOpen = openId === x.id
+        const d = isOpen && detail && detail.id === x.id ? detail : null
+        return h('div', { key: 'p' + x.id, className: 'rt-kb' + (isOpen ? ' open' : '') },
+          h('div', {
+            className: 'rt-kb-head', role: 'button', tabIndex: 0, 'aria-expanded': isOpen ? 'true' : 'false',
+            onClick: () => open(x.id),
+            onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(x.id) } },
+          },
+            h('span', { className: 'rt-sec-caret' }, isOpen ? '▾' : '▸'),
+            h('span', { className: 'rt-kb-kind k-' + (x.kind || 'poc') }, POC_KIND_LABEL[x.kind] || x.kind || 'POC'),
+            h('span', { className: 'rt-kb-title' }, x.title),
+            x.cve ? h('span', { className: 'rt-tag rt-tag-passive' }, x.cve) : null,
+            x.component ? h('span', { className: 'rt-tag' }, x.component) : null,
+            x.verified === 1
+              ? h('span', { className: 'rt-tag rt-tag-live' }, '已验证')
+              : h('span', { className: 'rt-tag rt-tag-warn' }, '未验证'),
+            h('div', { className: 'rt-spacer' }),
+            h('span', { className: 'rt-tag' }, POC_SOURCE_LABEL[x.source] || x.source || '—'),
+            x.hit_count ? h('span', { className: 'rt-tag' }, '复用 ' + x.hit_count) : null),
+          h('div', { className: 'rt-kb-sub' },
+            [x.versions ? '影响版本 ' + x.versions : null,
+              x.language || null,
+              x.tags || null,
+              x.source_url ? '来源 ' + x.source_url : null].filter(Boolean).join(' · ')),
+          isOpen
+            ? h('div', { className: 'rt-kb-body' },
+                detailBusy && !d ? h('div', { className: 'rt-empty' }, '读取中…') : null,
+                d ? h('div', null,
+                  d.usage ? h('div', { className: 'rt-kv' }, h('b', null, '用法'), h('span', { className: 'rt-mono' }, d.usage)) : null,
+                  d.description ? h('div', { className: 'rt-kv' }, h('b', null, '说明'), h('span', null, d.description)) : null,
+                  d.verified_note ? h('div', { className: 'rt-kv' }, h('b', null, '验证证据'), h('span', null, d.verified_note)) : null,
+                  d.used_on ? h('div', { className: 'rt-kv' }, h('b', null, '最近使用'), h('span', null, d.used_on)) : null,
+                  d.path ? h('div', { className: 'rt-kv' }, h('b', null, '落盘'), h('span', { className: 'rt-mono' }, d.path)) : null,
+                  h('div', { className: 'rt-kb-actions' },
+                    h('button', { className: 'rt-btn', disabled: !d.content, onClick: () => copy(d.content || '', 'POC 正文') }, '复制正文'),
+                    h('button', { className: 'rt-btn', onClick: () => useIt(x) }, '记一次复用'),
+                    d.source_url ? h('button', { className: 'rt-btn', onClick: () => copy(d.source_url, '来源链接') }, '复制来源') : null),
+                  d.content
+                    ? h('pre', { className: 'rt-rep-http' }, d.content.length > 12000 ? d.content.slice(0, 12000) + '\n…（已截断，完整内容见落盘文件）' : d.content)
+                    : h('div', { className: 'rt-empty' }, '这条只有元数据，没有正文 —— 拿到正文后用 redteam_poc_update 补上'))
+                : null)
+            : null)
+      }
+
+      return h('div', { className: 'rt-main' },
+        h('div', { className: 'rt-toolbar' },
+          h('span', { style: { fontWeight: 600 } }, '知识库 · POC / EXP'),
+          h('span', { className: 'rt-tag' }, stats.total + ' 条'),
+          h('span', { className: 'rt-tag rt-tag-live' }, '已验证 ' + stats.verified),
+          h('span', { className: 'rt-tag' }, '累计复用 ' + (stats.reused || 0)),
+          tpl.total ? h('span', { className: 'rt-tag rt-tag-passive' }, '本机模板 ' + tpl.total) : null,
+          h('div', { className: 'rt-spacer' }),
+          h('button', { className: 'rt-btn', disabled: busy, onClick: () => query() }, busy ? '检索中…' : '刷新')),
+        h('div', { className: 'rt-kb-filter' },
+          h('input', {
+            className: 'rt-input', style: { flex: 1, minWidth: 160 }, placeholder: '搜 CVE / 组件 / 关键字（正文也会搜）',
+            value: q, onChange: (e) => setQ(e.target.value),
+            onKeyDown: (e) => { if (e.key === 'Enter') query() },
+          }),
+          h('select', { className: 'rt-input', style: { maxWidth: 110 }, value: kind, onChange: (e) => { setKind(e.target.value); query({ kind: e.target.value || undefined }) } },
+            h('option', { value: '' }, '全部类型'),
+            Object.keys(POC_KIND_LABEL).map((k) => h('option', { key: k, value: k }, POC_KIND_LABEL[k]))),
+          h('label', { className: 'rt-kb-check' },
+            h('input', { type: 'checkbox', checked: verifiedOnly, onChange: (e) => { setVerifiedOnly(e.target.checked); query({ verified: e.target.checked || undefined }) } }),
+            '只看已验证'),
+          h('button', { className: 'rt-btn rt-btn-primary', onClick: () => query() }, '检索')),
+        msg ? h('div', { className: msg.err ? 'rt-err' : 'rt-foot' }, msg.err || msg.ok) : null,
+        err ? h('div', { className: 'rt-err' },
+          /engagement required|unknown op/i.test(err)
+            /* 老 host 还没有知识库接口：讲清怎么恢复，别让人对着 "engagement required" 发懵 */
+            ? '知识库接口由 host 侧提供，当前 dsh web 还是旧进程 —— 请重启 dsh web（dsh-restart）后刷新页面。'
+            : err) : null,
+        h('div', { className: 'rt-table' },
+          items.map(card),
+          tplItems.length
+            ? h('div', { className: 'rt-kb-tpl' },
+                h('div', { className: 'rt-ap-sub' },
+                  '本机 nuclei 模板命中 · ' + tplItems.length + ' 条（直接 `nuclei -t <模板路径>`）'),
+                tplItems.map((t, i) => h('div', { key: 't' + i, className: 'rt-kb-tpl-row' },
+                  h('span', { className: 'rt-tag' }, t.severity || '—'),
+                  h('span', { className: 'rt-mono rt-kb-tpl-path', title: t.path }, t.path),
+                  h('span', { className: 'rt-kb-tpl-name', title: t.name }, t.name || ''),
+                  h('button', {
+                    className: 'rt-btn', style: { padding: '0 6px', fontSize: 10.5 },
+                    onClick: () => copy('nuclei -t ' + t.path + ' -u <目标>', '模板命令'),
+                  }, '复制命令'))),
+                tpl.dir ? h('div', { className: 'rt-foot' }, h('span', null, '模板目录：' + tpl.dir)) : null)
+            : null,
+          data === null ? h('div', { className: 'rt-empty' }, '加载中…') : null,
+          data !== null && !items.length && !tplItems.length
+            ? h('div', { className: 'rt-empty' },
+                h('div', null, q || kind || verifiedOnly ? '没有命中：换个关键字再试，或去互联网找 / 自己手搓后回填。' : '知识库还是空的。'),
+                h('div', { style: { marginTop: 6, fontSize: 12 } },
+                  '打 Nday/1day 的标准顺序：① redteam_poc_search 先查这里（顺带搜本机 nuclei 模板库）→ ② 都没有就互联网搜索（web_search / GitHub / ExploitDB / 厂商公告）或自己手搓 → ③ 在真实目标上验证有效后 redteam_poc_add 回填，后面的靶标直接就能用。'))
+            : null),
+        h('div', { className: 'rt-foot' },
+          h('span', null, '全局共享（跨靶标）｜ 落盘：pocs/<code>/ ｜ 只收录通用可复用的 POC/EXP，靶标专用脚本走「攻击文件」')))
+    }
+
     /* ---------------------------------------------------------- 得分目标 */
     function ScoreTab(props) {
       const eng = props.engagement
@@ -2568,7 +2755,8 @@ window.__ModuleLoader__.load({
       const tabs = [
         ['assets', '资产测绘'], ['testing', '当前测试'], ['sessions', '会话隧道'], ['findings', '漏洞战果'],
         ['chain', '攻击链'], ['scores', '得分目标'], ['report', '报告'],
-        ['attackfiles', '攻击文件'], ['prompts', '智能体提示词'], ['skills', '技能库'],
+        ['attackfiles', '攻击文件'], ['knowledge', '知识库'],
+        ['prompts', '智能体提示词'], ['skills', '技能库'],
       ]
       const full = isFullWindow()
       const openFull = () => {
@@ -2593,6 +2781,8 @@ window.__ModuleLoader__.load({
 
       let body
       if (err) body = h('div', { className: 'rt-err' }, err)
+      /* 知识库是全局的（跨靶标共享），没有靶标也要能看/能搜 */
+      else if (st.tab === 'knowledge') body = h(KnowledgeTab, { refreshKey: refreshKey })
       else if (!eng) {
         body = h('div', { className: 'rt-pane' },
           h('div', { className: 'rt-card' },

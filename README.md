@@ -124,7 +124,7 @@ host 平面新增了服务与表结构，**必须重启** `dsh web`（客户端 
 
 ## 5. 能力清单
 
-**42 个工具**（节选）：
+**48 个工具**（节选）：
 
 ```
 redteam_engagement_open          绑定本次演练靶标，创建工作区
@@ -143,7 +143,10 @@ redteam_tunnel_add/list/update   内网隧道（suo5 / socks5 / ssh -R / frp…�
 redteam_session_check            实测所有 WebShell 与隧道的连通性并回写状态
 redteam_chain_add / redteam_chain       攻击链步骤
 redteam_attack_path              攻击图谱（资产 → 漏洞 → 权限 → 内网）
-redteam_attack_file_add/list     攻击文件归档（强制要求证据引用）
+redteam_attack_file_add/list     攻击文件归档（按目标分目录，强制要求证据引用）
+redteam_poc_search/get/add/list/update/use
+                                 知识库（POC/EXP）：**全局共享、跨靶标复用**。打 Nday/1day 前先检索，
+                                 命中直接取全文；互联网扒的/自己手搓的验证有效后回填，复用计数排序
 redteam_score_list / redteam_score_hit / redteam_score_point_save   得分目标与得分记录
                                  同类得分可叠加，每类上限 max_hits 可设；记分带 vuln_id 供报告复现
 redteam_score_report             攻击得分链路复现报告（只收录得分的成果，附可粘进 Yakit 的原始请求）
@@ -165,9 +168,10 @@ redteam_report_targets / redteam_report 【已弃用】旧的按目标报告
 **提示词口径（预设与四个角色提示词都写了）**：
 - **只打得分面**：动手前先问"这条线能落到哪个得分点"，答不出来就不投入；明确禁止为"覆盖全面"去测信息泄露/配置类/中低危等与得分无关的问题（最多记一行排除结论）。
 - **入口必须可交付**：WebShell 必须是**冰蝎马/哥斯拉马**（一句话马/自研马用户连不上，只算临时中转）；拿到 WebShell 后**必须用 suo5 建隧道**才算打进内网，建好要登记并实测连通。
+- **Nday/1day 先查知识库**：`redteam_poc_search` 一次查两层——① 本机沉淀的通用 POC/EXP ② 本机 nuclei 模板库（`~/.local/nuclei-templates`，一万多条模板 / 四千多条 CVE）；命中直接取用（模板直接 `nuclei -t <路径> -u <目标>`）；两层都没有才去互联网（`web_search`/GitHub/ExploitDB/厂商公告）或自己手搓；**验证有效后必须回填**（`redteam_poc_add`，写清来源、影响版本与验证证据，并脱敏），后面的靶标直接就能用。
 - 预设与角色提示词改版后，老靶标里仍是旧版默认的提示词会自动换成新版；用户自己改过的保持不动（面板里也有「恢复默认」）。
 
-**控制台 9 个页签**：
+**控制台 11 个页签**：
 
 | 页签 | 内容 |
 | --- | --- |
@@ -178,12 +182,14 @@ redteam_report_targets / redteam_report 【已弃用】旧的按目标报告
 | 得分目标 | 显示**已得总分 / 满分**，可编辑得分点；命中记录一行一条（**自适应换行**：长域名/长口令/长结果都完整显示，不截断） |
 | 报告 | 攻击得分链路复现报告：**按阶段可折叠**（默认全开，可一键全部展开/折叠，状态按靶标记住），只收录得分成果，每条附可粘进 Yakit 的原始请求 |
 | 攻击文件 | 按目标文件夹组织，只收录实际生效的脚本 / POC / EXP |
+| 知识库 | **POC/EXP 知识库（全局共享，跨靶标复用）+ 本机 nuclei 模板库**：按 CVE/组件/关键字/正文关键词一次搜两层——① 本机沉淀的通用 POC/EXP（只看已验证、按复用次数排序，展开看用法/验证证据/正文，可一键复制、可记一次复用）② 本机 nuclei 模板命中（一万多条模板，直接复制 `nuclei -t <路径> -u <目标>`）。打 Nday/1day 前先在这里搜 |
 | 智能体提示词 | 按角色编辑，可一键恢复内置最新版 |
 | 技能库 | 浏览 DSH 原生技能目录与正文 |
 
 ## 6. 数据与隐私
 
 * 所有演练数据只写在**本机** `$DSH_HOME/redteam/engagements/<靶标>/`：SQLite 事实库、`runs/` 证据、按目标分目录的攻击文件。本项目不含任何遥测、上报或云端同步代码。
+* **知识库是全局的**：`$DSH_HOME/redteam/knowledge.db` + `pocs/<code>/`，跨靶标共享 POC/EXP（所以回填前必须**脱敏**：去掉内网真实地址、自己的 VPS/域名与靶标专属参数，只留通用部分）。
 * **凭据明文入库、但只在本机**：`credential.secret_value` 存口令/Hash/密钥原文（「漏洞战果」页直接显示，便于随时复用），同时用 `secret_ref` 指向 `runs/` 下的证据文件。**这个库文件是最高敏感度的资产**，不要复制、导出或提交到任何仓库/聊天工具；`.gitignore` 已排除 `engagements/`、`*.db` 等路径。
 * 界面与工具的所有写操作都要求证据引用，避免"无证据的成果"。
 * `.gitignore` 默认排除 `engagements/`、`runs/`、`*.db`、`*.jsonl`、凭据与密钥文件，避免误提交演练数据。
@@ -206,7 +212,8 @@ export FOFA_KEY=你的key       # skills/fofa-recon.md 里的客户端只读这�
 ├── packages/
 │   ├── redteam-store/       # SQLite 事实库 + ctx.redteam 服务 + CLI + 连通性探测
 │   │   └── test/            # 零依赖回归测试（node test/stages.test.mjs）
-│   ├── redteam-tools/       # 42 个 redteam_* 模型工具
+│   ├── redteam-tools/       # 48 个 redteam_* 模型工具
+│   │   └── test/            # 零依赖回归测试（node test/poc-tools.test.mjs）
 │   └── redteam-ui/          # 常驻右侧栏控制台（host 桥接 + 客户端 UI）
 ├── preset/                  # DSH agent preset（红队人设与工具行）
 ├── skills/                  # 13 个 DSH 原生技能
@@ -217,12 +224,14 @@ export FOFA_KEY=你的key       # skills/fofa-recon.md 里的客户端只读这�
 ## 9. 版本与回归测试
 
 版本以 tag / Release 形式发布（[全部版本](https://github.com/Jueze-2019/dsh-redteam-mode/releases)），
-当前为 **v0.4.4**。改的是本机正在用的那三个包时，记得 host 侧改动要重启 `dsh web` 才生效。
+当前为 **v0.5.0**。改的是本机正在用的那三个包时，记得 host 侧改动要重启 `dsh web` 才生效。
 
 零依赖回归测试（不需要装任何东西）：
 
 ```bash
 node packages/redteam-store/test/stages.test.mjs   # 阶段表自愈 + 得分归阶段 + 报告序号
+node packages/redteam-store/test/prompts.test.mjs  # 角色提示词：默认值自动升级、用户自写不被覆盖
+node packages/redteam-tools/test/poc-tools.test.mjs # 知识库工具：检索/回填/跨靶标共享/去重
 ```
 
 它覆盖的是一类**静默算错分**的故障：攻击链与报告按阶段表分组，阶段行一旦缺失，

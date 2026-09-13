@@ -8,6 +8,8 @@ package-lock.json
 engagements/
 runs/
 toolkit/
+# 知识库是全局的（$DSH_HOME/redteam/knowledge.db + pocs/），同样不入库
+pocs/
 *.db
 *.db-wal
 *.db-shm

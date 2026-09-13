@@ -985,4 +985,151 @@ export function apply(ctx) {
       return JSON.stringify({ ok: true, engagement: id, generated_at: result.generated_at, stats: result.stats, markdown: result.markdown }, null, 2)
     },
   }))
+
+  /* ── 知识库（POC/EXP）：全局共享，跨靶标复用 ───────────────────────────────
+     为什么单列一组工具：通用 POC/EXP 是一次性投入、长期复用的资产。打 Nday/1day
+     之前先查这里，能省掉整轮"去互联网找 + 手搓 + 调试"的时间；验证有效的通用
+     POC/EXP 必须回填，后面的靶标和智能体直接就能用。 */
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_poc_search',
+    description: '【打 Nday/1day 前的第一步】先查"现成的"两层：① **知识库**（本机沉淀的通用 POC/EXP，跨靶标共享，按"已验证 → 复用次数"排序）② **本机 nuclei 模板库**（上万条模板，CVE/组件名直接命中）。命中就取用：知识库用 redteam_poc_get 拿全文，模板直接 `nuclei -t <相对路径>`。**不要重复去互联网找或重新手搓**。两层都没有，再去互联网搜索或自己手搓，验证有效后用 redteam_poc_add 回填知识库。',
+    parameters: {
+      q: { type: 'string', description: '关键字：组件+版本、漏洞名、路径片段、正文里的特征串都行' },
+      cve: { type: 'string', description: 'CVE / CNVD 编号，例如 CVE-2023-21839' },
+      component: { type: 'string', description: '组件/产品名，例如 Weblogic、Shiro、泛微 OA、Nacos' },
+      kind: { type: 'string', description: 'poc | exp | script | template | payload' },
+      language: { type: 'string', description: 'python | go | java | bash | http | nuclei | js | php' },
+      source: { type: 'string', description: 'web（互联网）| self（手搓）| manual（人工）| nuclei-template' },
+      verified: { type: 'boolean', description: 'true 只看实测验证过的（优先用这些）' },
+      templateLimit: { type: 'number', description: '本机 nuclei 模板最多返回几条，默认 20' },
+      limit: { type: 'number', description: '知识库条目上限，默认 200' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args) {
+      const items = store.searchPocs(args)
+      const stats = store.pocStats()
+      const q = args.q || args.cve || args.component || ''
+      const tpl = q
+        ? store.searchTemplates(q, Math.min(Number(args.templateLimit) || 20, 100))
+        : { dir: store.nucleiTemplatesDir() || null, total: store.templateStats().total, items: [] }
+      const tplStats = store.templateStats()
+      const hit = items.length > 0 || (tpl.items || []).length > 0
+      return JSON.stringify({
+        ok: true,
+        knowledge_base: { total: stats.total, verified: stats.verified, reused: stats.reused },
+        local_templates: { dir: tplStats.dir, total: tplStats.total, cve_templates: tplStats.cve, matched: (tpl.items || []).length },
+        count: items.length,
+        hint: hit
+          ? '命中现成的：知识库条目用 redteam_poc_get 取全文；nuclei 模板直接用 `nuclei -t <模板相对路径>`。用完 redteam_poc_use 记一次复用。'
+          : '知识库与本机模板库都没有：去互联网搜索（web_search / GitHub / ExploitDB / 厂商公告）或自己手搓，验证有效后务必 redteam_poc_add 回填知识库。',
+        templates: (tpl.items || []).map((t) => ({ path: t.path, name: t.name, severity: t.severity, tags: t.tags })),
+        items: items.map((x) => ({
+          id: x.id, code: x.code, title: x.title, kind: x.kind, cve: x.cve, component: x.component,
+          versions: x.versions, language: x.language, source: x.source, source_url: x.source_url,
+          verified: x.verified === 1, verified_note: x.verified_note, hit_count: x.hit_count,
+          tags: x.tags, usage: x.usage, path: x.path, has_content: x.has_content === 1,
+        })),
+      }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_poc_get',
+    description: '取一条知识库 POC/EXP 的**完整内容**（正文 + 用法 + 验证记录 + 落盘路径），可直接照用或改造成目标专用脚本。不传 id 时可用 code（redteam_poc_search 返回里的 code 字段）。',
+    parameters: {
+      id: { type: 'number', description: '知识库条目 id' },
+      code: { type: 'string', description: '知识库条目的稳定标识（search 结果里的 code）' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args) {
+      const row = store.getPoc(args.id !== undefined ? args.id : args.code)
+      if (row === undefined) return JSON.stringify({ ok: false, error: '知识库没有这一条（先用 redteam_poc_search 检索）' }, null, 2)
+      return JSON.stringify({ ok: true, ...row }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_poc_add',
+    description: '把**通用可复用**的 POC/EXP 落进知识库（跨靶标共享）。从互联网拿到的、自己手搓的、或已经调通验证过的都往这里放——只收录真正有效的，并写清来源与验证证据。判断标准：**换个目标还能用**的进知识库；只对本次靶标有效的脚本走 redteam_attack_file_add（攻击文件页）。同名（同一 code）会合并刷新，可用于更新版本。',
+    parameters: {
+      title: { type: 'string', required: true, description: '标题：组件 + 漏洞名/编号，例如「Weblogic T3 反序列化 CVE-2023-21839」' },
+      kind: { type: 'string', description: 'poc（验证）| exp（利用）| script | template | payload' },
+      cve: { type: 'string', description: 'CVE / CNVD 编号' },
+      component: { type: 'string', description: '组件/产品名（便于按组件检索）' },
+      versions: { type: 'string', description: '影响版本范围' },
+      severity: { type: 'string', description: 'critical | high | medium | low' },
+      language: { type: 'string', description: 'python | go | java | bash | http | nuclei | js | php' },
+      source: { type: 'string', description: 'web（互联网扒的）| self（自己手搓）| manual（人工）| nuclei-template' },
+      source_url: { type: 'string', description: '来源链接（互联网来源必填，便于复核）' },
+      description: { type: 'string', description: '这个 POC 干什么、原理要点、前提条件' },
+      usage: { type: 'string', description: '用法：完整命令行示例 + 需要替换的参数' },
+      content: { type: 'string', description: '正文：脚本/POC 源码、原始请求包、nuclei 模板、调用步骤' },
+      path: { type: 'string', description: '也可以给本机已有文件路径（相对 pocs/ 或绝对路径），由知识库读取正文' },
+      filename: { type: 'string', description: '正文落盘文件名，默认按语言给（poc.py / poc.sh / poc.yaml…）' },
+      verified: { type: 'boolean', description: '是否已实测验证（**只有在真实目标上验证过的才填 true**）' },
+      verified_note: { type: 'string', description: '验证证据：在哪台目标、什么回显/结果、是否需要认证' },
+      tags: { type: 'string', description: '逗号分隔标签，例如「java,反序列化,rce」' },
+      created_by: { type: 'string', description: '哪个角色/智能体沉淀的' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args) {
+      const r = store.savePoc(args)
+      return JSON.stringify({ ok: true, created: r.created, code: r.poc.code, path: r.path,
+        verified: r.poc.verified === 1, hint: '已进知识库，后续任何靶标的智能体 redteam_poc_search 都能直接命中。' }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_poc_list',
+    description: '列出知识库里的 POC/EXP（可按 kind/source/component/verified 过滤，不带条件就是全部）。用于盘点"我们手上已经有哪些现成武器"，避免重复搜集。',
+    parameters: {
+      kind: { type: 'string' }, source: { type: 'string' }, component: { type: 'string' },
+      verified: { type: 'boolean' }, limit: { type: 'number' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args) {
+      const items = store.searchPocs(args)
+      const stats = store.pocStats()
+      return JSON.stringify({ ok: true, stats: { total: stats.total, verified: stats.verified, by_kind: stats.byKind, by_source: stats.bySource },
+        count: items.length,
+        items: items.map((x) => ({ id: x.id, code: x.code, title: x.title, kind: x.kind, cve: x.cve, component: x.component,
+          language: x.language, source: x.source, verified: x.verified === 1, hit_count: x.hit_count, tags: x.tags })) }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_poc_update',
+    description: '更新知识库条目：补验证结论（verified + verified_note）、修正影响版本、补用法或正文、改标签。**在真实目标上验证通过后，一定要回来把 verified 置 true 并写清证据**——后续智能体会优先用已验证的。',
+    parameters: {
+      id: { type: 'number', description: '知识库条目 id' },
+      code: { type: 'string', description: '或用 code 指定条目' },
+      patch: { type: 'object', description: '{ verified, verified_note, versions, usage, description, content, tags, severity, component, cve, source, source_url, language }' },
+      verified: { type: 'boolean', description: '便捷写法：直接传 verified' },
+      verified_note: { type: 'string', description: '便捷写法：直接传验证证据' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args) {
+      const patch = Object.assign({}, args.patch || {})
+      if (args.verified !== undefined) patch.verified = args.verified
+      if (args.verified_note !== undefined) patch.verified_note = args.verified_note
+      const row = store.updatePoc(args.id !== undefined ? args.id : args.code, patch)
+      return JSON.stringify({ ok: true, id: row.id, code: row.code, verified: row.verified === 1, verified_note: row.verified_note, updated_at: row.updated_at }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_poc_use',
+    description: '记一次知识库 POC/EXP 的复用（用在哪个靶标/目标）。复用次数高的条目会排前面，方便后来者优先选经过实战的武器。',
+    parameters: {
+      id: { type: 'number' },
+      code: { type: 'string' },
+      used_on: { type: 'string', description: '用在哪：靶标名 / 目标 IP / URL' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args) {
+      const r = store.markPocUsed(args.id !== undefined ? args.id : args.code, args.used_on)
+      return JSON.stringify(r, null, 2)
+    },
+  }))
 }
