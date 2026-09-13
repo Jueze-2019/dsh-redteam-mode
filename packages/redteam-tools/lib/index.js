@@ -512,9 +512,11 @@ export function apply(ctx) {
         })),
         tunnels: summary.tunnels.map((t) => ({
           id: t.id, kind: t.kind, listen: t.listen, entry: t.entry, reach: t.reach,
+          entry_kind: t.entry_kind, legit: t.legit,
           status: t.status, asset_ip: t.asset_ip, command: t.command, last_check: t.last_check, note: t.note,
         })),
-        hint: '隧道 status=active 时可直接给扫描器用：-socks5 <listen> 或 --proxy socks5://<listen>；webshell status=online 时用对应客户端连接。',
+        hint: '隧道 status=active 时可直接给扫描器用：-socks5 <listen> 或 --proxy socks5://<listen>；webshell status=online 时用对应客户端连接。'
+          + ' 注意 legit=false（entry_kind=self-only，只在自己的 VPS/自建服务器上）**不算跨越靶标边界、不算突破**；legit=null 表示未声明 entry_kind，用 redteam_tunnel_update 补上目标侧那一端。',
       }, null, 2)
     },
   }))
@@ -577,13 +579,14 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'redteam_tunnel_add',
-    description: '登记一条内网隧道。**打进内网必须先用技能 suo5-tunnel 通过 WebShell/HTTP 建 socks5（kind=suo5）**，这是内网突破的标准通道；没有隧道就不要手搓内网探测脚本。listen 写本机可用地址（如 127.0.0.1:1080），reach 写它能到达的网段。登记后扫描器可直接 -socks5 <listen>。',
+    description: '登记一条内网隧道。**打进内网必须先用技能 suo5-tunnel 通过 WebShell/HTTP 建 socks5（kind=suo5）**；没有隧道就不要手搓内网探测脚本。listen 写本机可用地址（如 127.0.0.1:1080），reach 写它能到达的网段。登记后扫描器可直接 -socks5 <listen>。\n\n**红线：自己的 VPS / 自己配置的服务器不算隧道。** 只在你自己服务器上开的 socks5、frp 服务端、代理，没有碰到目标，**不算跨越靶标边界、不算边界突破或内网突破**（这类填 entry_kind=self-only，会被标成"不算突破"）。**必须说清目标侧的那一端**：\n· target-outbound — 目标主动连出到我方（**自己服务器收目标反弹 shell**、目标上跑 frp/Stowaway 客户端）；\n· target-http — 经目标 WebShell/HTTP 通道（suo5、Neo-ReGeorg、reGeorg）；\n· target-agent — 经目标已控进程/会话转发（SSH -R 由目标发起等）。',
     parameters: {
       engagement: { type: 'string' },
       kind: { type: 'string', required: true, description: 'suo5（首选，走 WebShell/HTTP）| socks5 | ssh-r | frp | chisel | other' },
       listen: { type: 'string', required: true, description: '本地监听地址 host:port' },
       entry: { type: 'string', description: '入口：WebShell URL / 跳板机 / 命令' },
       reach: { type: 'string', description: '可达网段，例如 10.0.0.0/8' },
+      entry_kind: { type: 'string', description: '【重要】通道的目标侧那一端是什么：target-outbound（目标反弹 shell 到我方/目标上跑 frp 客户端）| target-http（经目标 WebShell 的 suo5/Neo-ReGeorg）| target-agent（经目标已控进程转发）| self-only（只在自己 VPS/自建服务器上，**不算突破**）' },
       webshell_id: { type: 'number', description: '由哪个 WebShell 建立' },
       asset_id: { type: 'number' },
       command: { type: 'string', description: '建立命令，便于重建' },
@@ -601,7 +604,7 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'redteam_tunnel_list',
-    description: '列出已登记的内网隧道（含状态、监听地址、可达网段）。',
+    description: '列出已登记的内网隧道（含状态、监听地址、可达网段、entry_kind 与 legit 判定）。**legit=false 表示只在自己 VPS/自建服务器上开的通道，不算跨越靶标边界、不算突破**；legit=null 表示未声明 entry_kind。',
     parameters: {
       engagement: { type: 'string' },
       status: { type: 'string', description: 'active | down | unknown' },
@@ -615,13 +618,15 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'redteam_tunnel_update',
-    description: '更新隧道状态（关闭/失效/更换监听地址）。用完隧道务必标为 down 并说明，避免后续误用。',
+    description: '更新隧道状态（关闭/失效/更换监听地址）或补 entry_kind 判定。用完隧道务必标为 down 并说明，避免后续误用。**老记录没声明入口归属的（legit=null，界面显示"待确认"），用 entry_kind 补上目标侧那一端**，补完才算突破凭证。',
     parameters: {
       engagement: { type: 'string' },
       id: { type: 'number', required: true },
       status: { type: 'string', description: 'active | down | closed | unknown' },
       listen: { type: 'string' },
       reach: { type: 'string' },
+      entry: { type: 'string', description: '入口：WebShell URL / 跳板机 / 命令' },
+      entry_kind: { type: 'string', description: '补声明目标侧那一端：target-outbound | target-http | target-agent | self-only（只在自己服务器上，不算突破）' },
       note: { type: 'string' },
       check_note: { type: 'string' },
     },
@@ -742,7 +747,7 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'redteam_score_hit',
-    description: '记录一次得分（同类得分可以叠加，但每类最多计 max_hits 次，超出仍会记录只是不计分）。**证据只写结果**：目标资产 + 拿到了什么（账号/密码/权限/数据量），不要写取得过程与路径——过程由攻击得分链路负责。能指向"用哪个漏洞拿到的"时请带上 vuln_id，报告会自动附上该漏洞的原始请求。',
+    description: '记录一次得分（同类得分可以叠加，但每类最多计 max_hits 次，超出仍会记录只是不计分）。**证据只写结果**：目标资产 + 拿到了什么（账号/密码/权限/数据量），不要写取得过程与路径——过程由攻击得分链路负责。能指向"用哪个漏洞拿到的"时请带上 vuln_id，报告会自动附上该漏洞的原始请求。\n\n**红线：自己注册的账号不算得分权限。** 通过注册接口自助注册、自己新建的用户/角色/后台账号、自己给自己开的权限，都**不是**"拿到账号权限"——演练得分针对的是**拿到别人已有的**账号与权限（弱口令、凭据泄露、SQL 注入拖出的账号、越权/提权到已有账号、默认口令、复用已有凭据）。这类自建账号用 self_created=true 记录（留过程），**不计分、不占上限、不进报告**。',
     parameters: {
       engagement: { type: 'string' },
       code: { type: 'string', description: '得分点 code（或 point_id / point_name 任选其一）' },
@@ -753,6 +758,7 @@ export function apply(ctx) {
       vuln_id: { type: 'number', description: '【建议填】用哪个漏洞拿到的分（报告据此附原始请求）' },
       step_id: { type: 'number', description: '对应的攻击链步骤 id（可选）' },
       evidence: { type: 'string', required: true, description: '【必填】结果：拿到的东西，例如「后台管理员 tomcat/Tomcat@2024」「数据库账号 root/xxx」「导出 1.2 万条用户数据」' },
+      self_created: { type: 'boolean', description: '【重要】这个账号/权限是不是**自己注册、自己创建**的？是则填 true —— 只作过程记录，不计分、不进报告。拿到别人已有的账号/权限不要填（默认 false）。' },
       note: { type: 'string' },
       recorded_by: { type: 'string' },
     },
@@ -847,6 +853,7 @@ export function apply(ctx) {
       point_code: { type: 'string', description: '【这一步拿了分就填】得分点 code，服务端会自动记一次分并把步骤与得分互相挂上' },
       stage_code: { type: 'string', description: '所属作战阶段：external(外网打点) | foothold(撕破口子) | tunnel(隧道搭建·内网漫游) | privilege(拿下资产权限) | target(靶标系统权限)' },
       evidence: { type: 'string', description: '配合 point_code 使用：这一分拿到了什么（目标资产 + 账号/权限/数据量）' },
+      self_created: { type: 'boolean', description: '配合 point_code 使用：这一步拿到的账号/权限是**自己注册/自建**的吗？是则 true（只留过程，不计分）' },
       target: { type: 'string', description: '配合 point_code 使用：目标资产' },
       seq: { type: 'number', description: '不填则自动追加到链尾' },
     },

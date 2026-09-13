@@ -434,6 +434,8 @@ window.__ModuleLoader__.load({
   white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
 .rt-hit-txt.none{color:var(--dsw-alias-state-error-primary)}
 .rt-hit-row .rt-hit-time{flex:none;margin-left:auto}
+/* 自己注册/自建的账号：留痕但不计分，整行压暗 */
+.rt-hit-row.self-created{opacity:.72;border-left:3px solid #ef444488}
 .rt-rep-group{margin-bottom:14px}
 .rt-rep-stage{display:flex;align-items:center;gap:8px;padding:7px 10px;margin-bottom:7px;
   background:var(--dsw-alias-bg-layer-2);border-left:4px solid #64748b;border-radius:6px;
@@ -1592,7 +1594,13 @@ window.__ModuleLoader__.load({
           body.push(h('div', { key: 'hl', className: 'rt-ap-hits' },
             st.items.length ? st.items.map(hitRow) : h('div', { className: 'rt-ap-none' }, '本阶段还没有得分')))
           if (st.code === 'boundary') {
-            body.push(h('div', { key: 'tt', className: 'rt-ap-sub' }, '实际隧道 · ' + st.tunnels.length + ' 条'))
+            const selfOnly = (st.tunnels_self_only || []).length
+            body.push(h('div', { key: 'tt', className: 'rt-ap-sub' },
+              '跨越靶标边界的通道 · ' + st.tunnels.length + ' 条' + (selfOnly ? '（另有 ' + selfOnly + ' 条只在自己 VPS/自建服务器上，不算突破）' : '')))
+            if (selfOnly && st.tunnels.length === 0) {
+              body.push(h('div', { key: 'tw', className: 'rt-ap-none' },
+                '⚠️ 现有的通道都在自己的服务器上，没有碰到目标 —— 不计边界突破。需要目标侧发起的通道（反弹 shell 到我这 / 目标上跑 frp 客户端 / 经目标 WebShell 的 suo5）。'))
+            }
             body.push(h('div', { key: 'tl', className: 'rt-ap-tunnels' },
               st.tunnels.length
                 ? st.tunnels.map((t) => h('div', { key: 't' + t.id, className: 'rt-ap-tunnel' },
@@ -2167,10 +2175,14 @@ window.__ModuleLoader__.load({
             : h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, '—'))))
         if (!open) continue
         /* 命中记录：一行一条 —— 第一行给"序号 + 资产 + 时间 + 复制"，内容另起一行自适应换行 */
-        const hitNodes = p.hits.map((hh, hi) => h('div', { key: 'h' + hh.id, className: 'rt-hit-row' },
+        const hitNodes = p.hits.map((hh, hi) => h('div', {
+          key: 'h' + hh.id,
+          className: 'rt-hit-row' + (hh.self_created ? ' self-created' : ''),
+        },
           h('span', { className: 'rt-hit-idx' }, String(hi + 1)),
           h('span', { className: 'rt-hit-asset', title: hh.target || hh.asset_ip || '' },
             hh.asset_ip || hh.target || '未指定资产'),
+          hh.self_created ? h('span', { className: 'rt-tag rt-tag-warn', title: '自己注册/自建的账号不算得分权限，只作过程记录' }, '自建 · 不计分') : null,
           h('span', { className: 'rt-hit-time' }, fmt(hh.recorded_at)),
           h('button', {
             className: 'rt-btn', style: { padding: '0 5px', fontSize: 10.5 },
@@ -2211,6 +2223,12 @@ window.__ModuleLoader__.load({
           h('span', { className: 'rt-total' }, String(summary.achievedPoints)),
           h('span', { style: { fontSize: 13, color: 'var(--dsw-alias-label-secondary)' } }, '分'),
           h('span', { className: 'rt-tag' }, '已拿下 ' + summary.achievedCount + '/' + summary.pointCount + ' 项'),
+          summary.selfCreatedHits
+            ? h('span', {
+                className: 'rt-tag rt-tag-warn',
+                title: '自己注册/自己创建的账号不算得分权限，只作过程记录（不计分、不占上限、不进报告）',
+              }, '自建不计分 ' + summary.selfCreatedHits)
+            : null,
           h('div', { className: 'rt-spacer' }),
           h('button', { className: 'rt-btn', onClick: startNew }, '+ 新增得分点'),
           h('button', { className: 'rt-btn', disabled: busy, onClick: load }, busy ? '刷新中…' : '刷新')),
@@ -2536,6 +2554,13 @@ window.__ModuleLoader__.load({
           '——一句话马/自研马/内存马用户连不上，不算可交付入口。请用技能 webshell-toolkit 重新上传冰蝎马（behinder）或哥斯拉马（godzilla），' +
           '并把 shell_type + pass_key 写进 redteam_webshell_add。只有作临时中转的才可保留，并在备注里写明。'))
       }
+      const legitTunnels = tunnels.filter((t) => t.legit === true)
+      if (tunnels.length > 0 && legitTunnels.length === 0) {
+        hints.push(h('div', { key: 'h3', className: 'rt-hint' },
+          h('b', null, '现有的 ' + tunnels.length + ' 条通道都不算"跨越靶标边界" '),
+          '——自己的 VPS / 自己配置的服务器上开的 socks5、frp、代理不算隧道，也不算边界突破或内网突破。必须是目标侧发起的通道：' +
+          '目标反弹 shell 到我方服务器、目标上跑 frp/Stowaway 客户端、或经目标 WebShell 建的 suo5/HTTP 隧道；登记时用 entry_kind 说明。'))
+      }
       if (shells.length > 0 && activeSuo5.length === 0) {
         hints.push(h('div', { key: 'h2', className: 'rt-hint' },
           h('b', null, '还没有可用的 suo5 隧道 '),
@@ -2581,6 +2606,12 @@ window.__ModuleLoader__.load({
             h('span', { className: 'rt-sess-title' }, t.listen || '(未填监听地址)'),
             h('span', { className: 'rt-tag rt-tag-passive' }, t.kind || 'tunnel'),
             isSuo5(t.kind) ? null : h('span', { className: 'rt-tag rt-tag-warn' }, '非 suo5 标准通道'),
+            /* 只有跨越靶标边界的通道才算突破凭证（自己 VPS/自建服务器上开的不算） */
+            t.legit === true
+              ? h('span', { className: 'rt-tag rt-tag-live', title: t.entry_kind_label || '' }, '目标侧通道')
+              : (t.legit === false
+                  ? h('span', { className: 'rt-tag rt-tag-warn', title: '只在自己 VPS/自建服务器上开的通道，没有碰到目标 —— 不算边界突破/内网突破' }, '不算突破')
+                  : h('span', { className: 'rt-tag', title: '未声明 entry_kind：请说明目标侧的那一端是什么（target-outbound / target-http / target-agent）' }, '待确认')),
             t.reach ? h('span', { className: 'rt-tag' }, '可达 ' + t.reach) : null,
             h('div', { className: 'rt-spacer' }),
             h('button', {

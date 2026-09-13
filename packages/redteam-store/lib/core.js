@@ -167,6 +167,7 @@ CREATE TABLE IF NOT EXISTS score_hit (
   point_id INTEGER NOT NULL,
   asset_id INTEGER, vuln_id INTEGER, step_id INTEGER, target TEXT,
   evidence TEXT, note TEXT,
+  self_created INTEGER DEFAULT 0,
   recorded_by TEXT, recorded_at TEXT
 );
 
@@ -203,6 +204,7 @@ CREATE TABLE IF NOT EXISTS tunnel (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   asset_id INTEGER, webshell_id INTEGER, kind TEXT, listen TEXT,
   entry TEXT, reach TEXT,
+  entry_kind TEXT,
   status TEXT DEFAULT 'unknown', last_check TEXT, check_note TEXT, latency_ms INTEGER,
   pid TEXT, command TEXT, note TEXT, found_by_agent TEXT, created_at TEXT, updated_at TEXT
 );
@@ -314,6 +316,38 @@ CREATE VIRTUAL TABLE IF NOT EXISTS poc_fts USING fts5(
   poc_id UNINDEXED, title, cve, component, versions, tags, description, content
 );
 `
+
+/* ------------------------------------------------------------------ 判定规则 */
+
+/**
+ * 什么算"真隧道"（算边界突破/内网突破的凭证）：**必须跨越了靶标边界**，
+ * 即通道的一端在目标侧。三种情况：
+ *   · target-outbound：目标主动连出到我的服务器（反弹 shell 落地、目标上跑 frp/Stowaway 客户端）
+ *   · target-http：经目标 WebShell/HTTP 通道（suo5、Neo-ReGeorg、reGeorg、自研 HTTP 隧道）
+ *   · target-agent：经目标上已控进程/会话转发的隧道（SSH -R 由目标发起等）
+ * 不算的：self-only —— 只在自己 VPS / 自建服务器上开的代理或服务端，没碰到目标。
+ */
+const TUNNEL_ENTRY_KINDS = {
+  'target-outbound': '目标主动连出（反弹 shell / 目标上跑 frp 客户端）',
+  'target-http': '经目标 WebShell/HTTP 通道（suo5 / Neo-ReGeorg）',
+  'target-agent': '经目标已控进程/会话转发（SSH -R 等）',
+  'self-only': '只在自己 VPS/自建服务器上（不算突破）',
+}
+export { TUNNEL_ENTRY_KINDS }
+
+/** 这条隧道算不算"跨越了靶标边界"。未声明（老数据/没填）返回 null，界面按"待确认"显示。 */
+export function tunnelIsLegit(entryKind) {
+  const k = String(entryKind || '').trim()
+  if (k === '') return null
+  return k !== 'self-only'
+}
+
+/**
+ * 账号/权限类得分点：**自己注册、自己创建的账号不算拿到权限**（演练得分针对"拿到别人已有的"）。
+ * 这些得分点命中时会要求声明 self_created，避免把自助注册当成战果。
+ */
+const ACCOUNT_POINT_CODES = ['web-account-user', 'web-account-admin', 'server-shell', 'db-access', 'internal-pivot', 'core-system']
+export { ACCOUNT_POINT_CODES }
 
 /* ------------------------------------------------------------------ 知识库常量 */
 
@@ -451,6 +485,10 @@ function migrate(db) {
   }
   /* 阶段归属：得分命中可显式覆盖（默认自动推导）；攻击步骤记录所属阶段 */
   ensure('score_hit', 'stage_code', 'TEXT')
+  /* 自建账号标记：自己注册/自己创建的账号不算得分权限，只作过程记录（老数据默认 0） */
+  ensure('score_hit', 'self_created', 'INTEGER DEFAULT 0')
+  /* 隧道入口归属：判断这条通道有没有真的跨越靶标边界（self-only 不算突破） */
+  ensure('tunnel', 'entry_kind', 'TEXT')
   if (ensure('attack_step', 'stage_code', 'TEXT')) {
     try {
       const stmt = db.prepare('UPDATE attack_step SET stage_code = ? WHERE stage = ?')
@@ -721,6 +759,8 @@ export const DEFAULT_PROMPTS = {
 
 ## 记分纪律（所有角色都遵守）
 - \`redteam_score_hit\` 的 evidence **只写结果**：目标资产 + 拿到的东西（账号/密码/权限/数据量）。**不要写取得过程与路径**（那是攻击得分链路的事）。
+- **自己注册/自建的账号不算得分权限**：自助注册的账号、自己新建的用户/角色/后台账号、自己给自己开的权限，都不算"拿到账号权限"（得分针对**拿到别人已有的**账号与权限）。这类用 \`self_created=true\` 记一笔留痕即可——**不计分、不占上限、不进报告**，也不要为了凑分去注册账号。
+- **自己的 VPS / 自己配置的服务器不算隧道**：只在自己服务器上开 socks5/frp/代理没有碰到目标，不算边界突破或内网突破。登记隧道必须用 \`entry_kind\` 说清目标侧那一端：\`target-outbound\`（目标反弹 shell 到我方 / 目标上跑 frp 客户端）、\`target-http\`（经目标 WebShell 的 suo5/Neo-ReGeorg）、\`target-agent\`（经目标已控进程转发）；只在自己服务器上开代理填 \`self-only\`（会被标"不算突破"）。
 - 能指向漏洞就带 \`vuln_id\`，报告才能附上可复现的原始请求。
 - 同一类得分可叠加但有上限（\`max_hits\`），超上限的命中不计分——把得分分散在真实目标上。
 - 写 \`redteam_chain_add\` 时如果这一步拿了分，直接带 \`point_code\` + \`evidence\`，一次调用同时完成记分与关联。
@@ -748,6 +788,8 @@ export const DEFAULT_PROMPTS = {
 
 ## 记分纪律（所有角色都遵守）
 - \`redteam_score_hit\` 的 evidence **只写结果**：目标资产 + 拿到的东西（账号/密码/权限/数据量）。**不要写取得过程与路径**（那是攻击得分链路的事）。
+- **自己注册/自建的账号不算得分权限**：自助注册的账号、自己新建的用户/角色/后台账号、自己给自己开的权限，都不算"拿到账号权限"（得分针对**拿到别人已有的**账号与权限）。这类用 \`self_created=true\` 记一笔留痕即可——**不计分、不占上限、不进报告**，也不要为了凑分去注册账号。
+- **自己的 VPS / 自己配置的服务器不算隧道**：只在自己服务器上开 socks5/frp/代理没有碰到目标，不算边界突破或内网突破。登记隧道必须用 \`entry_kind\` 说清目标侧那一端：\`target-outbound\`（目标反弹 shell 到我方 / 目标上跑 frp 客户端）、\`target-http\`（经目标 WebShell 的 suo5/Neo-ReGeorg）、\`target-agent\`（经目标已控进程转发）；只在自己服务器上开代理填 \`self-only\`（会被标"不算突破"）。
 - 能指向漏洞就带 \`vuln_id\`，报告才能附上可复现的原始请求。
 - 同一类得分可叠加但有上限（\`max_hits\`），超上限的命中不计分——把得分分散在真实目标上。
 - 写 \`redteam_chain_add\` 时如果这一步拿了分，直接带 \`point_code\` + \`evidence\`，一次调用同时完成记分与关联。
@@ -821,6 +863,8 @@ Nday 打不通或已覆盖，转接口：
 
 ## 记分纪律（所有角色都遵守）
 - \`redteam_score_hit\` 的 evidence **只写结果**：目标资产 + 拿到的东西（账号/密码/权限/数据量）。**不要写取得过程与路径**（那是攻击得分链路的事）。
+- **自己注册/自建的账号不算得分权限**：自助注册的账号、自己新建的用户/角色/后台账号、自己给自己开的权限，都不算"拿到账号权限"（得分针对**拿到别人已有的**账号与权限）。这类用 \`self_created=true\` 记一笔留痕即可——**不计分、不占上限、不进报告**，也不要为了凑分去注册账号。
+- **自己的 VPS / 自己配置的服务器不算隧道**：只在自己服务器上开 socks5/frp/代理没有碰到目标，不算边界突破或内网突破。登记隧道必须用 \`entry_kind\` 说清目标侧那一端：\`target-outbound\`（目标反弹 shell 到我方 / 目标上跑 frp 客户端）、\`target-http\`（经目标 WebShell 的 suo5/Neo-ReGeorg）、\`target-agent\`（经目标已控进程转发）；只在自己服务器上开代理填 \`self-only\`（会被标"不算突破"）。
 - 能指向漏洞就带 \`vuln_id\`，报告才能附上可复现的原始请求。
 - 同一类得分可叠加但有上限（\`max_hits\`），超上限的命中不计分——把得分分散在真实目标上。
 - 写 \`redteam_chain_add\` 时如果这一步拿了分，直接带 \`point_code\` + \`evidence\`，一次调用同时完成记分与关联。
@@ -878,6 +922,8 @@ Nday 打不通或已覆盖，转接口：
 
 ## 记分纪律（所有角色都遵守）
 - \`redteam_score_hit\` 的 evidence **只写结果**：目标资产 + 拿到的东西（账号/密码/权限/数据量）。**不要写取得过程与路径**（那是攻击得分链路的事）。
+- **自己注册/自建的账号不算得分权限**：自助注册的账号、自己新建的用户/角色/后台账号、自己给自己开的权限，都不算"拿到账号权限"（得分针对**拿到别人已有的**账号与权限）。这类用 \`self_created=true\` 记一笔留痕即可——**不计分、不占上限、不进报告**，也不要为了凑分去注册账号。
+- **自己的 VPS / 自己配置的服务器不算隧道**：只在自己服务器上开 socks5/frp/代理没有碰到目标，不算边界突破或内网突破。登记隧道必须用 \`entry_kind\` 说清目标侧那一端：\`target-outbound\`（目标反弹 shell 到我方 / 目标上跑 frp 客户端）、\`target-http\`（经目标 WebShell 的 suo5/Neo-ReGeorg）、\`target-agent\`（经目标已控进程转发）；只在自己服务器上开代理填 \`self-only\`（会被标"不算突破"）。
 - 能指向漏洞就带 \`vuln_id\`，报告才能附上可复现的原始请求。
 - 同一类得分可叠加但有上限（\`max_hits\`），超上限的命中不计分——把得分分散在真实目标上。
 - 写 \`redteam_chain_add\` 时如果这一步拿了分，直接带 \`point_code\` + \`evidence\`，一次调用同时完成记分与关联。
@@ -916,6 +962,8 @@ Nday 打不通或已覆盖，转接口：
 ## 得分导向
 - **互联网边界突破**（code=boundary）：从外网进入内网并证明可达内网资产。
 - **突破逻辑内网**（code=internal-pivot）：以内网身份横向到其它主机/网段。
+- **账目红线（一）自己注册/自建的账号不算得分权限**：自助注册的账号、自己新建的用户/角色、自己给自己开的权限，都不算"拿到账号权限"（得分针对**拿到别人已有的**）。这类用 \`self_created=true\` 留痕即可——不计分、不进报告，也不要去注册账号凑分。
+- **账目红线（二）自己的 VPS/自建服务器不算隧道**：只在自己服务器上开 socks5/frp/代理没碰到目标，不算边界突破或内网突破。登记隧道必须写 \`entry_kind\`：\`target-outbound\`（目标反弹 shell 到我方 / 目标上跑 frp 客户端）、\`target-http\`（经目标 WebShell 的 suo5）、\`target-agent\`（经目标已控进程转发）；纯自己服务器上开的填 \`self-only\`（标"不算突破"）。
 - **内网同样只打能得分的面**：内网资产权限（数据库 / 服务器 / 域控 / 核心系统）与敏感数据；内网里那些与得分无关的配置问题、信息泄露、中低危一律不深挖（最多记一行排除结论）。
 - 每完成一步立即 \`redteam_score_hit\`，并写 \`redteam_chain_add\`，保证攻击链闭合：入口 → 权限 → 横向 → 目标。
 
@@ -1443,15 +1491,19 @@ export class RedteamStore {
         const list = (byPoint.get(r.id) || []).map((h) => ({
           id: h.id, asset_id: h.asset_id, vuln_id: h.vuln_id, step_id: h.step_id,
           target: h.target, evidence: h.evidence, note: h.note,
+          self_created: Number(h.self_created) === 1,
           recorded_by: h.recorded_by, recorded_at: h.recorded_at,
         }))
-        /* 同一类得分可叠加，但每类最多计 max_hits 次（默认 1，可在面板调） */
+        /* 同一类得分可叠加，但每类最多计 max_hits 次（默认 1，可在面板调）。
+           **自己注册/自建的账号不计分**（self_created=1 只作过程记录，不占上限也不得分）。 */
         const maxHits = Math.max(1, Number(r.max_hits) || 1)
-        const counted = Math.min(list.length, maxHits)
+        const valid = list.filter((h) => h.self_created !== true)
+        const counted = Math.min(valid.length, maxHits)
         return {
           id: r.id, code: r.code, name: r.name, category: r.category, points: r.points,
           max_hits: maxHits, counted: counted, earned: counted * r.points,
           potential: maxHits * r.points,
+          self_created: list.length - valid.length,
           description: r.description || '', enabled: r.enabled === 1, sort_order: r.sort_order,
           hits: list,
         }
@@ -1466,6 +1518,8 @@ export class RedteamStore {
         pointCount: enabled.length,
         hitCount: items.reduce((n, p) => n + p.hits.length, 0),
         countedHits: enabled.reduce((n, p) => n + p.counted, 0),
+        /* 自己注册/自建而被剔除的命中数（界面上单独提示，避免"记了却没分"的困惑） */
+        selfCreatedHits: items.reduce((n, p) => n + p.self_created, 0),
       },
     }
   }
@@ -1517,15 +1571,26 @@ export class RedteamStore {
     if (pointId === null) throw new Error('score point not found：请用 point_id / code / point_name 指定得分点')
     const evidence = String(hit.evidence || '').trim()
     if (evidence === '') throw new Error('score hit evidence required：得分必须写明证据（账号/回显/数据量/路径）')
-    const r = db.prepare(`INSERT INTO score_hit(point_id, asset_id, vuln_id, step_id, target, evidence, note, recorded_by, recorded_at)
-      VALUES(?,?,?,?,?,?,?,?,?)`).run(
+    /* 自己注册/自建的账号：允许记录（留过程），但不计分 */
+    const selfCreated = hit.self_created === true || hit.self_created === 1 || hit.self_created === '1' ? 1 : 0
+    const r = db.prepare(`INSERT INTO score_hit(point_id, asset_id, vuln_id, step_id, target, evidence, note, self_created, recorded_by, recorded_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?)`).run(
       pointId, hit.asset_id ?? null, hit.vuln_id ?? null, hit.step_id ?? null,
-      hit.target ?? null, evidence, hit.note ?? null,
+      hit.target ?? null, evidence, hit.note ?? null, selfCreated,
       hit.recorded_by ?? null, nowIso(),
     )
-    const point = db.prepare('SELECT name, points FROM score_point WHERE id = ?').get(pointId)
+    const point = db.prepare('SELECT name, points, code FROM score_point WHERE id = ?').get(pointId)
     const summary = this.listScorePoints(id).summary
-    return { id: Number(r.lastInsertRowid), point_id: pointId, point: point ? point.name : null, points: point ? point.points : 0, summary }
+    return {
+      id: Number(r.lastInsertRowid), point_id: pointId,
+      point: point ? point.name : null, points: point ? point.points : 0,
+      self_created: selfCreated === 1,
+      counted: selfCreated === 0,
+      warning: selfCreated === 1
+        ? '已记录，但**自己注册/自己创建的账号不计分**（演练得分针对"拿到别人已有的账号/权限"）。这条只作过程留痕，不占上限、不进报告。'
+        : undefined,
+      summary,
+    }
   }
 
   /** 资产易打性评估：预期能拿到哪些成果、优先级多高。 */
@@ -1817,19 +1882,39 @@ export class RedteamStore {
     return { updated: true }
   }
 
-  /** 登记一条内网隧道（suo5 / socks5 / ssh -R / frp …）。 */
+  /**
+   * 登记一条内网隧道（suo5 / socks5 / ssh -R / frp …）。
+   *
+   * **判定规则**：只有跨越了靶标边界（通道一端在目标侧）的才算突破凭证：
+   *   · target-outbound 目标主动连出（反弹 shell 落到我的服务器 / 目标上跑 frp 客户端）
+   *   · target-http     经目标 WebShell/HTTP 通道（suo5 / Neo-ReGeorg）
+   *   · target-agent    经目标已控进程/会话转发（SSH -R 由目标发起）
+   *   · self-only       只在自己 VPS/自建服务器上开的代理或服务端 —— **不算突破**
+   * 只在自己服务器上开个 socks5 不算打进内网，必须说清"目标侧的那一端是什么"。
+   */
   addTunnel(id, t = {}) {
     const db = this.db(id)
     const ts = nowIso()
-    const result = db.prepare(`INSERT INTO tunnel(asset_id, webshell_id, kind, listen, entry, reach,
-      status, pid, command, note, found_by_agent, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    const entryKind = TUNNEL_ENTRY_KINDS[t.entry_kind] !== undefined ? String(t.entry_kind) : null
+    const result = db.prepare(`INSERT INTO tunnel(asset_id, webshell_id, kind, listen, entry, reach, entry_kind,
+      status, pid, command, note, found_by_agent, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(t.asset_id ?? null, t.webshell_id ?? null, t.kind ?? 'socks5', t.listen ?? null, t.entry ?? null,
-        t.reach ?? null, t.status ?? 'active', t.pid ?? null, t.command ?? null, t.note ?? null,
+        t.reach ?? null, entryKind, t.status ?? 'active', t.pid ?? null, t.command ?? null, t.note ?? null,
         t.found_by_agent ?? null, ts, ts)
     if (t.asset_id !== undefined && t.asset_id !== null) {
       this.#observe(db, 'asset', t.asset_id, 'tunnel', `${t.kind || 'socks5'} ${t.listen || ''}`.trim(), 'active', 'exploit', null)
     }
-    return { id: Number(result.lastInsertRowid) }
+    const legit = tunnelIsLegit(entryKind)
+    return {
+      id: Number(result.lastInsertRowid),
+      entry_kind: entryKind,
+      legit,
+      warning: legit === false
+        ? '已登记，但 entry_kind=self-only（只在自己 VPS/自建服务器上开的通道）—— **这不算隧道、不算边界突破/内网突破**。必须是目标侧发起的通道：目标反弹 shell 到我的服务器、目标上跑 frp 客户端、或经目标 WebShell 建的 suo5/HTTP 隧道。'
+        : (legit === null
+            ? '建议补 entry_kind 说明"目标侧的那一端是什么"（target-outbound / target-http / target-agent）；不声明时界面按"待确认"显示，也不计入突破凭证。'
+            : undefined),
+    }
   }
 
   listTunnels(id, f = {}) {
@@ -1843,11 +1928,12 @@ export class RedteamStore {
     return db.prepare(`SELECT t.*, a.ip AS asset_ip, w.url AS webshell_url FROM tunnel t
       LEFT JOIN asset a ON a.id = t.asset_id
       LEFT JOIN webshell w ON w.id = t.webshell_id ${clause} ORDER BY t.id DESC LIMIT ?`).all(...args, limit)
+      .map((t) => Object.assign({}, t, { legit: tunnelIsLegit(t.entry_kind), entry_kind_label: TUNNEL_ENTRY_KINDS[t.entry_kind] || null }))
   }
 
   updateTunnel(id, tId, patch = {}) {
     const db = this.db(id)
-    const fields = ['status', 'check_note', 'latency_ms', 'last_check', 'listen', 'reach', 'pid', 'command', 'note']
+    const fields = ['status', 'check_note', 'latency_ms', 'last_check', 'listen', 'reach', 'entry', 'entry_kind', 'pid', 'command', 'note']
     const sets = []
     const args = []
     for (const key of fields) {
@@ -1933,7 +2019,11 @@ export class RedteamStore {
         }
       }
     }
-    const items = rows.map((h, i) => {
+    /* 自己注册/自建的账号不算成果：从报告主体剔除，只在页脚给一个数字 */
+    const selfCreatedRows = rows.filter((h) => Number(h.self_created) === 1)
+    const reportRows = rows.filter((h) => Number(h.self_created) !== 1)
+
+    const items = reportRows.map((h, i) => {
       const seen = perPoint.get(h.point_id) || 0
       perPoint.set(h.point_id, seen + 1)
       const maxHits = Math.max(1, Number(h.max_hits) || 1)
@@ -2011,6 +2101,8 @@ export class RedteamStore {
       withRequests: items.filter((x) => x.requests.length > 0).length,
       autoMatched: items.filter((x) => x.requests.some((r) => r.source === 'auto')).length,
       missingRequests: items.filter((x) => x.missing_evidence).length,
+      /* 自己注册/自建账号的命中：不算成果，不写进报告 */
+      selfCreatedExcluded: selfCreatedRows.length,
     }
     /* ── 按攻击链顺序（信息收集 → 互联网资产权限 → 边界突破 → 内网资产权限 → 靶标权限）分组 ── */
     let cumulative = 0
@@ -2028,6 +2120,9 @@ export class RedteamStore {
     md.push('合计 **' + summary.points + ' 分** · ' + summary.count + ' 项得分 · ' +
       summary.withRequests + '/' + summary.count + ' 项带原始请求' +
       (summary.missingRequests > 0 ? '（' + summary.missingRequests + ' 项缺原始请求）' : ''), '')
+    if (summary.selfCreatedExcluded > 0) {
+      md.push('> 另有 ' + summary.selfCreatedExcluded + ' 条「自己注册/自建账号」的记录不计分、不在本报告中（演练得分针对拿到别人已有的账号与权限）。', '')
+    }
     const CIRCLED = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲', '⑳']
     const NUMS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20']
     for (const st of stages) {
@@ -2069,7 +2164,7 @@ export class RedteamStore {
     const db = this.db(id)
     const limit = Math.min(Number(f.limit) || 500, 2000)
     const items = db.prepare(`SELECT h.id, h.point_id, h.asset_id, h.vuln_id, h.step_id, h.target,
-        h.evidence, h.note, h.recorded_by, h.recorded_at,
+        h.evidence, h.note, h.self_created, h.recorded_by, h.recorded_at,
         p.code, p.name AS point_name, p.category, p.points, p.enabled, h.stage_code,
         a.ip AS asset_ip, v.title AS vuln_title, v.cve AS vuln_cve
       FROM score_hit h
@@ -2103,11 +2198,13 @@ export class RedteamStore {
     const maxHitsOf = new Map(db.prepare('SELECT id, COALESCE(max_hits, 1) AS m FROM score_point').all().map((r) => [r.id, Math.max(1, Number(r.m) || 1)]))
     const seenOf = new Map()
     for (const it of items) {
+      it.self_created = Number(it.self_created) === 1
       const seen = seenOf.get(it.point_id) || 0
-      seenOf.set(it.point_id, seen + 1)
+      /* 自己注册/自建的账号不计分：既不占上限，也不进累计分 */
+      if (!it.self_created) seenOf.set(it.point_id, seen + 1)
       it.max_hits = maxHitsOf.get(it.point_id) || 1
       it.nth_of_point = seen + 1
-      it.counted = seen < it.max_hits
+      it.counted = it.self_created !== true && seen < it.max_hits
     }
     /* 按得分点聚合出"哪些还没拿下"，方便一眼看出缺口 */
     const points = db.prepare('SELECT id, code, name, category, points, enabled FROM score_point ORDER BY sort_order, id').all()
@@ -2152,8 +2249,12 @@ export class RedteamStore {
     /* 会话隧道表的真实隧道：属于「边界突破」阶段的实锤 */
     let tunnels = []
     try {
-      tunnels = db.prepare('SELECT id, kind, listen, entry, reach, status, note FROM tunnel ORDER BY id DESC LIMIT 50').all()
+      tunnels = db.prepare('SELECT id, kind, listen, entry, reach, entry_kind, status, note FROM tunnel ORDER BY id DESC LIMIT 50').all()
+        .map((t) => Object.assign({}, t, { legit: tunnelIsLegit(t.entry_kind), entry_kind_label: TUNNEL_ENTRY_KINDS[t.entry_kind] || null }))
     } catch { tunnels = [] }
+    /* 只有真正跨越靶标边界的隧道才算"边界突破"的实锤；自己 VPS/自建服务器上开的不算 */
+    const legitTunnels = tunnels.filter((t) => t.legit === true)
+    const selfOnlyTunnels = tunnels.filter((t) => t.legit === false)
 
     const stageDefs = this.listStages(id)
     let cumulative = 0
@@ -2183,7 +2284,8 @@ export class RedteamStore {
         cumulative: cumulative,
         assets: assets,
         assetCount: assets.length,
-        tunnels: st.code === 'boundary' ? tunnels : [],
+        tunnels: st.code === 'boundary' ? legitTunnels : [],
+        tunnels_self_only: st.code === 'boundary' ? selfOnlyTunnels : [],
         steps: stepsByStage.get(st.code) || 0,
       })
     })
@@ -2203,6 +2305,9 @@ export class RedteamStore {
         achievedCount: achieved.length,
         missingCount: missing.length,
         missingPoints: missing.reduce((n, p) => n + (p.potential || p.points || 0), 0),
+        selfCreatedHits: scores.summary.selfCreatedHits || 0,
+        tunnelsLegit: legitTunnels.length,
+        tunnelsSelfOnly: selfOnlyTunnels.length,
       },
     }
   }
@@ -2214,6 +2319,7 @@ export class RedteamStore {
       LEFT JOIN asset a ON a.id = w.asset_id ORDER BY w.id DESC`).all()
     const tunnels = db.prepare(`SELECT t.*, a.ip AS asset_ip, w.url AS webshell_url FROM tunnel t
       LEFT JOIN asset a ON a.id = t.asset_id LEFT JOIN webshell w ON w.id = t.webshell_id ORDER BY t.id DESC`).all()
+      .map((t) => Object.assign({}, t, { legit: tunnelIsLegit(t.entry_kind), entry_kind_label: TUNNEL_ENTRY_KINDS[t.entry_kind] || null }))
     const creds = db.prepare('SELECT COUNT(*) AS n FROM credential').get()
     const access = db.prepare('SELECT COUNT(*) AS n FROM access_session').get()
     return {
@@ -2223,6 +2329,9 @@ export class RedteamStore {
         webshellsOnline: shells.filter((s) => s.status === 'online').length,
         tunnels: tunnels.length,
         tunnelsActive: tunnels.filter((s) => s.status === 'active').length,
+        /* 只有跨越靶标边界的通道才算突破凭证（自己 VPS/自建服务器上开的不算） */
+        tunnelsLegit: tunnels.filter((s) => s.legit === true).length,
+        tunnelsSelfOnly: tunnels.filter((s) => s.legit === false).length,
         credentials: creds ? creds.n : 0,
         access: access ? access.n : 0,
       },
@@ -2442,6 +2551,8 @@ export class RedteamStore {
         hit = this.addScoreHit(id, {
           point_id: pointId, asset_id: s.asset_id ?? null, vuln_id: s.vuln_id ?? null, step_id: stepId,
           target: s.target ?? null, evidence: s.evidence, note: s.note ?? null, recorded_by: s.recorded_by ?? null,
+          /* 自己注册/自建的账号不计分（只留过程） */
+          self_created: s.self_created,
         })
       } catch (error) { /* 记分失败不影响步骤入库 */ }
     }
