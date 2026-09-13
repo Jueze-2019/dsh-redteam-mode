@@ -5,7 +5,7 @@
  *
  * 两条红线（演练计分最容易虚高的地方）：
  *   ① **自己注册/自己创建的账号不算得分权限** —— 得分针对"拿到别人已有的账号与权限"。
- *      自建账号只留过程：不计分、不占 max_hits 上限、不进报告。
+ *      自建账号只留过程：不计分、不计数、不进报告。
  *   ② **自己的 VPS / 自己配置的服务器不算隧道** —— 只在自己服务器上开 socks5/frp/代理
  *      没有碰到目标，不算跨越靶标边界。只有目标侧发起的通道才算：
  *      目标反弹 shell 到我方（target-outbound）、经目标 WebShell/HTTP（target-http）、
@@ -41,12 +41,24 @@ try {
   })
   ok(real.counted === true && real.summary.achievedPoints === 10, '拿到别人已有的账号照常计分（总分 10）')
 
-  /* 自建的不占 max_hits 上限：即使先记了自建，真实命中仍应全额计分 */
+  /* 自建的不计数：即使先记了自建，真实命中仍应全额计分 */
   const point = store.listScorePoints(id).items.find((p) => p.code === 'web-account-user')
-  ok(point.counted === 1 && point.earned === 10, '自建命中不占 max_hits 上限')
+  ok(point.counted === 1 && point.earned === 10, '自建命中不参与计数')
   ok(point.self_created === 1, '得分点条目上能看出被剔除的自建命中数')
   ok(point.hits.some((h) => h.self_created === true) && point.hits.some((h) => h.self_created !== true),
     '两类命中都留在命中记录里（自建只作留痕）')
+
+  console.log('— 规则三：同类得分不设数量上限，按命中次数累加')
+  for (let i = 0; i < 4; i++) {
+    store.addScoreHit(id, { code: 'sensitive-data', target: 'http://t.example.com/' + i, evidence: '导出 ' + (i + 1) + ' 万条数据' })
+  }
+  const sd = store.listScorePoints(id).items.find((p) => p.code === 'sensitive-data')
+  ok(sd.counted === 4 && sd.earned === 80, `同类 4 次命中全部计分（4 × 20 = ${sd.earned}）`)
+  ok(sd.earned === sd.counted * sd.points, '得分 = 命中次数 × 分值，没有任何封顶')
+  ok(!('max_hits' in sd) && !('potential' in sd), '得分点结构里不再有上限/满分字段')
+  const sum = store.listScorePoints(id).summary
+  ok(sum.pointCount === 10 && typeof sum.hitPointCount === 'number', 'summary 给出得分点个数（界面按这个显示）')
+  ok(!('totalPoints' in sum) && !('achievedCount' in sum), 'summary 不再有"满分/已拿下项数"这类字段')
 
   console.log('— 规则二：自己的 VPS / 自建服务器不算隧道')
   const mine = store.addTunnel(id, { kind: 'socks5', listen: '127.0.0.1:1080', entry: '我的 VPS 上开的代理', entry_kind: 'self-only' })
@@ -68,16 +80,18 @@ try {
 
   console.log('— 攻击链与报告的口径')
   const chain = store.scoreChain(id)
-  ok(chain.summary.points === 10 && chain.summary.selfCreatedHits === 1, '攻击链累计分只算有效得分（10 分）')
+  /* 此时有效得分：web-account-user 10 + sensitive-data 4×20 = 90；自建那 1 条不计入 */
+  ok(chain.summary.points === 90 && chain.summary.selfCreatedHits === 1,
+    `攻击链累计分只算有效命中（90 分 = 10 + 4×20，自建 1 条不计）实际 ${chain.summary.points}`)
   ok(chain.summary.tunnelsLegit === 3 && chain.summary.tunnelsSelfOnly === 1, '攻击链把目标侧通道与自建通道分开统计')
   const boundary = chain.stages.find((s) => s.code === 'boundary')
   ok(boundary.tunnels.every((t) => t.legit === true), '边界突破阶段只展示真正跨越边界的通道')
   ok(boundary.tunnels_self_only.length === 1, '自建通道单独挂在 tunnels_self_only（界面据此提示）')
 
   const report = store.scoreReport(id)
-  ok(report.summary.selfCreatedExcluded === 1 && report.summary.count === 1,
-    '报告剔除自建命中（1 条被剔除，报告只留 1 条真实成果）')
-  ok(report.summary.points === 10, '报告分数与得分面板一致（10 分）')
+  ok(report.summary.selfCreatedExcluded === 1 && report.summary.count === 5,
+    `报告剔除自建命中（剔除 1 条，正文留 5 条真实成果）实际 ${report.summary.count}`)
+  ok(report.summary.points === 90, `报告分数与得分面板一致（90 分）实际 ${report.summary.points}`)
   ok(!report.markdown.includes('自助注册 ztest'), '报告正文里没有自建账号那条')
   ok(report.markdown.includes('自己注册/自建账号'), '报告抬头说明剔除了多少条自建记录')
   ok(report.stages.every((s) => s.items.every((x) => x.counted !== false || true)), '阶段分组不受影响')

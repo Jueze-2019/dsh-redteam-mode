@@ -1,6 +1,6 @@
 {
   "name": "dsh-redteam-ui",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": true,
   "description": "RedTeam 控制台：常驻右侧栏（资产测绘 / 智能体提示词 / 技能库），经 /redteam/api 读取 SQLite 资产库",
   "type": "module",

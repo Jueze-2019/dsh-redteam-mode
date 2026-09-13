@@ -235,7 +235,6 @@ window.__ModuleLoader__.load({
 .rt-cred-meta{font-size:11.5px;color:var(--dsw-alias-label-secondary);margin-top:5px;word-break:break-word}
 .rt-stage-score{background:#10b981}
 .rt-counted{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;color:#065f46;background:#a7f3d0;border:1px solid #10b98155;border-radius:9px;padding:0 7px}
-.rt-counted.full{color:#7c2d12;background:#fed7aa;border-color:#f59e0b55}
 .rt-scorepts{font-size:11.5px;font-weight:700;color:#065f46;background:#a7f3d0;border:1px solid #10b98155;
   border-radius:10px;padding:0 7px;white-space:nowrap}
 .rt-livebar{display:flex;align-items:center;gap:7px;padding:7px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);
@@ -1542,19 +1541,19 @@ window.__ModuleLoader__.load({
         x.asset_ip ? h('div', { className: 'rt-kv' }, h('b', null, '资产'), h('span', { className: 'rt-mono' }, x.asset_ip)) : null,
         x.vuln_title ? h('div', { className: 'rt-kv' }, h('b', null, '利用漏洞'), h('span', null, [x.vuln_cve, x.vuln_title].filter(Boolean).join(' '))) : null,
         h('div', { className: 'rt-kv' }, h('b', null, '次数'), h('span', null,
-          '同类第 ' + x.nth_of_point + ' 次' + (x.counted ? '（计入 ' + x.points + ' 分）' : '（超出上限 ' + x.max_hits + ' 次，不计分）'))),
+          '同类第 ' + x.nth_of_point + ' 次 · +' + (x.points || 0) + ' 分')),
         h('div', { className: 'rt-kv' }, h('b', null, '记录'), h('span', null, fmt(x.recorded_at) + (x.recorded_by ? ' · ' + x.recorded_by : ''))),
         x.evidence ? h(Clip, { label: '结果与证据', text: x.evidence }) : null)
 
       const hitRow = (x) => h('div', {
         key: 'h' + x.id,
-        className: 'rt-ap-hit' + (x.counted ? '' : ' overflow') + (openId === x.id ? ' open' : ''),
+        className: 'rt-ap-hit' + (openId === x.id ? ' open' : ''),
         role: 'button', tabIndex: 0,
         onClick: () => toggle(x.id),
         onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(x.id) } },
       },
         h('div', { className: 'rt-ap-hit-head' },
-          h('span', { className: 'rt-ap-pts' + (x.counted ? '' : ' off') }, (x.counted ? '+' : '') + (x.points || 0)),
+          h('span', { className: 'rt-ap-pts' }, '+' + (x.points || 0)),
           h('span', { className: 'rt-ap-hit-name' }, x.point_name),
           x.nth_of_point > 1 ? h('span', { className: 'rt-ap-nth' }, '第 ' + x.nth_of_point + ' 次') : null,
           h('span', { className: 'rt-ap-hit-target' }, x.target || x.asset_ip || '—')),
@@ -1590,7 +1589,7 @@ window.__ModuleLoader__.load({
             st.assets.length ? st.assets.map(assetRow) : h('div', { className: 'rt-ap-none' }, '还没有产生得分的资产')))
         } else {
           body.push(h('div', { key: 'ht', className: 'rt-ap-sub' },
-            '本阶段得分 ' + st.counted + ' / ' + st.hits + ' 次' + (st.points ? ' · +' + st.points + ' 分' : '')))
+            '本阶段命中 ' + st.hits + ' 次' + (st.points ? ' · +' + st.points + ' 分' : '')))
           body.push(h('div', { key: 'hl', className: 'rt-ap-hits' },
             st.items.length ? st.items.map(hitRow) : h('div', { className: 'rt-ap-none' }, '本阶段还没有得分')))
           if (st.code === 'boundary') {
@@ -1663,9 +1662,9 @@ window.__ModuleLoader__.load({
                     st.assets.slice(0, 6).map((a) => h('div', { key: 'a' + a.id, className: 'rt-hcol-sub', title: a.ip + '  +' + a.points + ' 分' },
                       (a.scope === 'internal' ? '内 ' : '外 ') + a.ip + '  +' + a.points)))
                 : h('div', null,
-                    h('div', { className: 'rt-hcol-hit' }, h('span', { className: 'rt-hcol-pts' }, '+' + st.points), h('span', { className: 'rt-hcol-name' }, st.counted + '/' + st.hits + ' 次命中')),
-                    st.items.slice(0, 6).map((x) => h('div', { key: 'c' + x.id, className: 'rt-hcol-sub' + (x.counted ? '' : ' off'), title: x.point_name + '  ' + (x.target || '') },
-                      h('span', { className: 'rt-hcol-pts' }, (x.counted ? '+' : '') + x.points), h('span', { className: 'rt-hcol-name' }, x.point_name))),
+                    h('div', { className: 'rt-hcol-hit' }, h('span', { className: 'rt-hcol-pts' }, '+' + st.points), h('span', { className: 'rt-hcol-name' }, st.hits + ' 次命中')),
+                    st.items.slice(0, 6).map((x) => h('div', { key: 'c' + x.id, className: 'rt-hcol-sub', title: x.point_name + '  ' + (x.target || '') },
+                      h('span', { className: 'rt-hcol-pts' }, '+' + x.points), h('span', { className: 'rt-hcol-name' }, x.point_name))),
                     st.items.length > 6 ? h('div', { className: 'rt-hcol-none' }, '…另有 ' + (st.items.length - 6) + ' 次') : null,
                     st.assetCount ? h('div', { className: 'rt-hcol-none' }, '涉及 ' + st.assetCount + ' 台资产') : null))))
 
@@ -1673,7 +1672,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'rt-toolbar' },
           h('span', { style: { fontWeight: 600 } }, '攻击链'),
           h('span', { className: 'rt-tag', style: { fontSize: 10.5 } }, '信息收集 → 互联网资产权限 → 边界突破 → 内网资产权限 → 靶标权限'),
-          summary ? h('span', { className: 'rt-tag rt-tag-live' }, '总分 ' + summary.points + ' / ' + summary.totalPoints + ' 分') : null,
+          summary ? h('span', { className: 'rt-tag rt-tag-live' }, '总分 ' + summary.points + ' 分') : null,
           h('div', { className: 'rt-spacer' }),
           h('button', { className: 'rt-btn' + (view === 'A' ? ' rt-btn-primary' : ''), title: '竖向攻击链：逐阶段向下看细节', onClick: () => setView('A') }, '链路 A'),
           h('button', { className: 'rt-btn' + (view === 'B' ? ' rt-btn-primary' : ''), title: '横向攻击链：一屏看完五个阶段', onClick: () => setView('B') }, '链路 B'),
@@ -1772,9 +1771,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'rt-rep-head' },
           h('span', { className: 'rt-rep-idx' }, String(x.seq)),
           h('span', { className: 'rt-rep-name' }, x.point_name),
-          x.counted
-            ? h('span', { className: 'rt-flow-pts' }, '+' + x.points + ' 分')
-            : h('span', { className: 'rt-flow-pts off' }, x.points + ' 分（超上限不计）'),
+          h('span', { className: 'rt-flow-pts' }, '+' + x.points + ' 分'),
           x.nth_of_point > 1 ? h('span', { className: 'rt-tag' }, '同类第 ' + x.nth_of_point + ' 次') : null,
           h('div', { className: 'rt-spacer' }),
           h('button', {
@@ -2115,8 +2112,8 @@ window.__ModuleLoader__.load({
       }
       React.useEffect(load, [eng, refreshKey])
 
-      const startEdit = (p) => setForm({ id: p.id, name: p.name, category: p.category || '', points: p.points, max_hits: p.max_hits || 1, description: p.description || '', enabled: p.enabled })
-      const startNew = () => { setForm({ name: '', category: '', points: 10, max_hits: 1, description: '', enabled: true }); setMsg(null) }
+      const startEdit = (p) => setForm({ id: p.id, name: p.name, category: p.category || '', points: p.points, description: p.description || '', enabled: p.enabled })
+      const startNew = () => { setForm({ name: '', category: '', points: 10, description: '', enabled: true }); setMsg(null) }
       const setField = (k, v) => setForm((f) => Object.assign({}, f, { [k]: v }))
 
       const save = () => {
@@ -2145,7 +2142,7 @@ window.__ModuleLoader__.load({
         }, (e) => { setBusy(false); setMsg({ err: String((e && e.message) || e) }) })
       }
 
-      const summary = (data && data.summary) || { totalPoints: 0, achievedPoints: 0, achievedCount: 0, pointCount: 0, hitCount: 0 }
+      const summary = (data && data.summary) || { achievedPoints: 0, pointCount: 0, hitPointCount: 0, hitCount: 0, selfCreatedHits: 0 }
       const items = (data && data.items) || []
 
       const rows = []
@@ -2163,15 +2160,14 @@ window.__ModuleLoader__.load({
             style: achieved ? {} : { background: 'var(--dsw-alias-bg-layer-2)', color: 'var(--dsw-alias-label-secondary)' },
           }, p.points + '分')),
           h('span', { title: p.description || '' }, p.name + (p.category ? '（' + p.category + '）' : '')),
-          h('span', { title: '同类得分可叠加，但最多计 ' + p.max_hits + ' 次；超过不计分' },
-            h('span', { className: 'rt-counted' + (p.counted >= p.max_hits ? ' full' : '') },
-              p.counted + ' / ' + p.max_hits),
-            h('span', { className: 'rt-sec-count', style: { marginLeft: 4 } }, '计入')),
+          /* 不设上限：直接给命中次数与已得分（次数 × 分值） */
+          h('span', { title: '同类得分不设数量上限，按命中次数累加' },
+            h('span', { className: 'rt-sec-count' }, p.hits.length > 0 ? p.counted + ' 次命中' : '未命中')),
           h('span', null, achieved
             ? h('span', { className: 'rt-tag rt-tag-live' }, '已拿下')
             : h('span', { className: 'rt-tag' }, p.enabled ? '待争取' : '停用')),
-          h('span', { style: { textAlign: 'right' } }, p.hits.length
-            ? h('span', { className: 'rt-tag' + (p.hits.length > p.max_hits ? '' : ' rt-tag-active') }, '命中 ' + p.hits.length)
+          h('span', { style: { textAlign: 'right' } }, p.earned > 0
+            ? h('span', { className: 'rt-tag rt-tag-active' }, '+' + p.earned + ' 分')
             : h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, '—'))))
         if (!open) continue
         /* 命中记录：一行一条 —— 第一行给"序号 + 资产 + 时间 + 复制"，内容另起一行自适应换行 */
@@ -2201,8 +2197,8 @@ window.__ModuleLoader__.load({
         }, h('div', { className: 'rt-score-detail' },
           p.description ? h('div', { className: 'rt-kv' }, h('b', null, '得分条件'), h('span', null, p.description)) : null,
           h('div', { className: 'rt-kv' }, h('b', null, '状态'),
-            h('span', null, (p.enabled ? '启用' : '停用') + ' · ' + p.points + ' 分/次 · 上限 ' + p.max_hits +
-              ' 次 · 命中 ' + p.hits.length + ' 次 · 计入 ' + p.counted + ' 次 = ' + p.earned + ' 分')),
+            h('span', null, (p.enabled ? '启用' : '停用') + ' · ' + p.points + ' 分/次 · 命中 ' + p.hits.length +
+              ' 次 = ' + p.earned + ' 分' + (p.self_created ? '（另有 ' + p.self_created + ' 次自建不计分）' : ''))),
           p.hits.length
             ? h('div', null,
                 h('div', { className: 'rt-section', style: { padding: '6px 0 0' } },
@@ -2222,7 +2218,8 @@ window.__ModuleLoader__.load({
           h('span', { style: { fontSize: 13, color: 'var(--dsw-alias-label-secondary)', marginLeft: 4 } }, '总分'),
           h('span', { className: 'rt-total' }, String(summary.achievedPoints)),
           h('span', { style: { fontSize: 13, color: 'var(--dsw-alias-label-secondary)' } }, '分'),
-          h('span', { className: 'rt-tag' }, '已拿下 ' + summary.achievedCount + '/' + summary.pointCount + ' 项'),
+          h('span', { className: 'rt-tag' }, summary.pointCount + ' 个得分点'),
+          h('span', { className: 'rt-tag' }, '命中 ' + summary.countedHits + ' 次'),
           summary.selfCreatedHits
             ? h('span', {
                 className: 'rt-tag rt-tag-warn',
@@ -2238,10 +2235,9 @@ window.__ModuleLoader__.load({
           h('div', { className: 'rt-score-form' },
             h('input', { className: 'rt-input', placeholder: '名称（必填）', value: form.name, onChange: (e) => setField('name', e.target.value) }),
             h('input', { className: 'rt-input', placeholder: '分类，如 账号权限', value: form.category, onChange: (e) => setField('category', e.target.value) }),
-            h('input', { className: 'rt-input', type: 'number', placeholder: '单次分值', value: form.points, onChange: (e) => setField('points', Number(e.target.value)) }),
             h('input', {
-              className: 'rt-input', type: 'number', min: 1, placeholder: '最多计几次', title: '同一类得分可叠加，但最多计几次（超过的命中仍会记录，只是不计分）',
-              value: form.max_hits, onChange: (e) => setField('max_hits', Number(e.target.value)),
+              className: 'rt-input', type: 'number', placeholder: '单次分值', title: '这一类的单次分值；每命中一次就按这个分值累加（不设次数上限）',
+              value: form.points, onChange: (e) => setField('points', Number(e.target.value)),
             }),
             h('select', { className: 'rt-input', value: form.enabled ? '1' : '0', onChange: (e) => setField('enabled', e.target.value === '1') },
               h('option', { value: '1' }, '启用'),
@@ -2257,7 +2253,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'rt-table' },
           h('div', { className: 'rt-score-row head' },
             h('span', null, ''), h('span', null, '分值'), h('span', null, '得分点'),
-            h('span', null, '计入 / 上限'), h('span', null, '状态'), h('span', { style: { textAlign: 'right' } }, '命中')),
+            h('span', null, '命中'), h('span', null, '状态'), h('span', { style: { textAlign: 'right' } }, '已得分')),
           rows,
           !items.length ? h('div', { className: 'rt-empty' }, '暂无得分点，点右上角「新增得分点」') : null),
         h('div', { className: 'rt-foot' }, h('span', null, '得分点可编辑；智能体按分值优先级推进，拿下成果用 redteam_score_hit 记分')))

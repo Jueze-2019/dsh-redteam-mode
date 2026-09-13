@@ -444,16 +444,7 @@ function migrate(db) {
   ensure('vuln', 'gained', 'TEXT')
   /* 凭据明文：面板要直接显示口令，不再只存引用（库在本机，禁止导出/提交） */
   ensure('credential', 'secret_value', 'TEXT')
-  /* 得分上限：同一类得分可叠加，但每类最多计几次 */
-  /* 上限列刚加上时，按内置默认给老靶标回填一次（之后尊重用户改动，不再覆盖） */
-  if (ensure('score_point', 'max_hits', 'INTEGER DEFAULT 1')) {
-    try {
-      const stmt = db.prepare('UPDATE score_point SET max_hits = ? WHERE code = ? AND COALESCE(max_hits, 1) = 1')
-      for (const point of DEFAULT_SCORE_POINTS) {
-        if (point.max_hits && point.max_hits > 1) stmt.run(point.max_hits, point.code)
-      }
-    } catch { /* 忽略 */ }
-  }
+  /* 得分类别不设数量上限（max_hits 列保留只为兼容老库结构，计分不再使用） */
   /* 得分 ↔ 漏洞/步骤 关联：报告取原始请求、流程图连线用 */
   ensure('score_hit', 'vuln_id', 'INTEGER')
   ensure('score_hit', 'step_id', 'INTEGER')
@@ -592,16 +583,16 @@ function writeMeta(path, meta) {
 
 /** 攻防演练默认得分点（用户可在「得分目标」面板里编辑分值/启用/增删）。 */
 export const DEFAULT_SCORE_POINTS = [
-  { code: 'web-account-user', name: '获取 Web 普通账号权限', category: '账号权限', points: 10, max_hits: 5, description: '拿到任意站点/系统的普通用户账号（注册、撞库、越权、短信绕过等）' },
-  { code: 'web-account-admin', name: '获取 Web 管理员账号权限', category: '账号权限', points: 20, max_hits: 3, description: '拿到后台/管理端管理员账号，可登录管理功能' },
-  { code: 'webshell', name: '上传 WebShell 并维持访问', category: '服务器权限', points: 20, max_hits: 3, description: '落地可用 WebShell（冰蝎/哥斯拉/蚁剑可连）并稳定访问' },
-  { code: 'rce', name: 'RCE / 命令执行', category: '服务器权限', points: 30, max_hits: 2, description: '在目标服务器执行任意命令（含框架/中间件 Nday RCE、反序列化、模板注入等）' },
-  { code: 'server-shell', name: '获取服务器权限', category: '服务器权限', points: 25, max_hits: 2, description: '获得主机 Shell（反弹/交互式），可读写文件与执行命令' },
-  { code: 'db-access', name: '获取数据库权限', category: '数据库', points: 25, max_hits: 2, description: '可读写目标数据库（注入拖库、暴露库弱口令、连接串泄露）' },
-  { code: 'sensitive-data', name: '获取大量敏感信息', category: '数据', points: 20, max_hits: 5, description: '批量导出用户/订单/身份/配置/源码等敏感数据' },
-  { code: 'boundary', name: '互联网边界突破', category: '网络突破', points: 30, max_hits: 1, description: '从互联网侧进入目标内网（VPN/网关/暴露服务被拿下并可达内网）' },
-  { code: 'internal-pivot', name: '突破逻辑内网（横向移动）', category: '网络突破', points: 35, max_hits: 2, description: '以内网可达身份横向到其他主机/网段，扩大控制范围' },
-  { code: 'core-system', name: '拿下核心系统', category: '核心目标', points: 40, max_hits: 1, description: '域控、堡垒机、运维平台、邮件/门户核心、代码仓库等关键系统' },
+  { code: 'web-account-user', name: '获取 Web 普通账号权限', category: '账号权限', points: 10, description: '拿到任意站点/系统的普通用户账号（注册、撞库、越权、短信绕过等）' },
+  { code: 'web-account-admin', name: '获取 Web 管理员账号权限', category: '账号权限', points: 20, description: '拿到后台/管理端管理员账号，可登录管理功能' },
+  { code: 'webshell', name: '上传 WebShell 并维持访问', category: '服务器权限', points: 20, description: '落地可用 WebShell（冰蝎/哥斯拉/蚁剑可连）并稳定访问' },
+  { code: 'rce', name: 'RCE / 命令执行', category: '服务器权限', points: 30, description: '在目标服务器执行任意命令（含框架/中间件 Nday RCE、反序列化、模板注入等）' },
+  { code: 'server-shell', name: '获取服务器权限', category: '服务器权限', points: 25, description: '获得主机 Shell（反弹/交互式），可读写文件与执行命令' },
+  { code: 'db-access', name: '获取数据库权限', category: '数据库', points: 25, description: '可读写目标数据库（注入拖库、暴露库弱口令、连接串泄露）' },
+  { code: 'sensitive-data', name: '获取大量敏感信息', category: '数据', points: 20, description: '批量导出用户/订单/身份/配置/源码等敏感数据' },
+  { code: 'boundary', name: '互联网边界突破', category: '网络突破', points: 30, description: '从互联网侧进入目标内网（VPN/网关/暴露服务被拿下并可达内网）' },
+  { code: 'internal-pivot', name: '突破逻辑内网（横向移动）', category: '网络突破', points: 35, description: '以内网可达身份横向到其他主机/网段，扩大控制范围' },
+  { code: 'core-system', name: '拿下核心系统', category: '核心目标', points: 40, description: '域控、堡垒机、运维平台、邮件/门户核心、代码仓库等关键系统' },
 ]
 
 /* ------------------------------------------------------------------ 默认内容 */
@@ -762,7 +753,7 @@ export const DEFAULT_PROMPTS = {
 - **自己注册/自建的账号不算得分权限**：自助注册的账号、自己新建的用户/角色/后台账号、自己给自己开的权限，都不算"拿到账号权限"（得分针对**拿到别人已有的**账号与权限）。这类用 \`self_created=true\` 记一笔留痕即可——**不计分、不占上限、不进报告**，也不要为了凑分去注册账号。
 - **自己的 VPS / 自己配置的服务器不算隧道**：只在自己服务器上开 socks5/frp/代理没有碰到目标，不算边界突破或内网突破。登记隧道必须用 \`entry_kind\` 说清目标侧那一端：\`target-outbound\`（目标反弹 shell 到我方 / 目标上跑 frp 客户端）、\`target-http\`（经目标 WebShell 的 suo5/Neo-ReGeorg）、\`target-agent\`（经目标已控进程转发）；只在自己服务器上开代理填 \`self-only\`（会被标"不算突破"）。
 - 能指向漏洞就带 \`vuln_id\`，报告才能附上可复现的原始请求。
-- 同一类得分可叠加但有上限（\`max_hits\`），超上限的命中不计分——把得分分散在真实目标上。
+- 同类得分**不设数量上限**：每个真实命中都按分值累加（命中次数 × 分值），所以打得越多分越高——但每一笔都要有真实证据，不能重复记同一次成果。
 - 写 \`redteam_chain_add\` 时如果这一步拿了分，直接带 \`point_code\` + \`evidence\`，一次调用同时完成记分与关联。
 
 ## 打之前先查库（禁止重复打）
@@ -791,7 +782,7 @@ export const DEFAULT_PROMPTS = {
 - **自己注册/自建的账号不算得分权限**：自助注册的账号、自己新建的用户/角色/后台账号、自己给自己开的权限，都不算"拿到账号权限"（得分针对**拿到别人已有的**账号与权限）。这类用 \`self_created=true\` 记一笔留痕即可——**不计分、不占上限、不进报告**，也不要为了凑分去注册账号。
 - **自己的 VPS / 自己配置的服务器不算隧道**：只在自己服务器上开 socks5/frp/代理没有碰到目标，不算边界突破或内网突破。登记隧道必须用 \`entry_kind\` 说清目标侧那一端：\`target-outbound\`（目标反弹 shell 到我方 / 目标上跑 frp 客户端）、\`target-http\`（经目标 WebShell 的 suo5/Neo-ReGeorg）、\`target-agent\`（经目标已控进程转发）；只在自己服务器上开代理填 \`self-only\`（会被标"不算突破"）。
 - 能指向漏洞就带 \`vuln_id\`，报告才能附上可复现的原始请求。
-- 同一类得分可叠加但有上限（\`max_hits\`），超上限的命中不计分——把得分分散在真实目标上。
+- 同类得分**不设数量上限**：每个真实命中都按分值累加（命中次数 × 分值），所以打得越多分越高——但每一笔都要有真实证据，不能重复记同一次成果。
 - 写 \`redteam_chain_add\` 时如果这一步拿了分，直接带 \`point_code\` + \`evidence\`，一次调用同时完成记分与关联。
 
 ## 落库要求（强制）
@@ -866,7 +857,7 @@ Nday 打不通或已覆盖，转接口：
 - **自己注册/自建的账号不算得分权限**：自助注册的账号、自己新建的用户/角色/后台账号、自己给自己开的权限，都不算"拿到账号权限"（得分针对**拿到别人已有的**账号与权限）。这类用 \`self_created=true\` 记一笔留痕即可——**不计分、不占上限、不进报告**，也不要为了凑分去注册账号。
 - **自己的 VPS / 自己配置的服务器不算隧道**：只在自己服务器上开 socks5/frp/代理没有碰到目标，不算边界突破或内网突破。登记隧道必须用 \`entry_kind\` 说清目标侧那一端：\`target-outbound\`（目标反弹 shell 到我方 / 目标上跑 frp 客户端）、\`target-http\`（经目标 WebShell 的 suo5/Neo-ReGeorg）、\`target-agent\`（经目标已控进程转发）；只在自己服务器上开代理填 \`self-only\`（会被标"不算突破"）。
 - 能指向漏洞就带 \`vuln_id\`，报告才能附上可复现的原始请求。
-- 同一类得分可叠加但有上限（\`max_hits\`），超上限的命中不计分——把得分分散在真实目标上。
+- 同类得分**不设数量上限**：每个真实命中都按分值累加（命中次数 × 分值），所以打得越多分越高——但每一笔都要有真实证据，不能重复记同一次成果。
 - 写 \`redteam_chain_add\` 时如果这一步拿了分，直接带 \`point_code\` + \`evidence\`，一次调用同时完成记分与关联。
 
 ## 证据与落库（强制）
@@ -925,7 +916,7 @@ Nday 打不通或已覆盖，转接口：
 - **自己注册/自建的账号不算得分权限**：自助注册的账号、自己新建的用户/角色/后台账号、自己给自己开的权限，都不算"拿到账号权限"（得分针对**拿到别人已有的**账号与权限）。这类用 \`self_created=true\` 记一笔留痕即可——**不计分、不占上限、不进报告**，也不要为了凑分去注册账号。
 - **自己的 VPS / 自己配置的服务器不算隧道**：只在自己服务器上开 socks5/frp/代理没有碰到目标，不算边界突破或内网突破。登记隧道必须用 \`entry_kind\` 说清目标侧那一端：\`target-outbound\`（目标反弹 shell 到我方 / 目标上跑 frp 客户端）、\`target-http\`（经目标 WebShell 的 suo5/Neo-ReGeorg）、\`target-agent\`（经目标已控进程转发）；只在自己服务器上开代理填 \`self-only\`（会被标"不算突破"）。
 - 能指向漏洞就带 \`vuln_id\`，报告才能附上可复现的原始请求。
-- 同一类得分可叠加但有上限（\`max_hits\`），超上限的命中不计分——把得分分散在真实目标上。
+- 同类得分**不设数量上限**：每个真实命中都按分值累加（命中次数 × 分值），所以打得越多分越高——但每一笔都要有真实证据，不能重复记同一次成果。
 - 写 \`redteam_chain_add\` 时如果这一步拿了分，直接带 \`point_code\` + \`evidence\`，一次调用同时完成记分与关联。
 
 ## 落库（强制）
@@ -1465,9 +1456,9 @@ export class RedteamStore {
     if (n > 0) return { seeded: 0 }
     let order = 0
     for (const point of DEFAULT_SCORE_POINTS) {
-      db.prepare(`INSERT INTO score_point(code, name, category, points, max_hits, description, enabled, sort_order, created_at, updated_at)
-        VALUES(?,?,?,?,?,?,1,?,?,?)`).run(
-        point.code, point.name, point.category, point.points, point.max_hits || 1, point.description,
+      db.prepare(`INSERT INTO score_point(code, name, category, points, description, enabled, sort_order, created_at, updated_at)
+        VALUES(?,?,?,?,?,1,?,?,?)`).run(
+        point.code, point.name, point.category, point.points, point.description,
         order++, nowIso(), nowIso(),
       )
     }
@@ -1494,15 +1485,13 @@ export class RedteamStore {
           self_created: Number(h.self_created) === 1,
           recorded_by: h.recorded_by, recorded_at: h.recorded_at,
         }))
-        /* 同一类得分可叠加，但每类最多计 max_hits 次（默认 1，可在面板调）。
-           **自己注册/自建的账号不计分**（self_created=1 只作过程记录，不占上限也不得分）。 */
-        const maxHits = Math.max(1, Number(r.max_hits) || 1)
+        /* 同类得分**不设数量上限，按命中次数累加**。
+           **自己注册/自建的账号不计分**（self_created=1 只作过程记录，不计数也不得分）。 */
         const valid = list.filter((h) => h.self_created !== true)
-        const counted = Math.min(valid.length, maxHits)
+        const counted = valid.length
         return {
           id: r.id, code: r.code, name: r.name, category: r.category, points: r.points,
-          max_hits: maxHits, counted: counted, earned: counted * r.points,
-          potential: maxHits * r.points,
+          counted: counted, earned: counted * r.points,
           self_created: list.length - valid.length,
           description: r.description || '', enabled: r.enabled === 1, sort_order: r.sort_order,
           hits: list,
@@ -1512,10 +1501,11 @@ export class RedteamStore {
     return {
       items,
       summary: {
-        totalPoints: enabled.reduce((n, p) => n + p.potential, 0),
+        /* 不设上限：得分 = 命中次数 × 分值，累加即可 */
         achievedPoints: enabled.reduce((n, p) => n + p.earned, 0),
-        achievedCount: enabled.filter((p) => p.counted > 0).length,
+        /* 得分点个数（界面按这个显示，不再说"已拿下 N 项"） */
         pointCount: enabled.length,
+        hitPointCount: enabled.filter((p) => p.counted > 0).length,
         hitCount: items.reduce((n, p) => n + p.hits.length, 0),
         countedHits: enabled.reduce((n, p) => n + p.counted, 0),
         /* 自己注册/自建而被剔除的命中数（界面上单独提示，避免"记了却没分"的困惑） */
@@ -1524,26 +1514,25 @@ export class RedteamStore {
     }
   }
 
-  /** 新增或更新得分点（带 id 更新，不带 id 新增）。 */
-  /** 保存得分点（含每类上限 max_hits，默认 1 次）。 */
+  /** 新增或更新得分点（带 id 更新，不带 id 新增）。得分类别**不设数量上限**，只记分值。 */
   saveScorePoint(id, point = {}) {
     const db = this.db(id)
     const name = String(point.name || '').trim()
     if (name === '') throw new Error('score point name required')
     const points = Number.isFinite(Number(point.points)) ? Number(point.points) : 0
     const enabled = point.enabled === false ? 0 : 1
-    const maxHits = Math.max(1, Number.isFinite(Number(point.max_hits)) ? Number(point.max_hits) : 1)
+    /* max_hits 列保留只为兼容老库结构，计分不再使用（恒写 1） */
     if (point.id !== undefined && point.id !== null && Number(point.id) > 0) {
-      db.prepare(`UPDATE score_point SET name = ?, category = ?, points = ?, max_hits = ?, description = ?, enabled = ?,
+      db.prepare(`UPDATE score_point SET name = ?, category = ?, points = ?, description = ?, enabled = ?,
           sort_order = COALESCE(?, sort_order), updated_at = ? WHERE id = ?`)
-        .run(name, point.category ?? null, points, maxHits, point.description ?? null, enabled,
+        .run(name, point.category ?? null, points, point.description ?? null, enabled,
           point.sort_order ?? null, nowIso(), Number(point.id))
       return { id: Number(point.id), updated: true }
     }
     const next = db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM score_point').get().n
-    const r = db.prepare(`INSERT INTO score_point(code, name, category, points, max_hits, description, enabled, sort_order, created_at, updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?)`).run(
-      point.code ?? null, name, point.category ?? null, points, maxHits, point.description ?? null, enabled,
+    const r = db.prepare(`INSERT INTO score_point(code, name, category, points, description, enabled, sort_order, created_at, updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?)`).run(
+      point.code ?? null, name, point.category ?? null, points, point.description ?? null, enabled,
       next, nowIso(), nowIso(),
     )
     return { id: Number(r.lastInsertRowid), updated: false }
@@ -1990,7 +1979,7 @@ export class RedteamStore {
     const db = this.db(id)
     const meta = readMeta(this.metaPathOf(id)) || {}
     const limit = Math.min(Number(options.limit) || 500, 2000)
-    const rows = db.prepare(`SELECT h.*, p.code, p.name AS point_name, p.points, p.category, p.max_hits,
+    const rows = db.prepare(`SELECT h.*, p.code, p.name AS point_name, p.points, p.category,
         a.ip AS asset_ip, v.title AS vuln_title, v.cve AS vuln_cve, v.gained AS vuln_gained, v.severity AS vuln_severity
       FROM score_hit h
       LEFT JOIN score_point p ON p.id = h.point_id
@@ -1998,7 +1987,7 @@ export class RedteamStore {
       LEFT JOIN vuln v ON v.id = h.vuln_id
       ORDER BY h.recorded_at, h.id LIMIT ?`).all(limit)
 
-    /* 上限口径：同一类得分可叠加，但每类最多计 max_hits 次 */
+    /* 计分口径：同类得分不设上限，命中即累加（自建账号已在上面整条剔除） */
     const perPoint = new Map()
     const eviByVuln = db.prepare(`SELECT id, label, method, url, status, request, response, note, captured_at
       FROM http_evidence WHERE vuln_id = ? ORDER BY id`)
@@ -2026,8 +2015,7 @@ export class RedteamStore {
     const items = reportRows.map((h, i) => {
       const seen = perPoint.get(h.point_id) || 0
       perPoint.set(h.point_id, seen + 1)
-      const maxHits = Math.max(1, Number(h.max_hits) || 1)
-      const counted = seen < maxHits
+      const counted = true
 
       /* 原始请求：先按显式关联的漏洞取 */
       let requests = h.vuln_id === null || h.vuln_id === undefined ? [] : eviByVuln.all(h.vuln_id).map((e) => ({
@@ -2079,7 +2067,6 @@ export class RedteamStore {
         point_name: h.point_name || '（已删除的得分点）',
         category: h.category || '',
         points: h.points || 0,
-        max_hits: maxHits,
         counted: counted,
         nth_of_point: seen + 1,
         target: h.target || '',
@@ -2132,7 +2119,7 @@ export class RedteamStore {
       let n = 0
       for (const x of st.items) {
         n += 1
-        md.push('### ' + (NUMS[n - 1] || n) + '. ' + x.point_name + '　+' + x.points + ' 分' + (x.counted ? '' : '（超出上限不计分）'), '')
+        md.push('### ' + (NUMS[n - 1] || n) + '. ' + x.point_name + '　+' + x.points + ' 分', '')
         if (x.target) md.push('- **目标**：' + x.target)
         if (x.gained) md.push('- **拿到**：' + x.gained)
         if (x.evidence && String(x.evidence).replace(/\n+/g, ' ').trim() !== String(x.gained || '').trim()) {
@@ -2194,17 +2181,15 @@ export class RedteamStore {
       it.action = step === undefined ? null : { id: step.id, seq: step.seq, stage: step.stage, title: step.title, detail: step.detail }
       it.action_inferred = inferred
     }
-    /* 叠加计分口径：标出每次命中是"计入"还是"超出上限不计分" */
-    const maxHitsOf = new Map(db.prepare('SELECT id, COALESCE(max_hits, 1) AS m FROM score_point').all().map((r) => [r.id, Math.max(1, Number(r.m) || 1)]))
+    /* 计分口径：同类得分不设上限，按命中次数累加。
+       自己注册/自建的账号不计分（只留过程），因此也不进累计分。 */
     const seenOf = new Map()
     for (const it of items) {
       it.self_created = Number(it.self_created) === 1
       const seen = seenOf.get(it.point_id) || 0
-      /* 自己注册/自建的账号不计分：既不占上限，也不进累计分 */
       if (!it.self_created) seenOf.set(it.point_id, seen + 1)
-      it.max_hits = maxHitsOf.get(it.point_id) || 1
       it.nth_of_point = seen + 1
-      it.counted = it.self_created !== true && seen < it.max_hits
+      it.counted = it.self_created !== true
     }
     /* 按得分点聚合出"哪些还没拿下"，方便一眼看出缺口 */
     const points = db.prepare('SELECT id, code, name, category, points, enabled FROM score_point ORDER BY sort_order, id').all()
@@ -2298,7 +2283,7 @@ export class RedteamStore {
       missing,
       summary: {
         hits: items.length,
-        /* 计分口径与得分面板一致：同类叠加但受上限封顶 */
+        /* 计分口径与得分面板一致：同类得分不设上限，按命中次数累加 */
         points: scores.summary.achievedPoints,
         totalPoints: scores.summary.totalPoints,
         countedHits: scores.summary.countedHits,
