@@ -231,7 +231,7 @@ export FOFA_KEY=你的key       # skills/fofa-recon.md 里的客户端只读这�
 │   └── redteam-ui/          # 常驻右侧栏控制台（host 桥接 + 客户端 UI）
 ├── preset/                  # DSH agent preset（红队人设与工具行）
 ├── skills/                  # 13 个 DSH 原生技能
-├── docs/                    # 环境配置记录（如 Kimi WebBridge 桥接）
+├── docs/                    # 环境配置记录（Kimi WebBridge 桥接、上架市场的步骤）
 └── redteam-proto/           # 原型脚本与演示数据（RFC 5737 文档地址）
 ```
 

@@ -44,6 +44,20 @@
     }
   },
   "scripts": {
-    "build": "node tools/build.mjs"
+    "build": "node tools/build.mjs",
+    "prepublishOnly": "node tools/build.mjs --check && node test/bundle.test.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jueze-2019/dsh-redteam-mode.git",
+    "directory": "packages/redteam-bundle"
+  },
+  "homepage": "https://github.com/Jueze-2019/dsh-redteam-mode",
+  "bugs": {
+    "url": "https://github.com/Jueze-2019/dsh-redteam-mode/issues"
+  },
+  "author": "Jueze",
+  "engines": {
+    "dsh": ">=0.1.0-rc.6"
   }
 }
