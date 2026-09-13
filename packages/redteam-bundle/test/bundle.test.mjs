@@ -83,6 +83,18 @@ ok(preset.includes('{{REDTEAM_SKILLS_DIR}}'), '技能目录是待替换占位符
 ok(/红队（RedTeam）作战指挥智能体/.test(preset), '人设正文在')
 ok(!preset.includes('/home/'), '预设里没有本机绝对路径')
 
+console.log('— 浏览器半侧的注册 id')
+{
+  /* 前端加载器按**包名**认领模块：bundle URL 是 dsh-redteam-mode/client.js，
+     它就找 __ModuleLoader__.load({ id: 'dsh-redteam-mode' })。
+     生成时若原样拷 UI 包那份（id: 'dsh-redteam-ui'），浏览器会报
+     "loaded without registering ... via __ModuleLoader__.load"。 */
+  const client = readFileSync(join(root, 'lib', 'client.js'), 'utf8')
+  const m = /__ModuleLoader__\.load\(\{\s*id:\s*'([^']+)'/.exec(client)
+  ok(m !== null, 'client.js 里有 __ModuleLoader__.load({ id })')
+  ok(m !== null && m[1] === manifest.name, `注册 id 等于包名（${m ? m[1] : '?'} vs ${manifest.name}）`)
+}
+
 console.log('— 技能随包分发')
 const skills = readdirSync(join(root, 'skills')).filter((f) => f.endsWith('.md'))
 ok(skills.length === 13, `打包技能 ${skills.length} 个`)

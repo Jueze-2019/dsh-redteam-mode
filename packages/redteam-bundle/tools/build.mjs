@@ -49,8 +49,23 @@ const uiIndex = read('redteam-ui/lib/index.js')
   .replace("from '../../redteam-store/lib/core.js'", "from './store-core.js'")
 write('lib/ui.js', uiIndex)
 
-/* 3) 浏览器半侧：原样拷（client 入口由本包的 exports['./client'] 提供） */
-write('lib/client.js', read('redteam-ui/lib/client.js'))
+/* 3) 浏览器半侧：拷过来，并把注册 id 改成**本包的包名**。
+   前端加载器按包名取模块：bundle URL 是 `dsh-redteam-mode/client.js`，它就用
+   `__ModuleLoader__.load({ id: 'dsh-redteam-mode' })` 去认领；源码包里写的是
+   `dsh-redteam-ui`（那份 bundle 属于 UI 包），不改就会报
+   "loaded without registering ... via __ModuleLoader__.load"。 */
+const clientSrc = read('redteam-ui/lib/client.js')
+const clientId = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8')).name
+const registered = /__ModuleLoader__\.load\(\{\s*id:\s*'([^']+)'/.exec(clientSrc)
+if (registered === null) throw new Error('client.js 里找不到 __ModuleLoader__.load({ id })')
+const clientOut = clientSrc.replace(
+  /(__ModuleLoader__\.load\(\{\s*id:\s*')[^']+(')/,
+  `$1${clientId}$2`,
+)
+if (!new RegExp(`__ModuleLoader__\\.load\\(\\{\\s*id:\\s*'${clientId}'`).test(clientOut)) {
+  throw new Error('client.js 的注册 id 改写失败')
+}
+write('lib/client.js', clientOut)
 
 /* 4) 工具集：跨包引用 ROLE_TITLES，改成本地 store-core */
 const tools = read('redteam-tools/lib/index.js')
