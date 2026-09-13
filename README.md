@@ -237,7 +237,13 @@ node packages/redteam-store/test/prompts.test.mjs  # 角色提示词：默认值
 node packages/redteam-store/test/rules.test.mjs    # 判定规则：自建账号不计分、只有目标侧通道算突破
 node packages/redteam-tools/test/poc-tools.test.mjs # 知识库工具：检索/回填/跨靶标共享/去重
 node packages/redteam-tools/test/rule-tools.test.mjs # 工具的规则输出：score_hit / tunnel_add / sessions
+node packages/redteam-tools/test/tool-schema.test.mjs # 工具 schema 结构自检（含 DSH 官方校验器）
 ```
+
+> ⚠️ **改工具参数 schema 后务必跑 `tool-schema.test.mjs`**：DSH 在挂载预设时会校验每个工具的
+> schema，一旦不合法（例如 `type: 'object'` 没写 `additionalProperties`），**整个预设 mount 失败**
+> ——该会话任何 resume 都失败，客户端命令菜单会不停重试，每次重试都要整份解码会话日志，
+> 足以把 dsh 进程 CPU 打满、界面卡住（v0.6.1 真出过这个事故，v0.6.2 修复并加了这道自检）。
 
 它覆盖的是一类**静默算错分**的故障：攻击链与报告按阶段表分组，阶段行一旦缺失，
 挂在那个阶段的得分会被无声丢弃（v0.4.2 修的正是 ⑤靶标权限 被旧迁移误删、

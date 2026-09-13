@@ -1111,7 +1111,10 @@ export function apply(ctx) {
     parameters: {
       id: { type: 'number', description: '知识库条目 id' },
       code: { type: 'string', description: '或用 code 指定条目' },
-      patch: { type: 'object', description: '{ verified, verified_note, versions, usage, description, content, tags, severity, component, cve, source, source_url, language }' },
+      patch: {
+        type: 'object', additionalProperties: true,
+        description: '{ verified, verified_note, versions, usage, description, content, tags, severity, component, cve, source, source_url, language }',
+      },
       verified: { type: 'boolean', description: '便捷写法：直接传 verified' },
       verified_note: { type: 'string', description: '便捷写法：直接传验证证据' },
     },
