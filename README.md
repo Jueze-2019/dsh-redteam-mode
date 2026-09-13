@@ -57,6 +57,17 @@ DSH 的组合分两个平面，本项目的三个包严格按平面归位：
 
 ## 3. 安装
 
+### 3.0 从插件市场装（推荐，一条命令）
+
+```sh
+dsh plugin --profile web add dsh-redteam-mode
+```
+
+重启 `dsh web` → 设置 → **插件市场** 里也能直接搜到并一键装。首次启动会自动把
+`红队模式` 预设装到 `$DSH_HOME/.agent-presets/redteam/`、注册 13 个原生技能，
+不需要手动拷任何文件。下面 3.1–3.5 是从源码/本地包安装的做法，开发者与想改代码的人用。
+
+
 ### 前置
 
 * DSH（DeepSeek Harness），能正常 `dsh web` 启动。

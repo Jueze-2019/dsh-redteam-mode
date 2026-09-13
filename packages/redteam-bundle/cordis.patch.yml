@@ -1,0 +1,27 @@
+# dsh-redteam-mode bundle patch
+#
+# 挂三行，全部指向**本包自己的子路径**。为什么要子路径而不是 sibling 包名：
+#   pnpm 默认隔离布局不会把传递依赖链到 <profile>/node_modules/ 下，而 preset /
+#   补丁里的裸包名是按宿主 base（profile 目录）解析的，引用传递依赖会直接解析失败。
+#   装一个包、包内自带实现（lib/ 由 tools/build.mjs 从三个源码包生成），最稳。
+#
+# 补丁层顺序：bundle 层 → 用户自己的 cordis.patch.yml → --patch。
+# 用户想改这里的任何一处，写在自己的 profile 补丁里即可覆盖。
+
+# 1) 自举：把包内预设 + 技能装到用户 preset 根（已存在同名预设则不覆盖）
+- insert:
+    - id: redteam-mode
+      name: dsh-redteam-mode
+
+# 2) 资产库：发布 ctx.redteam（SQLite 事实库），数据落在 $DSH_HOME/redteam
+- insert:
+    - id: redteam-store
+      name: dsh-redteam-mode/store
+      config:
+        root: !!js dshHomePath('redteam')
+
+# 3) 控制台：host 半侧注册 POST /redteam/api；浏览器半侧由本包
+#    package.json 的 dsh.client 声明，被前端加载器发现
+- insert:
+    - id: redteam-ui
+      name: dsh-redteam-mode/ui

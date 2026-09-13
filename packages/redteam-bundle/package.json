@@ -1,0 +1,49 @@
+{
+  "name": "dsh-redteam-mode",
+  "version": "0.7.0",
+  "description": "DSH RedTeam 模式：一句话拉起红队作战智能体（资产测绘 / 攻击链 / 得分目标 / 报告 / POC 知识库），含四个角色、13 个原生技能与常驻右侧控制台",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./store": "./lib/store.js",
+    "./ui": "./lib/ui.js",
+    "./tools": "./lib/tools.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "presets",
+    "skills",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "deepseek-harness-plugin",
+    "redteam",
+    "红队",
+    "攻防演练",
+    "pentest",
+    "security",
+    "asset-management",
+    "knowledge-base"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  },
+  "scripts": {
+    "build": "node tools/build.mjs"
+  }
+}
