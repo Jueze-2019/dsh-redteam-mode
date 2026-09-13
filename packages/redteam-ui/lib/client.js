@@ -1979,14 +1979,11 @@ window.__ModuleLoader__.load({
             ? h('span', { className: 'rt-tag' + (p.hits.length > p.max_hits ? '' : ' rt-tag-active') }, '命中 ' + p.hits.length)
             : h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, '—'))))
         if (!open) continue
-        /* 命中记录：一行说完 —— 什么资产 + 账号密码/拿到的东西 + 时间（详细过程交给报告） */
+        /* 命中记录：一行一条 —— 第一行给"序号 + 资产 + 时间 + 复制"，内容另起一行自适应换行 */
         const hitNodes = p.hits.map((hh, hi) => h('div', { key: 'h' + hh.id, className: 'rt-hit-row' },
           h('span', { className: 'rt-hit-idx' }, String(hi + 1)),
           h('span', { className: 'rt-hit-asset', title: hh.target || hh.asset_ip || '' },
             hh.asset_ip || hh.target || '未指定资产'),
-          hh.evidence
-            ? h('span', { className: 'rt-hit-txt', title: hh.evidence }, String(hh.evidence).replace(/\n+/g, ' '))
-            : h('span', { className: 'rt-hit-txt none' }, '未填账号密码/结果'),
           h('span', { className: 'rt-hit-time' }, fmt(hh.recorded_at)),
           h('button', {
             className: 'rt-btn', style: { padding: '0 5px', fontSize: 10.5 },
@@ -1995,7 +1992,10 @@ window.__ModuleLoader__.load({
               e.stopPropagation()
               try { navigator.clipboard.writeText((hh.asset_ip || hh.target || '') + '  ' + (hh.evidence || '')) } catch (err) { /* ignore */ }
             },
-          }, '复制')))
+          }, '复制'),
+          hh.evidence
+            ? h('span', { className: 'rt-hit-txt', title: hh.evidence }, String(hh.evidence).replace(/\n+/g, ' '))
+            : h('span', { className: 'rt-hit-txt none' }, '未填账号密码/结果')))
         rows.push(h('div', {
           key: 'spd' + p.id, className: 'rt-score-row',
           style: { cursor: 'default', gridTemplateColumns: '1fr' },
