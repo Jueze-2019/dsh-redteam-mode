@@ -1,12 +1,26 @@
 # dsh-redteam-mode bundle patch
 #
-# 挂三行，全部指向**本包自己的子路径**。为什么要子路径而不是 sibling 包名：
-#   pnpm 默认隔离布局不会把传递依赖链到 <profile>/node_modules/ 下，而 preset /
-#   补丁里的裸包名是按宿主 base（profile 目录）解析的，引用传递依赖会直接解析失败。
-#   装一个包、包内自带实现（lib/ 由 tools/build.mjs 从三个源码包生成），最稳。
+# 行 id 一律带 `redteam-mode-` 前缀：预发布期（≤0.7.0）用开发版装过的机器，
+# profile 补丁里可能已经有 id=redteam-store / redteam-ui 的行，而补丁的
+# `- insert:` 是**追加**语义（不按 id 去重），撞上就是 boot 直接失败：
+#   "duplicate loader entry id: redteam-store"
+# 带前缀的新 id 不会撞车；下面再用两条 (id + name) 精确匹配把旧行关掉，
+# 让那些机器升级后自动恢复，不用手改 profile。
 #
-# 补丁层顺序：bundle 层 → 用户自己的 cordis.patch.yml → --patch。
-# 用户想改这里的任何一处，写在自己的 profile 补丁里即可覆盖。
+# `- id:` 形式的补丁只在 id 与 name **都匹配**时生效，匹配不到只 warn 后跳过，
+# 所以对新装的机器没有副作用（日志里会出现两条 not found 警告，属正常）。
+#
+# 补丁层顺序：bundle 层 → 用户自己的 cordis.patch.yml → --patch；
+# 用户要覆盖这里任何一处，写在自己的 profile 补丁里即可。
+
+# 0) 迁移：关掉预发布期遗留的两行（指向旧的独立包 dsh-redteam-store/-ui）
+- id: redteam-store
+  name: dsh-redteam-store
+  disabled: true
+
+- id: redteam-ui
+  name: dsh-redteam-ui
+  disabled: true
 
 # 1) 自举：把包内预设 + 技能装到用户 preset 根（已存在同名预设则不覆盖）
 - insert:
@@ -15,7 +29,7 @@
 
 # 2) 资产库：发布 ctx.redteam（SQLite 事实库），数据落在 $DSH_HOME/redteam
 - insert:
-    - id: redteam-store
+    - id: redteam-mode-store
       name: dsh-redteam-mode/store
       config:
         root: !!js dshHomePath('redteam')
@@ -23,5 +37,5 @@
 # 3) 控制台：host 半侧注册 POST /redteam/api；浏览器半侧由本包
 #    package.json 的 dsh.client 声明，被前端加载器发现
 - insert:
-    - id: redteam-ui
+    - id: redteam-mode-ui
       name: dsh-redteam-mode/ui

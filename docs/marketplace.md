@@ -51,6 +51,18 @@ dsh plugin --profile web add ./dsh-redteam-mode-0.7.0.tgz
 > 评审会对着源码逐条核对（例如"48 个工具"会被数一遍）：改动工具数量或技能数量时，
 > 记得同步这里的文案与 `packages/redteam-tools/`、`packages/redteam-bundle/skills/`。
 
+## 升级迁移（预发布期用户）
+
+0.7.0 之前用开发版装的机器，profile 补丁里有 `redteam-store` / `redteam-ui` 两行，
+与本插件的行冲突（0.7.0 报 `duplicate loader entry id`，0.7.1 起带前缀后变成
+`service "redteam" has been registered`）。迁移脚本：
+
+```sh
+node node_modules/dsh-redteam-mode/lib/migrate-legacy-rows.mjs [--profile web] [--dry-run]
+```
+
+只删那两条 + 自己的子行，写回前备份，幂等；补丁整份被删空时写回 `[]`。
+
 ## 验收口径（每次发版前自己跑一遍）
 
 ```sh

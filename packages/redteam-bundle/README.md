@@ -16,6 +16,19 @@ dsh plugin --profile web add dsh-redteam-mode
 
 使用：新建会话 → 选预设 **红队模式** → 直接发靶标单位名称。
 
+## 从预发布期的「开发版」升级过来
+
+如果你在 **0.7.0 之前**用过开发版（在 `~/.dsh/profiles/web/cordis.patch.yml` 里手写过
+`redteam-store` / `redteam-ui` 两行，指向 `dsh-redteam-store` / `dsh-redteam-ui`），
+装完本插件后启动会报服务/条目冲突，先跑一次迁移把旧行清掉：
+
+```sh
+node "$(npm root -g 2>/dev/null)/dsh-redteam-mode/lib/migrate-legacy-rows.mjs" --dry-run   # 预演
+node node_modules/dsh-redteam-mode/lib/migrate-legacy-rows.mjs                              # 在 profile 目录里执行
+```
+
+它会只删那两条（连子行），其它内容与注释原样保留，写回前自动备份；已经在用 0.7.0+ 或者新装的机器不需要跑。
+
 ## 它给你什么
 
 | 能力 | 说明 |

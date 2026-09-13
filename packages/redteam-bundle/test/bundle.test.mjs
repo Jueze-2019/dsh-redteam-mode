@@ -39,8 +39,42 @@ console.log('— 补丁层')
 const patch = readFileSync(join(root, 'cordis.patch.yml'), 'utf8')
 ok(patch.includes('dsh-redteam-mode/store') && patch.includes('dsh-redteam-mode/ui'), '只挂本包的子路径行（不引用传递依赖）')
 ok(patch.includes("dshHomePath('redteam')"), '资产库根目录用 dshHomePath 解析')
-ok(!/dsh-redteam-(store|ui|tools)\b/.test(patch.replace(/dsh-redteam-mode\/(store|ui|tools)/g, '')),
-  '补丁里没有裸的兄弟包名（pnpm 隔离布局下会解析失败）')
+/* 挂载行只引用本包子路径（裸兄弟包名在 pnpm 隔离布局下解析不到）；
+   只有迁移补丁会提到旧包名，那是用来精确匹配旧行的，不是挂载。 */
+const mountNames = [...patch.matchAll(/^\s{4,}-?\s*name:\s*(\S+)\s*$/gm)].map((m) => m[1])
+ok(mountNames.length > 0 && mountNames.every((n) => n.startsWith('dsh-redteam-mode')),
+  `insert 的挂载行只用本包子路径：${mountNames.join(', ')}`)
+
+/* ── 行 id 撞车回归（v0.7.0 真实事故）──────────────────────────────────────
+   loader 的 `- insert:` 是**追加**语义：不按 id 去重。预发布期用开发版装过的
+   机器，profile 补丁里已经有 id=redteam-store / redteam-ui 的行，再 insert 同名
+   行 → boot 直接失败 "duplicate loader entry id"。所以：
+     · insert 的 id 必须带前缀，与旧行不可能撞车；
+     · 两条 (id + name) 补丁负责把旧行 disabled 掉（匹配不到只 warn，无副作用）。 */
+const insertedIds = []
+{
+  let inInsert = false
+  for (const line of patch.split('\n')) {
+    if (/^\s*-?\s*insert:\s*$/.test(line)) { inInsert = true; continue }
+    if (/^\s*-\s/.test(line) && !/^\s{4,}/.test(line)) {
+      if (/^\s*-\s+id:/.test(line)) inInsert = false
+    }
+    const m = /^\s{4,}-\s+id:\s*(\S+)\s*$/.exec(line)
+    if (inInsert && m) insertedIds.push(m[1])
+  }
+}
+ok(insertedIds.length >= 3, `解析出 ${insertedIds.length} 个 insert 行 id：${insertedIds.join(', ')}`)
+const LEGACY_IDS = ['redteam-store', 'redteam-ui']
+ok(insertedIds.every((id) => !LEGACY_IDS.includes(id)),
+  'insert 的行 id 不与预发布期旧 id 撞车（否则老机器 boot 失败）')
+ok(insertedIds.every((id) => id.startsWith('redteam-mode')), 'insert 的行 id 统一带 redteam-mode 前缀')
+for (const legacy of LEGACY_IDS) {
+  const re = new RegExp(`^- id: ${legacy}\\n  name: dsh-${legacy}\\n  disabled: true`, 'm')
+  ok(re.test(patch), `带 (id+name) 的迁移补丁会关掉旧行 ${legacy}（匹配不到只 warn）`)
+}
+/* 迁移补丁必须同时给出 name：loader 只在 id 与 name 都匹配时才应用，否则会误改同 id 的别的行 */
+ok(/^- id: redteam-store\n  name: dsh-redteam-store/m.test(patch) && /^- id: redteam-ui\n  name: dsh-redteam-ui/m.test(patch),
+  '两条迁移补丁都带 name（精确匹配，不会误伤同 id 的其它行）')
 
 console.log('— 预设')
 const preset = readFileSync(join(root, 'presets/redteam/agent.cordis.yml'), 'utf8')
@@ -115,6 +149,47 @@ try {
   if (prevHome === undefined) delete process.env.DSH_HOME
   else process.env.DSH_HOME = prevHome
   rmSync(home, { recursive: true, force: true })
+}
+
+console.log('— 迁移脚本（预发布期遗留行）')
+{
+  const home = mkdtempSync(join(tmpdir(), 'rt-migrate-'))
+  const prev = process.env.DSH_HOME
+  try {
+    process.env.DSH_HOME = home
+    mkdirSync(join(home, 'profiles', 'web'), { recursive: true })
+    const patchFile = join(home, 'profiles', 'web', 'cordis.patch.yml')
+    const legacy = [
+      '# 用户自己的补丁',
+      '- insert:',
+      '    - id: redteam-store',
+      '      name: dsh-redteam-store',
+      '      config:',
+      "        root: /tmp/x",
+      '    - id: redteam-ui',
+      '      name: dsh-redteam-ui',
+      '',
+      '- id: other-plugin',
+      '  disabled: true',
+      '',
+    ].join('\n')
+    writeFileSync(patchFile, legacy, 'utf8')
+    const out = execFileSync(process.execPath, [join(root, 'lib', 'migrate-legacy-rows.mjs')], { encoding: 'utf8' })
+    const text = readFileSync(patchFile, 'utf8')
+    ok(!/redteam-store|redteam-ui/.test(text), '遗留的 redteam-store / redteam-ui 行被删除')
+    ok(/other-plugin/.test(text) && /用户自己的补丁/.test(text), '其它行与注释原样保留')
+    ok(/备份/.test(out), '写回前做了备份')
+    /* 只剩遗留行时，必须写回 `[]`，否则 boot 报 "must be a top-level YAML array" */
+    writeFileSync(patchFile, '- insert:\n    - id: redteam-store\n      name: dsh-redteam-store\n', 'utf8')
+    execFileSync(process.execPath, [join(root, 'lib', 'migrate-legacy-rows.mjs')], { encoding: 'utf8' })
+    ok(readFileSync(patchFile, 'utf8').trim() === '[]', '整份被删空时写回 []（合法空补丁）')
+    const again = execFileSync(process.execPath, [join(root, 'lib', 'migrate-legacy-rows.mjs')], { encoding: 'utf8' })
+    ok(/没有预发布期的遗留行/.test(again), '重复执行是幂等的')
+  } finally {
+    if (prev === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = prev
+    rmSync(home, { recursive: true, force: true })
+  }
 }
 
 console.log(`\n通过 ${pass}/${pass + fail}`)
