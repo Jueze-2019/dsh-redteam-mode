@@ -521,12 +521,12 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'redteam_webshell_add',
-    description: '登记一个已上线的 WebShell（godzilla/behinder/antsword/other）。同一 url+pass_key 重复登记会合并刷新。登记后所有角色智能体都能复用它，不要重复打点。',
+    description: '登记一个已上线的 WebShell。**必须上传冰蝎马（behinder）或哥斯拉马（godzilla）的加密马**——用户在控制台要用对应客户端直连，一句话马/自研马/MemShell 用户连不上，不算可交付的入口。shell_type 只能填 godzilla | behinder；确实只能用其它形式时填 other 并在 note 里写清为什么。同一 url+pass_key 重复登记会合并刷新。登记后所有角色智能体都能复用它，不要重复打点。',
     parameters: {
       engagement: { type: 'string' },
       url: { type: 'string', required: true, description: 'WebShell 完整 URL' },
-      shell_type: { type: 'string', description: 'godzilla | behinder | antsword | other' },
-      pass_key: { type: 'string', description: '连接密码 / 密钥' },
+      shell_type: { type: 'string', description: 'godzilla（哥斯拉）| behinder（冰蝎）；其它形式才用 antsword/other 并说明原因' },
+      pass_key: { type: 'string', description: '连接密码 / 密钥（冰蝎马写 pass，哥斯拉写 key）' },
       privilege: { type: 'string', description: '当前权限，例如 www-data / root / iis' },
       secret_ref: { type: 'string', description: '凭据/证据引用，例如 runs/ws-10.0.0.5.txt（不要把明文口令写进库）' },
       asset_id: { type: 'number' },
@@ -577,10 +577,10 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'redteam_tunnel_add',
-    description: '登记一条内网隧道。kind: suo5 | socks5 | ssh-r | frp | chisel | other。listen 写本机可用地址（如 127.0.0.1:1080），reach 写它能到达的网段。登记后扫描器可直接 -socks5 <listen>。',
+    description: '登记一条内网隧道。**打进内网必须先用技能 suo5-tunnel 通过 WebShell/HTTP 建 socks5（kind=suo5）**，这是内网突破的标准通道；没有隧道就不要手搓内网探测脚本。listen 写本机可用地址（如 127.0.0.1:1080），reach 写它能到达的网段。登记后扫描器可直接 -socks5 <listen>。',
     parameters: {
       engagement: { type: 'string' },
-      kind: { type: 'string', required: true },
+      kind: { type: 'string', required: true, description: 'suo5（首选，走 WebShell/HTTP）| socks5 | ssh-r | frp | chisel | other' },
       listen: { type: 'string', required: true, description: '本地监听地址 host:port' },
       entry: { type: 'string', description: '入口：WebShell URL / 跳板机 / 命令' },
       reach: { type: 'string', description: '可达网段，例如 10.0.0.0/8' },

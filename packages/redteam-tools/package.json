@@ -1,6 +1,6 @@
 {
   "name": "dsh-redteam-tools",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "private": true,
   "description": "RedTeam 智能体工具集：靶标绑定、资产入库/查询/关联、技能库读取、角色提示词",
   "type": "module",

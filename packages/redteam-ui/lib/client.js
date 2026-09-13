@@ -72,6 +72,11 @@ window.__ModuleLoader__.load({
 .rt-tag-passive{color:#8b5cf6;border-color:#8b5cf655;background:#8b5cf61a}
 .rt-tag-active{color:#f59e0b;border-color:#f59e0b55;background:#f59e0b1a}
 .rt-tag-live{color:#10b981;border-color:#10b98155;background:#10b9811a}
+.rt-tag-warn{color:#ef4444;border-color:#ef444455;background:#ef44441a}
+/* 纪律提示条：不满足交付要求（非冰蝎/哥斯拉马、没有 suo5 隧道）时顶在区块最上方 */
+.rt-hint{border-radius:6px;padding:7px 9px;margin-bottom:8px;font-size:11.5px;line-height:1.6;
+  border:1px dashed #ef444488;background:#ef44440f;color:var(--dsw-alias-label-primary)}
+.rt-hint b{color:#ef4444}
 .rt-tag-dead{color:var(--dsw-alias-label-secondary)}
 .rt-expand{grid-column:1/-1;padding:8px 4px 10px;font-size:12px;color:var(--dsw-alias-label-secondary)}
 .rt-kv{display:flex;gap:8px;margin-bottom:3px;align-items:baseline}
@@ -341,6 +346,7 @@ window.__ModuleLoader__.load({
 .rt-hflow-name{font-size:11.5px}
 .rt-hflow-n{font-size:10.5px;color:var(--dsw-alias-label-secondary)}
 .rt-rep-list{padding:10px 12px 14px}
+.rt-rep-tools{display:flex;gap:6px;justify-content:flex-end;margin-bottom:8px}
 .rt-rep{border:1px solid var(--dsw-alias-border-l1);border-left:3px solid #10b981;border-radius:8px;
   padding:9px 11px;margin-bottom:10px;background:var(--dsw-alias-bg-layer-2)}
 .rt-rep-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -386,15 +392,6 @@ window.__ModuleLoader__.load({
 .rt-ap-act{font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:3px}
 .rt-ap-act.inferred{font-style:italic;opacity:.75}
 .rt-ap-none{font-size:11.5px;color:var(--dsw-alias-label-secondary);padding:2px 0 4px}
-.rt-ap-method-toggle{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dsw-alias-label-secondary);
-  padding:3px 10px;cursor:pointer;outline:none}
-.rt-ap-method-toggle:hover{color:var(--dsw-alias-label-primary)}
-.rt-ap-method{padding:2px 10px 6px 22px;border-left:4px solid transparent}
-.rt-ap-sec{display:flex;gap:8px;font-size:11.5px;margin-bottom:2px;align-items:baseline}
-.rt-ap-sec-label{flex:none;min-width:52px;font-weight:600;color:var(--dsw-alias-label-primary)}
-.rt-ap-sec-items{color:var(--dsw-alias-label-secondary);word-break:break-word}
-.rt-ap-meta{font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:3px}
-.rt-ap-meta b{color:var(--dsw-alias-label-primary);font-weight:600}
 .rt-ap-trans{display:flex;align-items:center;gap:7px;padding:2px 0 2px 14px}
 .rt-ap-trans-t{font-size:11px;color:var(--dsw-alias-label-secondary)}
 /* 横向路径图 */
@@ -428,20 +425,28 @@ window.__ModuleLoader__.load({
 .rt-hcol-sub{font-size:10.5px;color:var(--dsw-alias-label-secondary);margin-bottom:2px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;gap:5px;align-items:center}
 .rt-hcol-sub.off{opacity:.6}
-.rt-hit-row{display:flex;align-items:center;gap:7px;font-size:11.5px;padding:3px 7px;border-radius:5px;
+.rt-hit-row{display:flex;flex-wrap:wrap;align-items:center;gap:2px 7px;font-size:11.5px;padding:4px 7px;border-radius:5px;
   background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);margin-bottom:3px}
-.rt-hit-asset{font-family:ui-monospace,Menlo,monospace;font-weight:600;white-space:nowrap;flex:none;max-width:38%;
-  overflow:hidden;text-overflow:ellipsis}
-.rt-hit-txt{color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+/* 资产与内容都自适应换行：长域名/长口令/长结果一律换行显示，不截断成省略号 */
+.rt-hit-asset{font-family:ui-monospace,Menlo,monospace;font-weight:600;flex:0 1 auto;max-width:100%;
+  overflow-wrap:anywhere;word-break:break-word}
+.rt-hit-txt{flex:1 1 100%;color:var(--dsw-alias-label-primary);line-height:1.55;
+  white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
 .rt-hit-txt.none{color:var(--dsw-alias-state-error-primary)}
-.rt-hit-row .rt-hit-time{flex:none}
-.rt-rep-stage{display:flex;align-items:center;gap:8px;padding:7px 10px;margin:12px 0 7px;
-  background:var(--dsw-alias-bg-layer-2);border-left:4px solid #64748b;border-radius:6px}
-.rt-rep-stage:first-child{margin-top:0}
-.rt-rep-stage-no{width:20px;height:20px;border-radius:5px;color:#fff;font-size:11px;font-weight:700;flex:none;
+.rt-hit-row .rt-hit-time{flex:none;margin-left:auto}
+.rt-rep-group{margin-bottom:14px}
+.rt-rep-stage{display:flex;align-items:center;gap:8px;padding:7px 10px;margin-bottom:7px;
+  background:var(--dsw-alias-bg-layer-2);border-left:4px solid #64748b;border-radius:6px;
+  cursor:pointer;outline:none;user-select:none}
+.rt-rep-stage:hover{background:var(--dsw-alias-bg-layer-1)}
+.rt-rep-stage:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.rt-rep-no{width:20px;height:20px;border-radius:5px;color:#fff;font-size:11px;font-weight:700;flex:none;
   display:inline-flex;align-items:center;justify-content:center}
 .rt-rep-stage-name{font-weight:700;font-size:13px}
 .rt-rep-stage-n{font-size:11px;color:var(--dsw-alias-label-secondary)}
+/* 折叠后仍要能一眼看到"这一阶段拿了多少分"，所以分数留在头上 */
+.rt-rep-pts{font-size:11px;font-weight:600;padding:1px 6px;border-radius:5px;border:1px solid transparent;flex:none}
+.rt-rep-body{padding-left:6px}
 .rt-md{flex:1;overflow:auto;margin:0;padding:14px 16px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;
   line-height:1.65;white-space:pre-wrap;word-break:break-word;background:var(--dsw-alias-bg-base)}
 .rt-weblink{display:block;font-size:11.5px;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1485,7 +1490,6 @@ window.__ModuleLoader__.load({
       const [loading, setLoading] = React.useState(false)
       const [view, setView] = React.useState('A')
       const [openId, setOpenId] = React.useState(null)
-      const collapse = useCollapse('chain5:' + eng)
 
       const load = () => {
         if (!eng) return
@@ -1544,24 +1548,8 @@ window.__ModuleLoader__.load({
         h('span', { className: 'rt-ap-pts' }, '+' + (a.points || 0) + ' 分'),
         h('span', { className: 'rt-ap-nth' }, (a.hits || 0) + ' 次'))
 
-      const methodBlock = (st, key) => {
-        const openMethod = collapse.isOpen('m:' + key, false)
-        return [
-          h('div', {
-            key: 'tg', className: 'rt-ap-method-toggle', role: 'button', tabIndex: 0,
-            onClick: () => collapse.toggle('m:' + key, false)(),
-            onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); collapse.toggle('m:' + key, false)() } },
-          }, h('span', { className: 'rt-sec-caret' }, openMethod ? '▾' : '▸'),
-            h('span', null, '打法要点 · 常用工具')),
-          openMethod
-            ? h('div', { key: 'mb', className: 'rt-ap-method', style: { borderLeftColor: st.color } },
-                h('div', { className: 'rt-ap-secs' }, (st.sections || []).map((sec, si) => h('div', { key: 's' + si, className: 'rt-ap-sec' },
-                  h('span', { className: 'rt-ap-sec-label' }, sec.label),
-                  h('span', { className: 'rt-ap-sec-items' }, (sec.items || []).join(' · '))))),
-                st.tools ? h('div', { className: 'rt-ap-meta' }, h('b', null, '常用工具 '), h('span', null, st.tools)) : null)
-            : null,
-        ]
-      }
+      /* 攻击链只讲"打到哪了、拿了多少分"：不展示打法要点与工具清单，
+         那些是执行细节，混在链路里会淹没得分与资产信息。 */
 
       /* ── A：竖向攻击链 ─────────────────────────────────────────── */
       const stageA = (st, i) => {
@@ -1596,7 +1584,6 @@ window.__ModuleLoader__.load({
             body.push(h('div', { key: 'al', className: 'rt-ap-assets' }, st.assets.map(assetRow)))
           }
         }
-        body.push(h('div', { key: 'mm' }, methodBlock(st, st.code)))
 
         return h('div', { key: 'st' + st.code, className: 'rt-ap-stage' },
           h('div', { className: 'rt-ap-head', style: { borderLeftColor: st.color } },
@@ -1699,6 +1686,8 @@ window.__ModuleLoader__.load({
       const [err, setErr] = React.useState(null)
       const [busy, setBusy] = React.useState(false)
       const [msg, setMsg] = React.useState(null)
+      /* 报告按阶段折叠：默认全开，折叠状态按靶标记住（阶段多时便于逐段交付） */
+      const collapse = useCollapse('report:' + eng)
 
       const load = () => {
         if (!eng) return
@@ -1796,15 +1785,31 @@ window.__ModuleLoader__.load({
         err ? h('div', { className: 'rt-err' }, err) : null,
         h('div', { className: 'rt-body', style: { overflow: 'auto' } },
           stages.length
-            ? h('div', { className: 'rt-rep-list' }, stages.map((st) => h('div', { key: 'g' + st.code },
-                h('div', { className: 'rt-rep-stage', style: { borderLeftColor: st.color } },
-                  h('span', { className: 'rt-rep-stage-no', style: { background: st.color } }, CIRCLED[st.ordinal - 1] || st.ordinal),
-                  h('span', { className: 'rt-rep-stage-name' }, st.name),
-                  h('span', { className: 'rt-rep-stage-n' }, st.items.length + ' 项'),
-                  h('div', { className: 'rt-spacer' }),
-                  h('span', { className: 'rt-flow-pts' }, '+' + st.points + ' 分'),
-                  h('span', { className: 'rt-ap-cum' }, '累计 ' + st.cumulative + ' 分')),
-                st.items.map(card))))
+            ? h('div', { className: 'rt-rep-list' },
+                h('div', { className: 'rt-rep-tools' },
+                  h('button', { className: 'rt-btn', onClick: () => collapse.setAll(stages.map((s) => 'st:' + s.code), true) }, '全部展开'),
+                  h('button', { className: 'rt-btn', onClick: () => collapse.setAll(stages.map((s) => 'st:' + s.code), false) }, '全部折叠')),
+                stages.map((st) => {
+                  const open = collapse.isOpen('st:' + st.code, true)
+                  const toggle = collapse.toggle('st:' + st.code, true)
+                  return h('div', { key: 'g' + st.code, className: 'rt-rep-group' },
+                    h('div', {
+                      className: 'rt-rep-stage', role: 'button', tabIndex: 0,
+                      style: { borderLeftColor: st.color },
+                      'aria-expanded': open ? 'true' : 'false',
+                      onClick: toggle,
+                      onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(e) } },
+                    },
+                      h('span', { className: 'rt-sec-caret' }, open ? '▾' : '▸'),
+                      h('span', { className: 'rt-rep-no', style: { background: st.color } }, CIRCLED[st.ordinal - 1] || st.ordinal),
+                      h('span', { className: 'rt-rep-stage-name' }, st.name),
+                      h('span', { className: 'rt-rep-stage-n' }, st.items.length + ' 项'),
+                      h('div', { className: 'rt-spacer' }),
+                      h('span', { className: 'rt-rep-pts', style: { background: st.color + '22', color: st.color, borderColor: st.color + '66' } },
+                        '+' + st.points + ' 分'),
+                      h('span', { className: 'rt-ap-cum' }, '累计 ' + st.cumulative + ' 分')),
+                    open ? h('div', { className: 'rt-rep-body' }, st.items.map(card)) : null)
+                }))
             : (data === null ? h('div', { className: 'rt-empty' }, '加载中…')
                 : h('div', { className: 'rt-empty' },
                     h('div', null, '还没有可交付的成果。'),
@@ -2332,12 +2337,32 @@ window.__ModuleLoader__.load({
       const shells = (data && data.webshells) || []
       const tunnels = (data && data.tunnels) || []
       const statusDot = (s) => h('span', { className: s === 'online' || s === 'active' ? 'rt-dot-on' : (s === 'unknown' || !s ? 'rt-dot-unk' : 'rt-dot-off') })
+      /* 交付要求：马必须是冰蝎/哥斯拉加密马（用户才连得上），内网必须走 suo5 隧道 */
+      const isEncryptedShell = (t) => /behinder|godzilla|冰蝎|哥斯拉/i.test(String(t || ''))
+      const isSuo5 = (t) => /suo5/i.test(String(t || ''))
+      const badShells = shells.filter((w) => !isEncryptedShell(w.shell_type))
+      const activeSuo5 = tunnels.filter((t) => isSuo5(t.kind) && t.status === 'active')
+      const hints = []
+      if (badShells.length > 0) {
+        hints.push(h('div', { key: 'h1', className: 'rt-hint' },
+          h('b', null, '有 ' + badShells.length + ' 个入口不是冰蝎马/哥斯拉马 '),
+          '——一句话马/自研马/内存马用户连不上，不算可交付入口。请用技能 webshell-toolkit 重新上传冰蝎马（behinder）或哥斯拉马（godzilla），' +
+          '并把 shell_type + pass_key 写进 redteam_webshell_add。只有作临时中转的才可保留，并在备注里写明。'))
+      }
+      if (shells.length > 0 && activeSuo5.length === 0) {
+        hints.push(h('div', { key: 'h2', className: 'rt-hint' },
+          h('b', null, '还没有可用的 suo5 隧道 '),
+          '——打进内网的标准通道只有 suo5。请用技能 suo5-tunnel 通过上面的 WebShell 建 socks5 隧道，' +
+          '再 redteam_tunnel_add（kind=suo5、listen=127.0.0.1:1080、entry=WebShell URL、reach=可达网段）登记，' +
+          '并用「检测连通性」确认 status=active。'))
+      }
 
       const shellCards = shells.map((w) => h('div', { key: 'w' + w.id, className: 'rt-sess' },
         h('div', { className: 'rt-sess-head' },
           statusDot(w.status),
           h('span', { className: 'rt-sess-title' }, w.url),
           h('span', { className: 'rt-tag rt-tag-active' }, w.shell_type || 'webshell'),
+          isEncryptedShell(w.shell_type) ? null : h('span', { className: 'rt-tag rt-tag-warn' }, '用户连不上'),
           w.privilege ? h('span', { className: 'rt-tag' }, w.privilege) : null,
           h('div', { className: 'rt-spacer' }),
           copied === 'cmd' + w.id
@@ -2368,6 +2393,7 @@ window.__ModuleLoader__.load({
             statusDot(t.status),
             h('span', { className: 'rt-sess-title' }, t.listen || '(未填监听地址)'),
             h('span', { className: 'rt-tag rt-tag-passive' }, t.kind || 'tunnel'),
+            isSuo5(t.kind) ? null : h('span', { className: 'rt-tag rt-tag-warn' }, '非 suo5 标准通道'),
             t.reach ? h('span', { className: 'rt-tag' }, '可达 ' + t.reach) : null,
             h('div', { className: 'rt-spacer' }),
             h('button', {
@@ -2414,6 +2440,7 @@ window.__ModuleLoader__.load({
                 h('div', { style: { marginTop: 6, fontSize: 12 } },
                   '拿到 WebShell 用 redteam_webshell_add；建好隧道用 redteam_tunnel_add（suo5 / socks5 / ssh -R）；之后智能体用 redteam_sessions 就能看到。'))
             : null,
+          hints.length ? h('div', { style: { padding: '8px 10px 0' } }, hints) : null,
           h(Section, {
             key: 'webshells', tone: 'queue', title: 'WebShell',
             count: (totals.webshellsOnline || 0) + '/' + (totals.webshells || 0) + ' 在线',

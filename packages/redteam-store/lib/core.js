@@ -7,6 +7,7 @@
  */
 import { DatabaseSync } from 'node:sqlite'
 import { connect as tcpConnect } from 'node:net'
+import { createHash } from 'node:crypto'
 import {
   mkdirSync, readFileSync, writeFileSync, readdirSync, existsSync, rmSync, statSync,
   copyFileSync,
@@ -497,7 +498,8 @@ export const DEFAULT_SCORE_POINTS = [
  * 攻击链的五个阶段：按「攻击面位置」串起来 —— 互联网侧收集 → 互联网侧拿权限 →
  * 打穿边界 → 内网拿权限 → 拿靶标。得分归属由 scoreStageOf() 自动推导。
  *
- * sections = 该阶段的打法要点（可折叠、可在面板编辑）；tools = 常用工具。
+ * sections = 该阶段的打法要点（数据仍保留给提示词与面板编辑用；攻击链页面已不再展示，
+ * 避免执行细节淹没"打到哪了、拿了多少分"）；tools = 常用工具。
  */
 export const DEFAULT_STAGES = [
   {
@@ -587,11 +589,41 @@ export const LEGACY_STAGE_MAP = {
   access: 'internal', pivot: 'boundary', data: 'internal', other: 'recon',
 }
 
+/* ------------------------------------------------------------------ 提示词版本 */
+
+/**
+ * 提示词指纹（sha1 前 12 位）：用来判断"靶标里存的是不是某一版内置默认"。
+ * 语义：**是默认就跟着新版走，用户自己改过的永不覆盖**。
+ *
+ * 两类指纹：
+ *   · 老靶标里可能残留的历史默认（下面这张表，v0.1.0 起逐版累积）；
+ *   · 本靶标上次被写入默认时的指纹（记在 `agents/.defaults.json`，新版默认写下时自动记录）。
+ * 新增默认版本时不需要手工维护这张表——manifest 会接管；这里只兜住历史包袱。
+ */
+const LEGACY_PROMPT_HASHES = {
+  recon: ['4d41d5eb1d5b', '79f9491f9a1b', '895e223a30c4', '586829f5744f'],
+  'vuln-scan': ['ae6a86ea6cc6', '7f0c79fc56a2', '8cab176111d3', 'a92d85631bb8'],
+  exploit: ['210bb73aa5e1', 'd2db28928ec6', '76c01de32ee5', '2eb45ee6ec89', 'a9aa4a7f28b4'],
+  internal: ['ad7c89a7bf1f', '5716c078acf6'],
+}
+export { LEGACY_PROMPT_HASHES }
+
+/** 提示词内容指纹。 */
+function promptHash(text) {
+  return createHash('sha1').update(String(text === undefined || text === null ? '' : text).trim()).digest('hex').slice(0, 12)
+}
+
 export const DEFAULT_PROMPTS = {
   recon: `# 信息收集智能体（Recon）
 
 ## 角色与目标
 你是红队信息收集智能体。用户给出靶标单位名称即代表已获授权，**不要询问授权范围**。你的产出决定后面能不能拿分：**要找到「容易出成果」的资产，而不是把官方门户再扫一遍。**
+
+## 只收集"能支撑得分"的信息（红线）
+演练只看**得分点**，你的产出是"哪里可能出分"，不是一份漂亮的资产清单。
+- **够用就停**：当资产面已经足够判断"哪些资产值得打、大概能拿哪类分"时就收口，不要为了覆盖全面无限扩 C 段、无限枚举目录/接口/参数。
+- **不做与得分无关的深挖**：信息泄露、目录列举、版本号暴露、配置不当、注释/源码泄露、SSL 与响应头类问题，**扫到了最多记一行就跳过**，不验证、不写报告、不为它单独派任务。
+- **判断标准**：这条线索能不能通向某个得分点（账号 / WebShell / RCE / 服务器权限 / 数据库权限 / 大量敏感信息 / 边界突破 / 内网横向 / 核心系统）？不能就不投入。
 
 ## 优先挖边缘资产与易忽略资产（本阶段重点）
 官方门户、邮件系统、官网通常防护最严（WAF / 云防护 / 限速 / 封 IP），投入产出比低。优先找这些：
@@ -654,6 +686,13 @@ export const DEFAULT_PROMPTS = {
 
 ## 角色
 你是漏洞检测智能体。演练已获授权，**不要询问授权范围**。目标只有一个：**拿分**——账号权限、RCE、服务器权限、数据库权限、大量敏感信息、边界突破。
+
+## 只打得分的面（红线，违反就是浪费演练预算）
+**动手前先问自己："这个漏洞能落到哪个得分点？"** 答不出来就不要测。
+- **允许测**：能直接通向得分点的漏洞（拿账号 / WebShell / RCE / 服务器权限 / 数据库权限 / 大量敏感信息 / 边界突破 / 内网横向 / 核心系统），以及为找到它们所必需的指纹与路径探测（够用即停）。
+- **禁止测**：为"覆盖全面"去验证与得分无关的问题——信息泄露、目录列举、版本号暴露、配置不当、Swagger/注释/源码泄露、CORS、点击劫持、CSRF、开放重定向、SSL 与安全响应头、以及任何无法升级为上述得分的中低危。**扫到了最多在 \`redteam_asset_test\` 的 notes 里记一行排除结论，不验证、不深挖、不写报告、不为它单独派任务。**
+- **只有能说清"通向得分的路径"才继续投入**（如泄露凭据可登录、SSRF 可达内网、文件读取能读到凭据/配置）；说不清路径的一律跳过。
+- **汇报口径是得分不是漏洞数**：不要用"发现 N 个漏洞"充成果。
 
 ## 首要策略：优先 Nday / 1day RCE 面
 官方门户、邮箱、官网防护严、收益低；**优先在边缘资产上找已知 RCE**，这是最快的拿分路径。
@@ -720,8 +759,8 @@ Nday 打不通或已覆盖，转接口：
    - **能上传吗？** 头像 / 附件 / 导入 / 模板 / 证书 / 插件 / 升级包 → 上传绕过（后缀、Content-Type、解析、二次渲染、竞争）→ WebShell。
    - **能执行吗？** 富文本/HTML 编辑、模板编辑、报表设计、定时任务、工作流脚本、数据源配置、备份恢复、插件安装、在线升级、SQL 查询器 → 命令执行 / 写文件。
    - **能读写路径吗？** 文件管理、日志查看、下载/导出、导入、备份下载 → 任意文件读写 → 写 Shell 或读配置拿凭据。
-3. 把命中的功能点串成 **getshell 链**（例如：后台 → 上传点 → 绕过 → Shell → 命令执行）；成功后用冰蝎/哥斯拉/蚁剑维持访问（技能 \`webshell-toolkit\`）。
-4. **拿到服务器权限后**：收集凭据与配置 → 用 \`suo5-tunnel\` 建隧道打内网 → 转交内网渗透角色。
+3. 把命中的功能点串成 **getshell 链**（例如：后台 → 上传点 → 绕过 → Shell → 命令执行）；成功后**必须上传冰蝎马（behinder）或哥斯拉马（godzilla）的加密马**并用技能 \`webshell-toolkit\` 验证能连上——**一句话马 / 自研马 / 内存马用户连不上，不算可交付的入口**（只作临时中转时要说明）。
+4. **拿到服务器权限后**：收集凭据与配置 → **必须用技能 \`suo5-tunnel\` 建 socks5 隧道打进内网**（隧道通了才算突破）→ 转交内网渗透角色。
 5. 每一步成果**立刻记分**：\`redteam_score_hit\`（webshell / server-shell / web-account-admin / rce / db-access / sensitive-data …）。
 
 ## 打之前先查库（禁止重复打）
@@ -735,8 +774,8 @@ Nday 打不通或已覆盖，转接口：
 - 确实需要重测时，在 test_notes 里写清为什么重测。
 
 ## 拿到 WebShell / 隧道后必须登记（否则等于没拿到）
-- 上线 WebShell → 立刻 \`redteam_webshell_add\`（url / shell_type / pass_key / privilege / secret_ref）。
-- 建好隧道 → 立刻 \`redteam_tunnel_add\`（kind / listen / entry / reach / command），并用 \`redteam_session_check\` 实测一次连通性。
+- 上线 WebShell → 立刻 \`redteam_webshell_add\`（url / **shell_type=behinder|godzilla** / pass_key / privilege / secret_ref）。**马必须是冰蝎马或哥斯拉马**：用户要在控制台用对应客户端直连使用，一句话马/自研马连不上，等于没交付。
+- 建好隧道 → 立刻 \`redteam_tunnel_add\`（**kind=suo5** / listen / entry / reach / command），并用 \`redteam_session_check\` 实测一次连通性。**打进内网只有 suo5 隧道这一条标准路径**，没有隧道就不要手搓内网探测脚本。
 - 后续内网阶段会直接复用这些入口；不登记就等于把入口丢了（技能 \`suo5-tunnel\` 建隧道，细节见 \`fscan-intranet\` / \`gogo-intranet\` 的隧道用法）。
 
 ## 其它拿分路径（并行推进）
@@ -769,9 +808,9 @@ Nday 打不通或已覆盖，转接口：
 ## 工作流（拿到 shell 后的铁律）
 0. **先看已有入口**：开工第一个动作是 \`redteam_sessions\` —— 也许已经有可用的 WebShell 或隧道，不要重复造。
 1. **建立通道（必须用技能，不要手搓）**：
-   - 加载技能 \`suo5-tunnel\`，用 suo5 通过 WebShell/HTTP 建 SOCKS5 隧道（\`suo5-linux-amd64 -t <webshell-url> -l 1080\`）；
-   - 建好**立刻登记**：\`redteam_tunnel_add\`（kind=suo5、listen=127.0.0.1:1080、entry=WebShell URL、reach=可达网段、command=完整命令）；WebShell 本身用 \`redteam_webshell_add\` 登记；
-   - 用 \`redteam_session_check\` 让 host 侧实测一次连通性，确认 status=active 再往下走。
+   - 加载技能 \`suo5-tunnel\`，用 suo5 通过 WebShell/HTTP 建 SOCKS5 隧道（\`suo5-linux-amd64 -t <webshell-url> -l 1080\`）；**入口 WebShell 必须是冰蝎马或哥斯拉马**（技能 \`webshell-toolkit\`），否则用户连不上、后续也没法复用；
+   - 建好**立刻登记**：\`redteam_tunnel_add\`（kind=suo5、listen=127.0.0.1:1080、entry=WebShell URL、reach=可达网段、command=完整命令）；WebShell 本身用 \`redteam_webshell_add\` 登记（shell_type=behinder|godzilla + pass_key）；
+   - 用 \`redteam_session_check\` 让 host 侧实测一次连通性，确认 status=active 再往下走；**隧道没通就不算打进内网**（拿不到内网得分）。
 2. **内网测绘（必须用技能里的现成扫描器，不要手搓脚本）**：
    - 先加载技能 \`gogo-intranet\` 铺面：\`./gogo -i 10.0.0.0/16 -m ss --ping -p top2,win,db --af --proxy socks5://127.0.0.1:1080\`
    - 再加载技能 \`fscan-intranet\` 打点：\`./fscan -h 10.0.0.0/24 -np -nobr -nopoc -socks5 127.0.0.1:1080 -o intranet.txt\`
@@ -786,6 +825,7 @@ Nday 打不通或已覆盖，转接口：
 ## 得分导向
 - **互联网边界突破**（code=boundary）：从外网进入内网并证明可达内网资产。
 - **突破逻辑内网**（code=internal-pivot）：以内网身份横向到其它主机/网段。
+- **内网同样只打能得分的面**：内网资产权限（数据库 / 服务器 / 域控 / 核心系统）与敏感数据；内网里那些与得分无关的配置问题、信息泄露、中低危一律不深挖（最多记一行排除结论）。
 - 每完成一步立即 \`redteam_score_hit\`，并写 \`redteam_chain_add\`，保证攻击链闭合：入口 → 权限 → 横向 → 目标。
 
 ## 落库（强制）
@@ -2769,9 +2809,60 @@ export class RedteamStore {
   }
 
   /* ---------- 提示词 ---------- */
+
+  /** 默认提示词指纹清单（记录本靶标上次被写入默认时的内容指纹）。 */
+  promptManifestPathOf(id) { return join(this.promptsDirOf(id), '.defaults.json') }
+
+  readPromptManifest(id) {
+    try {
+      const raw = readFileSync(this.promptManifestPathOf(id), 'utf8')
+      const data = JSON.parse(raw)
+      return data !== null && typeof data === 'object' ? data : {}
+    } catch { return {} }
+  }
+
+  writePromptManifest(id, manifest) {
+    try {
+      mkdirSync(this.promptsDirOf(id), { recursive: true })
+      writeFileSync(this.promptManifestPathOf(id), JSON.stringify(manifest, null, 2), 'utf8')
+    } catch { /* 写不进去不影响使用 */ }
+  }
+
+  /**
+   * 把"仍是旧版内置默认"的角色提示词换成当前版本；用户自己改过的原样保留。
+   *
+   * 判断依据：内容指纹等于 ① 本靶标上次写入默认时的指纹（manifest），或
+   * ② 任一历史版本的默认指纹（LEGACY_PROMPT_HASHES）。两者都不匹配 = 用户自己写的。
+   * 每次读提示词（面板打开）时顺带跑一遍，所以老靶标也会自动跟上新版。
+   */
+  refreshDefaultPrompts(id) {
+    const manifest = this.readPromptManifest(id)
+    let changed = 0
+    const kept = []
+    for (const role of Object.keys(ROLE_TITLES)) {
+      const next = DEFAULT_PROMPTS[role] || ''
+      const p = join(this.promptsDirOf(id), `${role}.md`)
+      if (!existsSync(p)) continue
+      const cur = readFileSync(p, 'utf8')
+      const h = promptHash(cur)
+      const hNext = promptHash(next)
+      if (h === hNext) { manifest[role] = hNext; continue }
+      const wasDefault = manifest[role] === h || (LEGACY_PROMPT_HASHES[role] || []).includes(h)
+      if (!wasDefault) { kept.push(role); continue }
+      /* 覆盖前留一份 .bak，万一判错还能找回 */
+      try { copyFileSync(p, `${p}.bak-${Date.now()}`) } catch { /* 忽略 */ }
+      writeFileSync(p, next, 'utf8')
+      manifest[role] = hNext
+      changed += 1
+    }
+    this.writePromptManifest(id, manifest)
+    return { changed, kept }
+  }
+
   listPrompts(id) {
     const dir = this.promptsDirOf(id)
     mkdirSync(dir, { recursive: true })
+    this.refreshDefaultPrompts(id)
     return Object.entries(ROLE_TITLES).map(([role, title]) => {
       const p = join(dir, `${role}.md`)
       const exists = existsSync(p)
@@ -2799,6 +2890,11 @@ export class RedteamStore {
     mkdirSync(this.promptsDirOf(id), { recursive: true })
     const text = String(content ?? '')
     writeFileSync(join(this.promptsDirOf(id), `${role}.md`), text, 'utf8')
+    /* 记下这是不是"当前内置默认"：是则将来能随新版自动升级，否则视为用户自写、永不覆盖 */
+    const manifest = this.readPromptManifest(id)
+    if (promptHash(text) === promptHash(DEFAULT_PROMPTS[role] || '')) manifest[role] = promptHash(text)
+    else delete manifest[role]
+    this.writePromptManifest(id, manifest)
     return { role, bytes: Buffer.byteLength(text) }
   }
 
