@@ -2813,7 +2813,16 @@ export class RedteamStore {
     if (row === undefined) return { ok: false, error: 'poc not found: ' + key }
     db.prepare('DELETE FROM poc WHERE id = ?').run(row.id)
     db.prepare('DELETE FROM poc_fts WHERE poc_id = ?').run(String(row.id))
-    return { ok: true, id: row.id, code: row.code, deleted: true }
+    /* 连落盘目录一起删（只在 pocs/ 内按 code 精确删除；删不掉不影响数据一致性） */
+    let removedFiles = 0
+    try {
+      const dir = join(this.pocsDirOf(), row.code)
+      if (existsSync(dir) && dir.startsWith(this.pocsDirOf())) {
+        removedFiles = readdirSync(dir).length
+        rmSync(dir, { recursive: true, force: true })
+      }
+    } catch { /* 忽略 */ }
+    return { ok: true, id: row.id, code: row.code, deleted: true, removed_files: removedFiles }
   }
 
   /** 知识库概览：界面顶部标签与智能体"先查库"时的一屏摘要。 */
