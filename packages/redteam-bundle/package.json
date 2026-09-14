@@ -1,5 +1,5 @@
 {
-  "name": "dsh-redteam-mode",
+  "name": "hermes-dsh-redteam-mode",
   "version": "0.7.4",
   "description": "DSH RedTeam 模式：一句话拉起红队作战智能体（资产测绘 / 攻击链 / 得分目标 / 报告 / POC 知识库），含四个角色、13 个原生技能与常驻右侧控制台",
   "license": "MIT",
@@ -49,12 +49,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Jueze-2019/dsh-redteam-mode.git",
+    "url": "git+https://github.com/youzaiooo/hermes-dsh-redteam-mode.git",
     "directory": "packages/redteam-bundle"
   },
-  "homepage": "https://github.com/Jueze-2019/dsh-redteam-mode",
+  "homepage": "https://github.com/youzaiooo/hermes-dsh-redteam-mode",
   "bugs": {
-    "url": "https://github.com/Jueze-2019/dsh-redteam-mode/issues"
+    "url": "https://github.com/youzaiooo/hermes-dsh-redteam-mode/issues"
   },
   "author": "Jueze",
   "engines": {

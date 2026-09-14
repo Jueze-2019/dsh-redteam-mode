@@ -16,7 +16,7 @@
  * 若某个 `- insert:` 的子项被删空，连同那一行一起删。先备份再写回；幂等；支持 --dry-run。
  *
  * 用法：
- *   node node_modules/dsh-redteam-mode/lib/migrate-legacy-rows.mjs [--profile web] [--dry-run]
+ *   node node_modules/hermes-dsh-redteam-mode/lib/migrate-legacy-rows.mjs [--profile web] [--dry-run]
  */
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'

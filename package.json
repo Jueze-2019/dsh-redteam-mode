@@ -1,0 +1,58 @@
+{
+  "name": "hermes-dsh-redteam-mode",
+  "version": "0.7.5",
+  "description": "DSH red-team mode bundle for web profiles.",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "redteam",
+    "pentest",
+    "security"
+  ],
+  "main": "./packages/redteam-bundle/lib/index.js",
+  "exports": {
+    ".": "./packages/redteam-bundle/lib/index.js",
+    "./store": "./packages/redteam-bundle/lib/store.js",
+    "./ui": "./packages/redteam-bundle/lib/ui.js",
+    "./tools": "./packages/redteam-bundle/lib/tools.js",
+    "./client": "./packages/redteam-bundle/lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "packages/redteam-bundle/lib",
+    "packages/redteam-bundle/presets",
+    "packages/redteam-bundle/skills",
+    "packages/redteam-bundle/cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./packages/redteam-bundle/cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  },
+  "scripts": {
+    "build": "node packages/redteam-bundle/tools/build.mjs",
+    "test": "node packages/redteam-bundle/test/bundle.test.mjs",
+    "prepublishOnly": "node packages/redteam-bundle/tools/build.mjs --check && node packages/redteam-bundle/test/bundle.test.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/youzaiooo/hermes-dsh-redteam-mode.git"
+  },
+  "homepage": "https://github.com/youzaiooo/hermes-dsh-redteam-mode",
+  "bugs": {
+    "url": "https://github.com/youzaiooo/hermes-dsh-redteam-mode/issues"
+  },
+  "engines": {
+    "dsh": ">=0.1.0-rc.6"
+  },
+  "packageManager": "pnpm@11.24.0+sha512.bd27e345e976dcb0be0b7a1228217b049a817e21b1f355c90dbe7dc46671895a8bc1e6d06c24554505ea93ea0b45f489a27ec1bfbc8de6a9659fca0f16fa0000"
+}

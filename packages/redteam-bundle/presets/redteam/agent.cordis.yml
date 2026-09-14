@@ -166,7 +166,7 @@
 # realm；它们解析 host 平面的 ctx.redteam（由 profile 的 redteam-store 行发布）。
 # 资产数据的写入、检索、关联与技能库读取全部经过这里，智能体不直接写 SQL。
 - id: redteam-tools
-  name: dsh-redteam-mode/tools
+  name: hermes-dsh-redteam-mode/tools
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'

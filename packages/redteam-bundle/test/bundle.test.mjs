@@ -1,5 +1,5 @@
 /**
- * 市场包 `dsh-redteam-mode` 的打包自检（零依赖）
+ * 市场包 `hermes-dsh-redteam-mode` 的打包自检（零依赖）
  *
  * 跑法：node packages/redteam-bundle/test/bundle.test.mjs
  *
@@ -25,7 +25,7 @@ const ok = (cond, msg) => { if (cond) { pass += 1; console.log(`  ✓ ${msg}`) }
 const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 
 console.log('— 打包契约')
-ok(manifest.name === 'dsh-redteam-mode', `包名是 ${manifest.name}`)
+ok(manifest.name === 'hermes-dsh-redteam-mode', `包名是 ${manifest.name}`)
 ok(manifest.dsh?.bundle?.patch === './cordis.patch.yml', '声明了 dsh.bundle.patch（否则装完不会成为 profile 层）')
 ok(manifest.dsh?.client?.platform === 'web', '声明了 dsh.client.platform=web（浏览器半侧才会被加载）')
 for (const sub of ['.', './store', './ui', './tools', './client']) {
@@ -37,12 +37,12 @@ ok((manifest.files ?? []).includes('cordis.patch.yml') && (manifest.files ?? [])
 
 console.log('— 补丁层')
 const patch = readFileSync(join(root, 'cordis.patch.yml'), 'utf8')
-ok(patch.includes('dsh-redteam-mode/store') && patch.includes('dsh-redteam-mode/ui'), '只挂本包的子路径行（不引用传递依赖）')
+ok(patch.includes('hermes-dsh-redteam-mode/store') && patch.includes('hermes-dsh-redteam-mode/ui'), '只挂本包的子路径行（不引用传递依赖）')
 ok(patch.includes("dshHomePath('redteam')"), '资产库根目录用 dshHomePath 解析')
 /* 挂载行只引用本包子路径（裸兄弟包名在 pnpm 隔离布局下解析不到）；
    只有迁移补丁会提到旧包名，那是用来精确匹配旧行的，不是挂载。 */
 const mountNames = [...patch.matchAll(/^\s{4,}-?\s*name:\s*(\S+)\s*$/gm)].map((m) => m[1])
-ok(mountNames.length > 0 && mountNames.every((n) => n.startsWith('dsh-redteam-mode')),
+ok(mountNames.length > 0 && mountNames.every((n) => n.startsWith('hermes-dsh-redteam-mode')),
   `insert 的挂载行只用本包子路径：${mountNames.join(', ')}`)
 
 /* ── 行 id 撞车回归（v0.7.0 真实事故）──────────────────────────────────────
@@ -78,7 +78,7 @@ ok(/^- id: redteam-store\n  name: dsh-redteam-store/m.test(patch) && /^- id: red
 
 console.log('— 预设')
 const preset = readFileSync(join(root, 'presets/redteam/agent.cordis.yml'), 'utf8')
-ok(preset.includes('name: dsh-redteam-mode/tools'), '工具行指向本包子路径')
+ok(preset.includes('name: hermes-dsh-redteam-mode/tools'), '工具行指向本包子路径')
 ok(preset.includes('{{REDTEAM_SKILLS_DIR}}'), '技能目录是待替换占位符')
 ok(/includeDefaultRoots: false/.test(preset), '关掉默认技能根（否则会把 .agents/skills 等几百个技能一起吞进来）')
 ok(/dshHomePath\('skills'\)/.test(preset), '额外只放行 $DSH_HOME/skills')
@@ -87,8 +87,8 @@ ok(!preset.includes('/home/'), '预设里没有本机绝对路径')
 
 console.log('— 浏览器半侧的注册 id')
 {
-  /* 前端加载器按**包名**认领模块：bundle URL 是 dsh-redteam-mode/client.js，
-     它就找 __ModuleLoader__.load({ id: 'dsh-redteam-mode' })。
+  /* 前端加载器按**包名**认领模块：bundle URL 是 hermes-dsh-redteam-mode/client.js，
+     它就找 __ModuleLoader__.load({ id: 'hermes-dsh-redteam-mode' })。
      生成时若原样拷 UI 包那份（id: 'dsh-redteam-ui'），浏览器会报
      "loaded without registering ... via __ModuleLoader__.load"。 */
   const client = readFileSync(join(root, 'lib', 'client.js'), 'utf8')
