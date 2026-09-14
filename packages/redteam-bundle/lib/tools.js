@@ -747,7 +747,7 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'redteam_score_hit',
-    description: '记录一次得分（同类得分**不设数量上限**，每个真实命中都按分值累加：命中次数 × 分值）。**证据只写结果**：目标资产 + 拿到了什么（账号/密码/权限/数据量），不要写取得过程与路径——过程由攻击得分链路负责。能指向"用哪个漏洞拿到的"时请带上 vuln_id，报告会自动附上该漏洞的原始请求。\n\n**红线：自己注册的账号不算得分权限。** 通过注册接口自助注册、自己新建的用户/角色/后台账号、自己给自己开的权限，都**不是**"拿到账号权限"——演练得分针对的是**拿到别人已有的**账号与权限（弱口令、凭据泄露、SQL 注入拖出的账号、越权/提权到已有账号、默认口令、复用已有凭据）。这类自建账号用 self_created=true 记录（留过程），**不计分、不计数、不进报告**。',
+    description: '记录一次得分（同类得分**不设数量上限**，每个真实命中都按分值累加：命中次数 × 分值）。**证据只写结果**：目标资产 + 拿到了什么（账号/密码/权限/数据量），不要写取得过程与路径——过程由攻击得分链路负责。能指向"用哪个漏洞拿到的"时请带上 vuln_id，报告会自动附上该漏洞的原始请求。\n\n**红线一：账号类得分必须先实测能登录。** 拿到账号/口令后要用浏览器（browser-automation / kimi-webbridge）或等价会话实测登录成功、能交互访问页面，才记 web-account-* 这类分——**只有凭据不算拿到账号**；登不进去的写进 redteam_asset_test 的 notes。\n\n**红线二：自己注册的账号不算得分权限。** 通过注册接口自助注册、自己新建的用户/角色/后台账号、自己给自己开的权限，都**不是**"拿到账号权限"——演练得分针对的是**拿到别人已有的**账号与权限（弱口令、凭据泄露、SQL 注入拖出的账号、越权/提权到已有账号、默认口令、复用已有凭据）。这类自建账号用 self_created=true 记录（留过程），**不计分、不计数、不进报告**。',
     parameters: {
       engagement: { type: 'string' },
       code: { type: 'string', description: '得分点 code（或 point_id / point_name 任选其一）' },
@@ -757,7 +757,7 @@ export function apply(ctx) {
       asset_id: { type: 'number', description: '目标资产在库里的 id' },
       vuln_id: { type: 'number', description: '【建议填】用哪个漏洞拿到的分（报告据此附原始请求）' },
       step_id: { type: 'number', description: '对应的攻击链步骤 id（可选）' },
-      evidence: { type: 'string', required: true, description: '【必填】结果：拿到的东西，例如「后台管理员 tomcat/Tomcat@2024」「数据库账号 root/xxx」「导出 1.2 万条用户数据」' },
+      evidence: { type: 'string', required: true, description: '【必填】结果：拿到的东西，例如「后台管理员 tomcat/Tomcat@2024（已实测浏览器可登录）」「数据库账号 root/xxx」「导出 1.2 万条用户数据」' },
       self_created: { type: 'boolean', description: '【重要】这个账号/权限是不是**自己注册、自己创建**的？是则填 true —— 只作过程记录，不计分、不进报告。拿到别人已有的账号/权限不要填（默认 false）。' },
       note: { type: 'string' },
       recorded_by: { type: 'string' },

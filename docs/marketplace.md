@@ -22,15 +22,17 @@
 
 ```sh
 cd packages/redteam-bundle
-npm login                       # 你的 npm 账号（本机目前没有 token）
-npm publish --access public     # prepublishOnly 会先跑自检，失败不会发出去
+npm version patch               # 改版本号并打本地 tag（0.7.x 已发到 0.7.5）
+npm publish --access public     # prepublishOnly 会先跑自检（build --check + bundle.test），失败不会发出去
+git push origin main --tags
 ```
 
+本机 `~/.npmrc` 里已有 token（`npm whoami` 应返回 `jueze`），一般不需要重新 `npm login`。
 也可以只打包给自己或他人手动安装：
 
 ```sh
-npm pack                        # 产出 dsh-redteam-mode-0.7.0.tgz
-dsh plugin --profile web add ./dsh-redteam-mode-0.7.0.tgz
+npm pack                        # 产出 dsh-redteam-mode-<版本>.tgz
+dsh plugin --profile web add ./dsh-redteam-mode-<版本>.tgz
 ```
 
 ### 2) 往 awesome-dsh-plugin 提 PR
