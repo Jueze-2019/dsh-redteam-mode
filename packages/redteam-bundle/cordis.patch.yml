@@ -1,4 +1,4 @@
-# dsh-redteam-mode bundle patch
+# hermes-dsh-redteam-mode bundle patch
 #
 # 行 id 一律带 `redteam-mode-` 前缀：预发布期（≤0.7.0）用开发版装过的机器，
 # profile 补丁里可能已经有 id=redteam-store / redteam-ui 的行，而补丁的
@@ -25,12 +25,12 @@
 # 1) 自举：把包内预设 + 技能装到用户 preset 根（已存在同名预设则不覆盖）
 - insert:
     - id: redteam-mode
-      name: dsh-redteam-mode
+      name: hermes-dsh-redteam-mode
 
 # 2) 资产库：发布 ctx.redteam（SQLite 事实库），数据落在 $DSH_HOME/redteam
 - insert:
     - id: redteam-mode-store
-      name: dsh-redteam-mode/store
+      name: hermes-dsh-redteam-mode/store
       config:
         root: !!js dshHomePath('redteam')
 
@@ -38,4 +38,4 @@
 #    package.json 的 dsh.client 声明，被前端加载器发现
 - insert:
     - id: redteam-mode-ui
-      name: dsh-redteam-mode/ui
+      name: hermes-dsh-redteam-mode/ui

@@ -6,7 +6,7 @@
  * 基座外无依赖：只用平台 seed 里的 react 与 ctx.slots。
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-redteam-mode',
+  id: 'hermes-dsh-redteam-mode',
   factory: (require) => {
     var module = { exports: {} }
     var exports = module.exports

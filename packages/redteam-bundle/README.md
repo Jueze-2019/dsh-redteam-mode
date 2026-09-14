@@ -1,4 +1,4 @@
-# dsh-redteam-mode
+# hermes-dsh-redteam-mode
 
 DeepSeek Harness 的**红队作战模式**插件：给一个靶标单位名称，就拉起一支红队智能体
 （信息收集 → 漏洞检测 → 漏洞利用 → 内网渗透），所有发现落进本机 SQLite 事实库，
@@ -7,7 +7,7 @@ DeepSeek Harness 的**红队作战模式**插件：给一个靶标单位名称�
 ## 安装
 
 ```sh
-dsh plugin --profile web add dsh-redteam-mode
+pnpm dsh plugin --profile web add github:youzaiooo/hermes-dsh-redteam-mode#hermes-dsh
 ```
 
 装完重启一次 `dsh web`，然后在**设置 → 插件市场**里就能看到它（也可以直接在上面搜
@@ -23,8 +23,8 @@ dsh plugin --profile web add dsh-redteam-mode
 装完本插件后启动会报服务/条目冲突，先跑一次迁移把旧行清掉：
 
 ```sh
-node "$(npm root -g 2>/dev/null)/dsh-redteam-mode/lib/migrate-legacy-rows.mjs" --dry-run   # 预演
-node node_modules/dsh-redteam-mode/lib/migrate-legacy-rows.mjs                              # 在 profile 目录里执行
+node "$(npm root -g 2>/dev/null)/hermes-dsh-redteam-mode/lib/migrate-legacy-rows.mjs" --dry-run   # 预演
+node node_modules/hermes-dsh-redteam-mode/lib/migrate-legacy-rows.mjs                              # 在 profile 目录里执行
 ```
 
 它会只删那两条（连子行），其它内容与注释原样保留，写回前自动备份；已经在用 0.7.0+ 或者新装的机器不需要跑。

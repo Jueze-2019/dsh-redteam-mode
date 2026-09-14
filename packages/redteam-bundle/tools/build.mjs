@@ -1,5 +1,5 @@
 /**
- * 把三个包「生」成单包插件 `dsh-redteam-mode` 的 lib/。
+ * 把三个包「生」成单包插件 `hermes-dsh-redteam-mode` 的 lib/。
  *
  * 为什么要生成而不是直接依赖：
  *   pnpm 默认是隔离布局——`dsh-redteam-store` 这类**传递依赖**不会被链到
@@ -51,7 +51,7 @@ write('lib/ui.js', uiIndex)
 
 /* 3) 浏览器半侧：拷过来，并把注册 id 改成**本包的包名**。
    前端加载器按包名取模块：bundle URL 是 `dsh-redteam-mode/client.js`，它就用
-   `__ModuleLoader__.load({ id: 'dsh-redteam-mode' })` 去认领；源码包里写的是
+   `__ModuleLoader__.load({ id: 'hermes-dsh-redteam-mode' })` 去认领；源码包里写的是
    `dsh-redteam-ui`（那份 bundle 属于 UI 包），不改就会报
    "loaded without registering ... via __ModuleLoader__.load"。 */
 const clientSrc = read('redteam-ui/lib/client.js')
@@ -81,7 +81,7 @@ const SKILL_ROW = "- id: skill-filesystem\n  name: '@deepseek-ai/dsh-skill-files
 const presetSource = read('../preset/agent.cordis.yml')
 if (!presetSource.includes(SKILL_ROW)) throw new Error('预设里找不到 skill-filesystem 行')
 const preset = presetSource
-  .replace('  name: dsh-redteam-tools', '  name: dsh-redteam-mode/tools')
+  .replace('  name: dsh-redteam-tools', `  name: ${clientId}/tools`)
   .replace(SKILL_ROW, SKILL_ROW + `
   # 红队技能随包分发：__REDTEAM_SKILLS_DIR__ 由插件首次启动时替换成包内 skills/ 的绝对路径。
   # $DSH_HOME/skills 等默认根仍然生效（includeDefaultRoots 默认 true），用户自己的技能照旧优先。
@@ -151,4 +151,4 @@ if (CHECK) {
   console.log(`✓ 生成物与源码同步（lib/ 5 个文件、预设 2 个、技能 ${skills} 个）`)
   process.exit(0)
 }
-console.log(`✓ dsh-redteam-mode 已生成：lib/ 5 个文件、预设 2 个、技能 ${skills} 个`)
+console.log(`✓ hermes-dsh-redteam-mode 已生成：lib/ 5 个文件、预设 2 个、技能 ${skills} 个`)

@@ -60,7 +60,7 @@ DSH 的组合分两个平面，本项目的三个包严格按平面归位：
 ### 3.0 从插件市场装（推荐，一条命令）
 
 ```sh
-dsh plugin --profile web add dsh-redteam-mode
+pnpm dsh plugin --profile web add github:youzaiooo/hermes-dsh-redteam-mode#hermes-dsh
 ```
 
 重启 `dsh web` → 设置 → **插件市场** 里也能直接搜到并一键装。首次启动会自动把
@@ -237,8 +237,8 @@ export FOFA_KEY=你的key       # skills/fofa-recon.md 里的客户端只读这�
 
 ## 9. 版本与回归测试
 
-版本以 tag / Release 形式发布（[全部版本](https://github.com/Jueze-2019/dsh-redteam-mode/releases)），
-当前为 **v0.6.0**。改的是本机正在用的那三个包时，记得 host 侧改动要重启 `dsh web` 才生效。
+版本以 tag / Release 形式发布（[全部版本](https://github.com/youzaiooo/hermes-dsh-redteam-mode/releases)），
+当前根插件包为 **v0.7.5**。改的是本机正在用的 host 侧代码时，记得重启 `dsh web` 才生效。
 
 零依赖回归测试（不需要装任何东西）：
 
