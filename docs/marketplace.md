@@ -22,7 +22,7 @@
 
 ```sh
 cd packages/redteam-bundle
-npm version patch               # 改版本号并打本地 tag（0.7.x 已发到 0.7.5）
+npm version patch               # 改版本号并打本地 tag（0.7.x 已发到 0.7.6）
 npm publish --access public     # prepublishOnly 会先跑自检（build --check + bundle.test），失败不会发出去
 git push origin main --tags
 ```

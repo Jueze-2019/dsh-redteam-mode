@@ -64,22 +64,33 @@ function removeEntry(lines, legacyId) {
   return { lines: out, removed }
 }
 
-/** 删掉子项已被删空的 `- insert:` 行。 */
+/**
+ * 删掉子项已被删空的 `- insert:` 行（连同它下面只剩注释/空行的块）。
+ *
+ * 注意：块内的**注释不算子项**——预发布期的补丁里 `- insert:` 下面常常先写一段
+ * 说明注释再写 `- id:` 行，删掉 id 行后如果还把注释当子项，就会留下一个
+ * `- insert:` + 注释的悬空块（YAML 解析成 `{insert: null}`，boot 仍会出错）。
+ */
 function dropEmptyInserts(lines) {
   const out = []
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     if (/^[ \t]*-[ \t]*insert:[ \t]*$/.test(line)) {
+      const base = indentOf(line)
       let j = i + 1
       let hasChild = false
       while (j < lines.length) {
         const next = lines[j]
-        if (isBlank(next)) { j++; continue }
-        if (indentOf(next) <= indentOf(line)) break
+        if (isBlank(next) || next.trim().startsWith('#')) {
+          if (next.trim().startsWith('#') && indentOf(next) <= base) break
+          j++
+          continue
+        }
+        if (indentOf(next) <= base) break
         hasChild = true
         break
       }
-      if (!hasChild) continue
+      if (!hasChild) { i = j - 1; continue }   /* 整块（含块内注释）一并丢掉 */
     }
     out.push(line)
   }
@@ -100,8 +111,22 @@ lines = dropEmptyInserts(lines)
 let text = lines.join('\n')
 if (text.split('\n').every((l) => l.trim() === '' || l.trim().startsWith('#'))) text = '[]\n'
 
-if (removed.length === 0) {
+if (removed.length === 0 && text === original) {
   console.log(`✓ ${patchPath} 里没有预发布期的遗留行（无需迁移）`)
+  process.exit(0)
+}
+if (removed.length === 0) {
+  /* 没有遗留行、但文件需要清理（例如旧版脚本删空 insert 块时留下的悬空 `- insert:`）。 */
+  if (dryRun) {
+    console.log('[dry-run] 将清理悬空的 `- insert:` 块（文件未改动）')
+    process.exit(0)
+  }
+  const cleaned = `${patchPath}.bak-${Date.now()}`
+  copyFileSync(patchPath, cleaned)
+  writeFileSync(patchPath, text, 'utf8')
+  console.log('✓ 已清理悬空的 `- insert:` 块（它下面只剩注释，YAML 会解析成 null）')
+  console.log(`  备份：${cleaned}`)
+  console.log('  重启 dsh web 即可。')
   process.exit(0)
 }
 

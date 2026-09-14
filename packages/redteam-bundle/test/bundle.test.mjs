@@ -199,6 +199,33 @@ console.log('— 迁移脚本（预发布期遗留行）')
     ok(readFileSync(patchFile, 'utf8').trim() === '[]', '整份被删空时写回 []（合法空补丁）')
     const again = execFileSync(process.execPath, [join(root, 'lib', 'migrate-legacy-rows.mjs')], { encoding: 'utf8' })
     ok(/没有预发布期的遗留行/.test(again), '重复执行是幂等的')
+
+    /* 块里带注释的遗留补丁：删掉 id 行后 `- insert:` 不能留成悬空块
+       （只剩注释，YAML 会解析成 {insert: null}，boot 照样出错） */
+    const withComments = [
+      '# 用户自己的补丁',
+      '- insert:',
+      '    # 老版本的资产库行',
+      '    - id: redteam-store',
+      '      name: dsh-redteam-store',
+      '    # 老版本的控制台行',
+      '    - id: redteam-ui',
+      '      name: dsh-redteam-ui',
+      '',
+      '- id: other-plugin',
+      '  disabled: true',
+      '',
+    ].join('\n')
+    writeFileSync(patchFile, withComments, 'utf8')
+    execFileSync(process.execPath, [join(root, 'lib', 'migrate-legacy-rows.mjs')], { encoding: 'utf8' })
+    const cleaned = readFileSync(patchFile, 'utf8')
+    ok(!/insert:/.test(cleaned) && !/redteam-store|redteam-ui/.test(cleaned),
+      '块内带注释时不留悬空的 `- insert:`')
+    ok(/other-plugin/.test(cleaned), '悬空块清理后其它行仍在')
+    /* 旧版脚本留下的悬空块（没有遗留行可删）也要能被自愈 */
+    writeFileSync(patchFile, '# 只有注释\n- insert:\n    # 只剩注释了\n\n', 'utf8')
+    execFileSync(process.execPath, [join(root, 'lib', 'migrate-legacy-rows.mjs')], { encoding: 'utf8' })
+    ok(readFileSync(patchFile, 'utf8').trim() === '[]', '已是悬空块时自愈为 []（无需遗留行）')
   } finally {
     if (prev === undefined) delete process.env.DSH_HOME
     else process.env.DSH_HOME = prev
