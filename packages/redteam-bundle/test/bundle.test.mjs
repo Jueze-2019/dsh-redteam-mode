@@ -85,6 +85,34 @@ ok(/dshHomePath\('skills'\)/.test(preset), '额外只放行 $DSH_HOME/skills')
 ok(/红队（RedTeam）作战指挥智能体/.test(preset), '人设正文在')
 ok(!preset.includes('/home/'), '预设里没有本机绝对路径')
 
+console.log('— 子智能体委派的硬约束（toolFilter / maxDepth）')
+{
+  /* 背景：v0.8.0 想用 toolFilter.deny 把委派工具从子会话里摘掉，deny 列表里写了 `subagent`——
+     但 `subagent` 是**这一行自己注册的 scoped 工具**，不在全局工具库里，tools.restrict()
+     校验时抛 `names unknown global tool "subagent"`，结果是**每一次委派都失败**（0.8.1 修）。
+     这里锁住那条教训：deny 里只能出现全局工具名。 */
+  const GLOBAL_DELEGATION_TOOLS = ['subagent_fork', 'workflow', 'ralph']
+  const subagentRow = /- id: tool-subagent\n([\s\S]*?)(?=\n    - id: )/.exec(preset)
+  ok(subagentRow !== null, '找得到 tool-subagent 行')
+  if (subagentRow !== null) {
+    const row = subagentRow[1]
+    const depth = /maxDepth: (\d+)/.exec(row)
+    ok(depth !== null && Number(depth[1]) === 1, 'maxDepth = 1（子智能体不得再往下派发）')
+
+    const denyBlock = /toolFilter:\n\s+deny:\n((?:\s+- [\w-]+\n?)+)/.exec(row)
+    ok(denyBlock !== null, 'tool-subagent 行配了 toolFilter.deny')
+    if (denyBlock !== null) {
+      const names = denyBlock[1].split('\n').map((l) => l.replace(/^\s+- /, '').trim()).filter(Boolean)
+      ok(names.length > 0, `deny 列表非空（${names.join(', ')}）`)
+      ok(!names.includes('subagent'),
+        'deny 里没有 `subagent`（它是行内 scoped 工具，写进 deny 会让整个委派挂掉）')
+      const unknown = names.filter((n) => !GLOBAL_DELEGATION_TOOLS.includes(n))
+      ok(unknown.length === 0, `deny 里全是全局工具名（未知项：${unknown.join(', ') || '无'}）`)
+    }
+  }
+}
+
+
 console.log('— 浏览器半侧的注册 id')
 {
   /* 前端加载器按**包名**认领模块：bundle URL 是 dsh-redteam-mode/client.js，
