@@ -43,3 +43,6 @@ Thumbs.db
 .idea/
 *.swp
 *~
+
+# playwright-cli 运行产物（页面快照，可能含抓取内容）
+.playwright-cli/

@@ -159,6 +159,14 @@ host 平面新增了服务与表结构，**必须重启 `dsh web`**（客户端 
 - **Nday/1day 先查知识库**：`redteam_poc_search` 一次查两层——① 本机沉淀的通用 POC/EXP ② 本机 nuclei 模板库（`~/.local/nuclei-templates`）；命中直接取用（模板直接 `nuclei -t <路径> -u <目标>`）；两层都没有才去互联网（`web_search` / GitHub / ExploitDB / 厂商公告）或自己手搓；**验证有效后必须回填**（`redteam_poc_add`，写清来源、影响版本与验证证据，并脱敏）。
 - **打之前先查库**：动手前先看该资产的 `test_status` / 已有漏洞 / 现成 WebShell·隧道·凭据，打过的不再打；测完立刻回写 `redteam_asset_test`。
 - 预设与角色提示词改版后，老靶标里仍是旧版默认的提示词会自动换成新版，用户自己改过的保持不动（面板里也有「恢复默认」）。
+  角色提示词是**按靶标**存的（`$DSH_HOME/redteam/engagements/<靶标>/agents/*.md`），只在读取时才比对升级——所以改完提示词后，老靶标要一个个打开面板才跟上。要一次性批量刷新：
+
+  ```bash
+  node scripts/refresh-all-prompts.mjs --dry-run   # 先看会改哪些（不落盘）
+  node scripts/refresh-all-prompts.mjs             # 批量升级（自动备份 .bak-<时间戳>）
+  ```
+
+  输出里若出现 `用户自写(保留)`，说明那个角色确实被人工改过，脚本不会覆盖它；判定语义与面板完全一致（复用服务端的 `refreshDefaultPrompts`）。
 
 ### 3.4 模型工具（48 个 `redteam_*`，节选）
 

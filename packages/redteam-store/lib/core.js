@@ -711,12 +711,16 @@ export const VALID_STAGE_CODES = ['recon', 'internet', 'boundary', 'internal', '
  *   · 老靶标里可能残留的历史默认（下面这张表，v0.1.0 起逐版累积）；
  *   · 本靶标上次被写入默认时的指纹（记在 `agents/.defaults.json`，新版默认写下时自动记录）。
  * 新增默认版本时不需要手工维护这张表——manifest 会接管；这里只兜住历史包袱。
+ *
+ * 注意：**v0.7.6 的四个默认指纹已补登**（各角色末位那条）。它们曾经只存在于各靶标的 manifest 里，
+ * 一旦 manifest 丢失（靶标被拷到别的机器、目录被清过），这批默认版本就会被误判成"用户自己写的"
+ * 而永不升级——这正是批量升级时差点误判为"覆盖了用户自写"的原因。
  */
 const LEGACY_PROMPT_HASHES = {
-  recon: ['4d41d5eb1d5b', '79f9491f9a1b', '895e223a30c4', '586829f5744f'],
-  'vuln-scan': ['ae6a86ea6cc6', '7f0c79fc56a2', '8cab176111d3', 'a92d85631bb8'],
-  exploit: ['210bb73aa5e1', 'd2db28928ec6', '76c01de32ee5', '2eb45ee6ec89', 'a9aa4a7f28b4'],
-  internal: ['ad7c89a7bf1f', '5716c078acf6'],
+  recon: ['4d41d5eb1d5b', '79f9491f9a1b', '895e223a30c4', '586829f5744f', '7d56354b1674'],
+  'vuln-scan': ['ae6a86ea6cc6', '7f0c79fc56a2', '8cab176111d3', 'a92d85631bb8', '2729503e8e0c'],
+  exploit: ['210bb73aa5e1', 'd2db28928ec6', '76c01de32ee5', '2eb45ee6ec89', 'a9aa4a7f28b4', '676de29dcef6'],
+  internal: ['ad7c89a7bf1f', '5716c078acf6', '4b777d35a742'],
 }
 export { LEGACY_PROMPT_HASHES }
 

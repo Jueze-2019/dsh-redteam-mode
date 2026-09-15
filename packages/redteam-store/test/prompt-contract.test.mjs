@@ -15,7 +15,7 @@
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { RedteamStore, DEFAULT_PROMPTS, VALID_STAGE_CODES } from '../lib/core.js'
+import { RedteamStore, DEFAULT_PROMPTS, VALID_STAGE_CODES, LEGACY_PROMPT_HASHES } from '../lib/core.js'
 
 let pass = 0
 let fail = 0
@@ -74,6 +74,16 @@ try {
   ok(recon.split('## 记分纪律').length - 1 === 1, 'recon 里记分纪律只出现一次（不再整节重复）')
   ok(readFileSync(new URL('../lib/core.js', import.meta.url), 'utf8').includes("'untested', 'testing', 'tested', 'blocked', 'abandoned', 'no_surface'"),
     'updateAssetTest 的 status 白名单是完整 6 值')
+
+  console.log('— 契约五：历史默认指纹表兜住"manifest 丢失"的靶标')
+  /* v0.7.6 的四个默认指纹：只写在各靶标 manifest 里。manifest 一丢（靶标被拷走、目录被清），
+     这批默认就会被判成"用户自写"而永不升级 —— 所以必须同时登记在 LEGACY_PROMPT_HASHES。 */
+  const v076 = { recon: '7d56354b1674', 'vuln-scan': '2729503e8e0c', exploit: '676de29dcef6', internal: '4b777d35a742' }
+  for (const [role, fingerprint] of Object.entries(v076)) {
+    ok((LEGACY_PROMPT_HASHES[role] || []).includes(fingerprint),
+      `${role} 的 v0.7.6 默认指纹已登记（manifest 丢失也能识别为默认）`)
+  }
+  ok(LEGACY_PROMPT_HASHES.internal.length >= 3, 'internal 的历史指纹表不少于 3 条')
 } finally {
   rmSync(root, { recursive: true, force: true })
 }
