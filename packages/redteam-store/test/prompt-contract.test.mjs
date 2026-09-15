@@ -84,6 +84,31 @@ try {
       `${role} 的 v0.7.6 默认指纹已登记（manifest 丢失也能识别为默认）`)
   }
   ok(LEGACY_PROMPT_HASHES.internal.length >= 3, 'internal 的历史指纹表不少于 3 条')
+
+  console.log('— 契约六：公共段落机制（v0.7.9 重构后）')
+  /* 记分纪律 / 查库这两段原本在四个角色里逐字重复（记分纪律 4 份、查库 3 份），改一处要改多处、
+     极易漂移。现在只写一份由代码拼接注入 —— 这里锁住"注入到位 + 不再有第二份副本 + 总量不膨胀"。 */
+  const ROLES_ALL = ['recon', 'vuln-scan', 'exploit', 'internal']
+  for (const role of ROLES_ALL) {
+    const text = DEFAULT_PROMPTS[role]
+    ok((text.match(/## 记分纪律/g) || []).length === 1, `${role} 的记分纪律块有且只有 1 份`)
+    ok(text.includes('一次记分必填两样'), `${role} 正文含记分契约（证明公共块已注入）`)
+  }
+  ok((DEFAULT_PROMPTS.recon.match(/## 打之前先查库/g) || []).length === 1, 'recon 的查库块只有 1 份')
+  ok((DEFAULT_PROMPTS['vuln-scan'].match(/## 打之前先查库/g) || []).length === 1, 'vuln-scan 的查库块只有 1 份')
+  ok((DEFAULT_PROMPTS.exploit.match(/## 打之前先查库/g) || []).length === 1, 'exploit 的查库块只有 1 份')
+  ok((DEFAULT_PROMPTS.internal.match(/## 打之前先查库/g) || []).length === 0,
+    'internal 不注入完整查库块（它有专属的"先看已有入口"工作流）')
+
+  const coreSrc = readFileSync(new URL('../lib/core.js', import.meta.url), 'utf8')
+  ok(coreSrc.includes('const COMMON_SCORE_RULES'), '公共块的唯一副本以常量形式定义在源码里')
+  ok((coreSrc.match(/## 记分纪律（所有角色都遵守）/g) || []).length === 1,
+    '记分纪律正文在源码里只出现 1 次（不再逐角色重复）')
+  ok((coreSrc.match(/## 打之前先查库（禁止重复打）/g) || []).length === 1,
+    '查库正文在源码里只出现 1 次')
+
+  const total = ROLES_ALL.reduce((sum, role) => sum + DEFAULT_PROMPTS[role].length, 0)
+  ok(total < 21000, `四角色提示词总量 ${total} 字 < 21000（防膨胀栅栏）`)
 } finally {
   rmSync(root, { recursive: true, force: true })
 }

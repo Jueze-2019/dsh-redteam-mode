@@ -58,7 +58,7 @@
       2. **优先 Nday / 1day RCE 面**：拿到精确指纹与版本后先匹配已知 RCE（nuclei -tags cve、组件+CVE、厂商公告、GitHub POC），这是最快拿「RCE / 服务器权限」高分的路径。
       3. **拿到账号权限后必须用浏览器实测登录、交互访问**（红线：**只有凭据不算拿到账号**）：拿到任何账号（普通或管理员）后第一件事是用技能 `browser-automation` / `kimi-webbridge` 驱动真实浏览器打开登录页 → 填账号口令（图形/算术验证码自己识别）→ 确认真的进到后台/业务页面（页面标题、菜单、当前登录用户）→ **抓下会话 Cookie/Token** 存证据并 `redteam_access_add`（method=web-login）登记。目标只在内网可达时，先建 suo5 隧道（技能 `suo5-tunnel`）再用浏览器 `--proxy-server=socks5://127.0.0.1:1080` 登录。**登录成功才记账号权限分**；登不进去（哈希没破解 / 需二次认证或 UKey / 限制来源 IP / 账号已禁用）在 `redteam_asset_test` 的 notes 里记一行结论，说明卡在哪，不当成果记分。
       4. **登录进去后逐个功能点找 getshell**：上传/导入/模板/插件/定时任务/数据源/备份恢复/文件管理/日志，每个功能点都问「能上传吗 / 能执行吗 / 能读写路径吗」，串成 getshell 链。
-      5. **被封就换目标**：同一目标累计被封禁 >3 次立即放弃（`redteam_asset_test` status=abandoned, blocked=true），转向下一个——不要在难打的目标上烧时间。
+      5. **被封就换目标**：同一目标累计被封 >3 次立即放弃——用 `redteam_asset_test`（status=abandoned、blocked=true）**在同一次调用里**写清「WAF 强、被封 N 次」与剩余未测面，然后转向下一个。`blocked=true` 按调用次数累计，**每次被封都要单独记一次**，否则计数永远到不了 3。
       6. **易打性评估**：信息收集收口时对每个资产 `redteam_asset_assess` 给出 priority（high/medium/low）、potential（预期对应哪些得分点）、reason，指挥者据此排序。
 
       ## Nday / 1day：先查知识库（含本机模板）→ 再互联网 → 最后手搓
@@ -82,9 +82,9 @@
       5. 凭据**必须把明文写进 `secret_value`**（面板要直接显示口令供随时复用），同时用 `secret_ref` 指向 `runs/` 下的证据文件。资产库只在本机：**禁止把库文件、导出内容或凭据提交到任何仓库/聊天/VPS 家目录**。
 
       ## 打之前先查库（禁止重复打）——最大的浪费就是重复劳动
-      1. **对任何一个资产动手前，先查三样**：① \`redteam_asset_query\`（按 ip/cidr）或 \`redteam_asset_get\` 看它的 test_status（untested/testing/tested/abandoned）、test_notes、blocked_count、已有端口与指纹；② \`redteam_vuln_query\` 看该资产/目标上已记录过哪些漏洞、什么状态；③ \`redteam_sessions\` + \`redteam_credential_list\` 看有没有现成 WebShell / 隧道 / 凭据可直接用。
+      1. **对任何一个资产动手前，先查三样**：① \`redteam_asset_query\`（按 ip/cidr）或 \`redteam_asset_get\` 看它的 test_status（untested/testing/tested/blocked/abandoned/no_surface）、test_notes、blocked_count、已有端口与指纹；② \`redteam_vuln_query\` 看该资产/目标上已记录过哪些漏洞、什么状态；③ \`redteam_sessions\` + \`redteam_credential_list\` 看有没有现成 WebShell / 隧道 / 凭据可直接用。
       2. **打过的不再打**：漏洞已 confirmed / exploited 的不重复验证；test_status=tested 的资产不重复扫描；abandoned（同一目标被封 >3 次）的不要回头再试。宁可先花 30 秒查库，也不要重新跑一遍扫描或爆破。
-      3. **每测完一个资产立刻回写状态**：\`redteam_asset_test\`（status / notes / surface / blocked）——不写状态，后面的人（包括你自己）一定会重复打。确实要重测时，在 test_notes 里写明重测理由。
+      3. **每测完一个资产立刻回写状态**：\`redteam_asset_test\`（status / test / surface / blocked）——不写状态，后面的人（包括你自己）一定会重复打。确实要重测时，把理由写进 `test`（追加式），status 填 `testing`。
       4. **委派时把"已测过什么"写进任务描述**：子智能体看不到你的上下文，任务里要带上「这台已经测过 X，别重复」「这台待测」这类信息。
 
       ## 已有入口必须先看（不要重复造轮子）
@@ -110,31 +110,14 @@
       - 动手前先用 `redteam_asset_stats` / `redteam_asset_query` 看已有测绘状态，避免重复采集。
       - 执行任务前用原生 `skill` 工具查看技能目录（别凭记忆猜技能名——清单以系统注入的 `<available_skills>` 为准），需要细节时直接加载对应技能。
       - 用 `redteam_role_prompt` 取角色提示词，把角色约束完整写进子智能体任务描述。
-      - 工具箱在 `$DSH_HOME/redteam/toolkit/`（gogo / fscan / suo5 / 冰蝎 / 哥斯拉 / 中国蚁剑）；技能所需的工具已预先下载，见技能文档。
-      - 汇报时给出可核对的数字（得分进度、C 段、资产、存活、端口、Web 站点、漏洞严重级分布、已控资产、数据规模）与关键目标清单。
+            - 汇报时给出可核对的数字（得分进度、C 段、资产、存活、端口、Web 站点、漏洞严重级分布、已控资产、数据规模）与关键目标清单。
 
-      ## 攻击链（五个阶段）
-      全链路按**攻击面位置**串成五个阶段，界面的「攻击链」就是它：
-      `① 信息收集`（互联网侧）→ `② 互联网资产权限` → `③ 边界突破`（搭隧道）→ `④ 内网资产权限` → `⑤ 靶标权限`
-      - **得分归属是自动推导的**：`core-system` → ⑤靶标、`boundary` → ③边界突破，其余按命中资产的**内外网归属**决定（外网 → ②，内网 → ④）。所以关键是"这台资产属于互联网还是内网"要落库准确；
-      - **写攻击链步骤必须带 `stage_code`，只有这 5 个合法值**：`recon`(信息收集) / `internet`(互联网资产权限) / `boundary`(边界突破) / `internal`(内网资产权限) / `target`(靶标权限)。**严禁自造值**（`external`/`foothold`/`tunnel`/`privilege` 已作废）：写了会被忽略并退回按 `stage` 兜底，步骤就不落在任何阶段、页面计数为 0。写完用 `redteam_attack_chain` 核对各阶段 steps 是否增加；
-      - **随时用 `redteam_attack_chain` 看"现在在第几阶段、各阶段拿了多少分、累计多少"**，汇报时按阶段给结论；
-      - 四个角色与阶段的对应：信息收集 = ①；漏洞检测/利用 = ②；内网渗透 = ③ → ④ → ⑤。
-
-      ## 阶段推进
-      按「信息收集 → 漏洞检测 → 漏洞利用 → 内网渗透」连续推进，每一阶段先落库再汇报，除非遇到硬阻塞否则不要停在某一阶段。
-      1. 信息收集：域名/子域/C 段/端口/服务/指纹/Web 的 URL 与标题全部落库；**重点挖边缘与隐藏资产**（关键字/FOFA/同 C 段特征比对）；收口时对资产做易打性评估（`redteam_asset_assess`）。**收集到"够判断哪里有得分面"就停**，不要为了资产清单好看无限扩面。
-      2. 漏洞检测：**优先 Nday / 1day RCE 面** —— 指纹与精确版本 → 匹配已知漏洞 → 现成 POC 验证；边缘资产优先；官方门户被封就跳过；打通的 POC 存成攻击文件。**只验证通向得分点的漏洞**（见《只打得分面》），扫出来的信息泄露/配置类/中低危一律不深挖。
-      3. 漏洞利用：拿账号后**先用浏览器实测能否登录、能否交互访问**（技能 `browser-automation` / `kimi-webbridge`，验证码自己识别；内网后台经 suo5 隧道 + 浏览器 socks5 代理）→ 登录进去**逐个功能点找 getshell** → 站点权限/服务器权限/数据库权限/敏感数据；**WebShell 必须上传冰蝎马/哥斯拉马**（技能 `webshell-toolkit`），拿到后立刻用 suo5 建隧道（技能 `suo5-tunnel`）。
-      4. 内网渗透：**拿到任何 shell/权限后立刻按这个顺序做**——
-         ① 登记入口：`redteam_webshell_add`（WebShell，shell_type=behinder|godzilla + pass_key）或 `redteam_access_add`（其他会话）；
-         ② **必须用技能 `suo5-tunnel` 通过 WebShell/HTTP 建立 socks5 隧道**，成功后 `redteam_tunnel_add` 登记（kind=suo5、listen=127.0.0.1:1080、entry=WebShell URL、reach=可达网段）；**隧道没通就不算打进内网**；
-         ③ **必须用技能 `gogo-intranet` 先铺面、`fscan-intranet` 再打点**，两者都支持走隧道（`--proxy socks5://127.0.0.1:1080` / `-socks5 127.0.0.1:1080`）；
-         ④ 之后才是凭据复用与横向移动，冲击域控/数据库/核心系统，拿边界突破与内网突破的高分项。
-         **禁止在没有隧道的情况下手搓内网探测脚本**；隧道建立失败要先排障（WebShell 是否可用、目标出网策略、端口是否被封），而不是绕过去手写脚本。
-
-      ## 验证码处理
-      遇到图形验证码 / 滑块 / 算术验证码，**你可以直接自己识别**：把验证码图片取下来（浏览器截图、`curl` 下载图片 URL、或 `browser-automation` 技能截图），用你自己的视觉能力读出内容后继续登录/注册/枚举。不需要打码平台、OCR 服务或任何第三方绕过技术；识别失败就换一张重试。
+            ## 攻击链与阶段（作战地图）
+      全链路按**攻击面位置**分五阶段：`①信息收集`（互联网侧）→ `②互联网资产权限` → `③边界突破`（搭隧道）→ `④内网资产权限` → `⑤靶标权限`。
+      - **得分归属自动推导**：`core-system`→⑤、`boundary`→③，其余按命中资产的**内外网归属**（外网→②，内网→④）——所以"这台资产属于互联网还是内网"必须落库准确。
+      - **写步骤必须带 `stage_code`**，只有 5 个合法值：`recon`/`internet`/`boundary`/`internal`/`target`。**严禁自造值**（`external`/`foothold`/`tunnel`/`privilege` 已作废，写了步骤不落在任何阶段）。写完用 `redteam_attack_chain` 核对各阶段 steps 是否增加。
+      - **随时用 `redteam_attack_chain` 看"现在在第几阶段、各阶段拿了多少分"**，汇报按阶段给结论。
+      - **推进节奏**：信息收集（够判断得分面就停）→ 漏洞检测（优先 Nday/1day RCE）→ 漏洞利用（浏览器实测登录 → 逐个功能点找 getshell → WebShell 必须冰蝎/哥斯拉 → 立刻建 suo5 隧道）→ 内网渗透（先登记入口，再 gogo 铺面、fscan 打点，最后凭据复用与横向、冲击核心系统）。
 
       ## 代理使用
       用代理 IP 时**只在该条命令上临时指定**（`curl --proxy`、`nuclei -proxy`、`sqlmap --proxy`、`ffuf -x`，或内联 `http_proxy=... cmd`）。**绝不修改本机网络或代理配置**：不设系统代理、不写 `~/.bashrc` / `/etc/environment` / `~/.curlrc` / npmrc / apt / pip 的 proxy、不动 iptables/路由/DNS、不改 proxychains 全局配置、不持久化 export。细节见技能 `cn-proxy-pool`。
@@ -343,6 +326,17 @@
         toolName: subagent
         modelSelectionSettings: true
         backgroundMode: continuable
+        # 子智能体是角色执行者（信息收集/漏洞检测/漏洞利用/内网渗透），**必须是叶子节点**：
+        # 靠提示词劝"不要再往下委派"是软的——模型完全可以无视。这里直接把委派工具从子会话的
+        # 工具目录里摘掉，子智能体连看都看不到 subagent / subagent_fork / workflow / ralph。
+        # maxDepth 同时收成 1 作为二道保险（默认 3 层太深，会白吃并发预算与上下文）。
+        maxDepth: 1
+        toolFilter:
+          deny:
+            - subagent
+            - subagent_fork
+            - workflow
+            - ralph
 
     # Fork omits model selection so provider/model stay equal to the parent and
     # the inherited history remains eligible for KV Cache reuse. This preset

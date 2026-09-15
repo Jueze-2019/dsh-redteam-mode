@@ -46,3 +46,6 @@ Thumbs.db
 
 # playwright-cli 运行产物（页面快照，可能含抓取内容）
 .playwright-cli/
+
+# 就地重构/升级时留的备份
+*.bak-*
