@@ -86,3 +86,27 @@ npm http fetch PUT 409 https://registry.npmjs.org/dsh-redteam-mode
 curl -s -o /dev/null -w "%{http_code}\n" https://registry.npmjs.org/dsh-redteam-mode/-/dsh-redteam-mode-0.7.8.tgz   # 期望 200
 npm view dsh-redteam-mode version dist-tags                                                                        # latest 应指向新版本
 ```
+
+## 六、本次发布用的推送凭证（本机记录）
+
+仓库已从 HTTPS 切到 SSH（HTTPS 无 credential helper、推不上去）：
+
+```
+origin  git@github.com:Jueze-2019/dsh-redteam-mode.git
+~/.ssh/dsh-github          # 推送专用 ed25519 密钥（非默认 id_ed25519）
+~/.ssh/dsh-github.pub      # 已作为 deploy key 加到 GitHub（标题：dsh-redteam-mode deploy key (jz host)）
+```
+
+`~/.ssh/config` 里为 `github.com` 固定了这把 key（`IdentitiesOnly yes`），所以 `git push` 直接可用。
+换机器时要么重新生成密钥并在 GitHub 加一张 deploy key，要么改用 `gh auth login`。
+
+发版四件套（本次实际执行的顺序）：
+
+```bash
+node packages/redteam-bundle/tools/build.mjs --check        # 生成物与源码同步
+node packages/redteam-store/test/*.mjs && node packages/redteam-tools/test/*.mjs && node packages/redteam-bundle/test/*.mjs
+npm version patch --no-git-tag-version                      # 改版本号
+npm publish --access public                                 # 发 npm（prepublishOnly 会自动跑 --check + bundle.test）
+git add -A && git commit -m "vX.Y.Z：..." && git tag -a vX.Y.Z -m "..."
+git push origin main && git push origin vX.Y.Z              # 推代码与 tag
+```
