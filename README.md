@@ -150,8 +150,10 @@ host 平面新增了服务与表结构，**必须重启 `dsh web`**（客户端 
 ### 3.3 提示词纪律（预设与四个角色提示词都写了）
 
 - **只打得分面**：动手前先问“这条线能落到哪个得分点”，答不出来就不投入；明确禁止为“覆盖全面”去测信息泄露/配置类/中低危等与得分无关的问题（最多记一行排除结论）。
-- **拿到账号权限必须用浏览器实测登录、交互访问**：**只有凭据不算拿到账号**——拿到账号/口令后用 `browser-automation` / `kimi-webbridge` 真实登录进后台或业务页（验证码自己识别），抓到会话 Cookie/Token 并 `redteam_access_add`（method=web-login）登记，**登录成功才记账号权限分**；目标只在内网可达时先建 suo5 隧道再用浏览器 `--proxy-server=socks5://127.0.0.1:1080` 登录；登不进去（哈希未破解 / 二次认证 / 限制来源 IP）在资产测试 notes 里记一行结论即可，不当成果记分。内网拿到凭据同样先试内网管理端（堡垒机 / 运维平台 / 数据库后台 / 域控）。
-- **入口必须可交付**：WebShell 必须是**冰蝎马 / 哥斯拉马**（一句话马、自研马用户连不上，只算临时中转）；拿到 WebShell 后**必须用 suo5 建隧道**才算打进内网，建好要登记并实测连通。
+- **拿到账号权限必须用浏览器实测登录、交互访问**：**只有凭据不算拿到账号**——拿到账号/口令后用 `browser-automation` / `kimi-webbridge` 真实登录进后台或业务页（验证码自己识别），抓到会话 Cookie/Token 并 `redteam_access_add`（method=web-login）登记，**登录成功才记账号权限分**；目标只在内网可达时先建 suo5 隧道再用浏览器 `--proxy-server=socks5://127.0.0.1:1080` 登录；登不进去（哈希未破解 / 二次认证 / 限制来源 IP）用 `redteam_asset_test` 的 `test`（追加式）记一行结论即可，不当成果记分。内网拿到凭据同样先试内网管理端（堡垒机 / 运维平台 / 数据库后台 / 域控）。
+- **记分必填两样**：`redteam_score_hit` 的 `code`（`web-account-user` / `web-account-admin` / `webshell` / `rce` / `server-shell` / `db-access` / `sensitive-data` / `boundary` / `internal-pivot` / `core-system`，以 `redteam_score_list` 的实际值为准）+ `evidence`（只写结果：目标资产 + 账号/权限/数据量）。缺任一项服务端直接报错；能带 `vuln_id` 就带上，报告会据此附上原始请求。
+- **入口必须可交付**：WebShell 必须是**冰蝎马 / 哥斯拉马**（一句话马、自研马用户连不上，只算临时中转）；拿到 WebShell 后**必须用 suo5 建隧道**才算打进内网，建好要登记（`kind` / `listen` 必填）并实测连通。**`entry_kind` 是边界突破得分的凭证**：留空则 `legit=null`、页面显示「待确认」，不计入边界突破——发现历史隧道留空要立刻 `redteam_tunnel_update` 补上。
+- **攻击链步骤必带 `stage_code`**，只有 5 个合法值：`recon`（信息收集）/ `internet`（互联网资产权限）/ `boundary`（边界突破）/ `internal`（内网资产权限）/ `target`（靶标权限）。写别的值会被忽略并退回按 `stage` 兜底，步骤就不落在任何阶段（页面计数为 0）。
 - **自己注册的账号不算得分权限**：自助注册、自己新建的用户/角色、自己给自己开的权限都不是“拿到账号权限”——得分针对**拿到别人已有的**（弱口令、凭据泄露、注入拖库、越权/提权、默认口令）。这类用 `self_created=true` 留痕：**不计分、不占上限、不进报告**。
 - **自己的 VPS / 自己配置的服务器不算隧道**：只在自己服务器上开 socks5/frp/代理没碰到目标，不算跨越靶标边界。只有目标侧发起的通道才算：`target-outbound`（目标反弹 shell 到我方 / 目标上跑 frp 客户端）、`target-http`（经目标 WebShell 的 suo5 / Neo-ReGeorg）、`target-agent`（经目标已控进程转发）；纯自己服务器上开的填 `self-only`，页面标红「不算突破」，攻击链也不把它算作边界突破。
 - **Nday/1day 先查知识库**：`redteam_poc_search` 一次查两层——① 本机沉淀的通用 POC/EXP ② 本机 nuclei 模板库（`~/.local/nuclei-templates`）；命中直接取用（模板直接 `nuclei -t <路径> -u <目标>`）；两层都没有才去互联网（`web_search` / GitHub / ExploitDB / 厂商公告）或自己手搓；**验证有效后必须回填**（`redteam_poc_add`，写清来源、影响版本与验证证据，并脱敏）。
@@ -260,6 +262,7 @@ node packages/redteam-bundle/tools/build.mjs --check  # 只校验是否漂移（
 node packages/redteam-store/test/stages.test.mjs      # 阶段表自愈 + 得分归阶段 + 报告序号
 node packages/redteam-store/test/prompts.test.mjs     # 角色提示词：默认值自动升级、用户自写不被覆盖
 node packages/redteam-store/test/rules.test.mjs       # 判定规则：自建账号不计分、只有目标侧通道算突破
+node packages/redteam-store/test/prompt-contract.test.mjs # 提示词—工具契约：参数真实存在、stage_code 白名单、缺证据必告警
 node packages/redteam-tools/test/poc-tools.test.mjs   # 知识库工具：检索/回填/跨靶标共享/去重
 node packages/redteam-tools/test/rule-tools.test.mjs  # 工具的规则输出：score_hit / tunnel_add / sessions
 node packages/redteam-tools/test/tool-schema.test.mjs # 工具 schema 结构自检（含 DSH 官方校验器）

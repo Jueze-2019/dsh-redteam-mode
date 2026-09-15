@@ -1,0 +1,82 @@
+/**
+ * 提示词—工具契约回归测试
+ *
+ * 跑法：node packages/redteam-store/test/prompt-contract.test.mjs
+ *
+ * 为什么要有这个测试：提示词里教会智能体用的每个参数，必须在工具里真实存在，
+ * 否则调用会被静默丢弃，指令等于没写（v0.7.7 之前 `redteam_asset_test` 的 `notes`
+ * 就是这样：四个角色提示词都让写 notes，而该参数根本不存在 → 排除结论与登录
+ * 失败原因全部没落库）。这里锁三条契约：
+ *   ① `notes` 是 `redteam_asset_test` 的兼容别名，会与 `test` 一起追加进 test_notes；
+ *   ② `stage_code` 只接受 5 个合法值，非法值退回老 stage 兜底并给出可见告警；
+ *   ③ `redteam_chain_add` 带 point_code 却不给 evidence 时，必须明确告知"没有记分"，
+ *      不能静默（旧实现用 try/catch 吞掉，模型以为记上了）。
+ */
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { RedteamStore, DEFAULT_PROMPTS, VALID_STAGE_CODES } from '../lib/core.js'
+
+let pass = 0
+let fail = 0
+const ok = (cond, msg) => { if (cond) { pass += 1; console.log(`  ✓ ${msg}`) } else { fail += 1; console.log(`  ✗ ${msg}`) } }
+
+const root = mkdtempSync(join(tmpdir(), 'rt-prompt-contract-'))
+try {
+  const store = new RedteamStore(root)
+  const { id } = store.openEngagement('提示词契约测试靶标')
+  /* 直接用最小 insert 造一台资产：本测试只关心资产测试记录与攻击链的契约，不关心测绘链路。 */
+  const assetId = (() => {
+    const now = new Date().toISOString()
+    const r = store.db(id).prepare(`INSERT INTO asset(segment_cidr, ip, ip_int, state, confidence, first_seen, last_seen, scope)
+      VALUES(?,?,?,?,?,?,?,?)`).run('10.0.0.0/24', '10.0.0.9', 167772169, 'live', 0.9, now, now, 'internal')
+    return Number(r.lastInsertRowid)
+  })()
+
+  console.log('— 契约一：notes 与 test 都落进测试记录')
+  store.updateAssetTest(id, { asset_id: assetId, status: 'testing', test: 'nmap 全端口' })
+  store.updateAssetTest(id, { asset_id: assetId, notes: '登不进去：账号已禁用', status: 'tested' })
+  const asset = store.getAsset(id, assetId)
+  ok(/nmap 全端口/.test(asset.test_notes), 'test 参数写进了 test_notes')
+  ok(/登不进去/.test(asset.test_notes), 'notes 参数（兼容别名）也写进了 test_notes')
+  ok(asset.test_status === 'tested', '状态被正确更新为 tested')
+  const onlyNotes = store.updateAssetTest(id, { asset_id: assetId, notes: '第二次排除结论' })
+  ok(/第二次排除结论/.test(onlyNotes.test_notes), '返回值里带 test_notes，模型能确认写成功')
+
+  console.log('— 契约二：stage_code 白名单 + 非法值告警')
+  ok(VALID_STAGE_CODES.length === 5 && VALID_STAGE_CODES.includes('boundary'),
+    '只暴露 5 个合法阶段 code')
+  const good = store.addChainStep(id, { stage: 'pivot', stage_code: 'boundary', title: 'suo5 隧道打通' })
+  ok(good.stage_code === 'boundary' && good.stage_hint === null, '合法 stage_code 原样保留、无告警')
+  const bad = store.addChainStep(id, { stage: 'vuln', stage_code: 'foothold', title: '撕破口子' })
+  ok(bad.stage_code === 'internet' && /无效的 stage_code/.test(bad.stage_hint || ''),
+    '废弃值 foothold 被拦下、退回按 stage 兜底，并返回可见告警')
+
+  console.log('— 契约三：chain_add 带分不带证据必须说清楚')
+  const noEvidence = store.addChainStep(id, { stage: 'exploit', stage_code: 'internet', title: '上传 getshell', point_code: 'webshell', asset_id: assetId })
+  ok(noEvidence.hit === null && /没有记分/.test(noEvidence.score_hint || ''),
+    '带 point_code 但没给 evidence：明确回报没有记分')
+  const scored = store.addChainStep(id, {
+    stage: 'exploit', stage_code: 'internet', title: '上传 getshell',
+    point_code: 'webshell', target: '10.0.0.9', evidence: '10.0.0.9｜/upload/x.jsp 冰蝎马，已连接',
+  })
+  ok(scored.hit !== null && scored.hit.counted === true, '同时给 point_code + evidence 时照常记分')
+  ok(scored.score_hint === null, '记分成功时不给多余告警')
+
+  console.log('— 契约四：提示词里不再出现不存在的参数名')
+  for (const [role, text] of Object.entries(DEFAULT_PROMPTS)) {
+    const bad = /redteam_asset_test[^）)]{0,24}notes/.test(text)
+    ok(!bad, `${role} 提示词不再教智能体传 asset_test 的 notes 字段（或用 test）`)
+  }
+  const recon = DEFAULT_PROMPTS.recon
+  ok(recon.includes('一次记分必填两样'), '记分纪律写明 code + evidence 必填')
+  ok(DEFAULT_PROMPTS.internal.includes('一次记分必填两样'), 'internal 也有同一条 code 必填纪律（四角色一致）')
+  ok(recon.split('## 记分纪律').length - 1 === 1, 'recon 里记分纪律只出现一次（不再整节重复）')
+  ok(readFileSync(new URL('../lib/core.js', import.meta.url), 'utf8').includes("'untested', 'testing', 'tested', 'blocked', 'abandoned', 'no_surface'"),
+    'updateAssetTest 的 status 白名单是完整 6 值')
+} finally {
+  rmSync(root, { recursive: true, force: true })
+}
+
+console.log(`\n通过 ${pass}/${pass + fail}`)
+if (fail > 0) process.exit(1)

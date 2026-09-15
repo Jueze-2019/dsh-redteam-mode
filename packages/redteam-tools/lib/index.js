@@ -313,13 +313,14 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'redteam_asset_test',
-    description: '记录对某个资产的测试情况：本次做了什么测试、还剩什么攻击面、当前测试状态、是否被 WAF 封禁。每个资产开始/结束测试都要调用——资产测绘页面据此显示「未测试 / 测试中 / 已测试 / 被封禁 / 已放弃 / 无攻击面」。',
+    description: '记录对某个资产的测试情况：本次做了什么测试（`test`，追加式）、还剩什么攻击面（`surface`，覆盖式）、当前测试状态、是否被 WAF 封禁。**每个资产开始测之前先调一次（status=testing），测完/放弃再调一次**——资产测绘页面据此显示「未测试 / 测试中 / 已测试 / 被封禁 / 已放弃 / 无攻击面」。排除结论、登录失败原因、重测理由都写在 `test` 里。',
     parameters: {
       engagement: { type: 'string' },
       asset_id: { type: 'number', description: '资产 id（与 ip 二选一，优先 asset_id）' },
       ip: { type: 'string', description: '资产 IP' },
       status: { type: 'string', enum: ['untested', 'testing', 'tested', 'blocked', 'abandoned', 'no_surface'], description: '测试状态：未测试/测试中/已测试/被封禁/已放弃/无攻击面' },
-      test: { type: 'string', description: '本次做了什么测试（会追加到测试记录，例如「nmap 全端口 + nuclei cve 模板 + 接口越权」）' },
+      test: { type: 'string', description: '本次做了什么测试（**追加**到测试记录，例如「nmap 全端口 + nuclei cve 模板 + 接口越权」）。排除结论、登录失败原因、重测理由都写这里。' },
+      notes: { type: 'string', description: 'test 的兼容别名（老提示词里的写法），效果与 test 相同，会一并追加到测试记录。' },
       surface: { type: 'string', description: '还剩什么攻击面可测（覆盖式，例如「SMB 445 未测；Web /api 未做越权」）' },
       blocked: { type: 'boolean', description: '本次是否被 WAF/防护封禁（true 时封禁计数 +1）' },
       updated_by: { type: 'string', description: '记录角色，例如 recon / vuln-scan' },
@@ -747,7 +748,7 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'redteam_score_hit',
-    description: '记录一次得分（同类得分**不设数量上限**，每个真实命中都按分值累加：命中次数 × 分值）。**证据只写结果**：目标资产 + 拿到了什么（账号/密码/权限/数据量），不要写取得过程与路径——过程由攻击得分链路负责。能指向"用哪个漏洞拿到的"时请带上 vuln_id，报告会自动附上该漏洞的原始请求。\n\n**红线一：账号类得分必须先实测能登录。** 拿到账号/口令后要用浏览器（browser-automation / kimi-webbridge）或等价会话实测登录成功、能交互访问页面，才记 web-account-* 这类分——**只有凭据不算拿到账号**；登不进去的写进 redteam_asset_test 的 notes。\n\n**红线二：自己注册的账号不算得分权限。** 通过注册接口自助注册、自己新建的用户/角色/后台账号、自己给自己开的权限，都**不是**"拿到账号权限"——演练得分针对的是**拿到别人已有的**账号与权限（弱口令、凭据泄露、SQL 注入拖出的账号、越权/提权到已有账号、默认口令、复用已有凭据）。这类自建账号用 self_created=true 记录（留过程），**不计分、不计数、不进报告**。',
+    description: '记录一次得分（同类得分**不设数量上限**，每个真实命中都按分值累加：命中次数 × 分值）。**证据只写结果**：目标资产 + 拿到了什么（账号/密码/权限/数据量），不要写取得过程与路径——过程由攻击得分链路负责。能指向"用哪个漏洞拿到的"时请带上 vuln_id，报告会自动附上该漏洞的原始请求。\n\n**红线一：账号类得分必须先实测能登录。** 拿到账号/口令后要用浏览器（browser-automation / kimi-webbridge）或等价会话实测登录成功、能交互访问页面，才记 web-account-* 这类分——**只有凭据不算拿到账号**；登不进去的写进 redteam_asset_test 的 `test` 参数（追加式记录），不要用不存在的字段名。\n\n**红线二：自己注册的账号不算得分权限。** 通过注册接口自助注册、自己新建的用户/角色/后台账号、自己给自己开的权限，都**不是**"拿到账号权限"——演练得分针对的是**拿到别人已有的**账号与权限（弱口令、凭据泄露、SQL 注入拖出的账号、越权/提权到已有账号、默认口令、复用已有凭据）。这类自建账号用 self_created=true 记录（留过程），**不计分、不计数、不进报告**。',
     parameters: {
       engagement: { type: 'string' },
       code: { type: 'string', description: '得分点 code（或 point_id / point_name 任选其一）' },
@@ -850,9 +851,9 @@ export function apply(ctx) {
       access_id: { type: 'number' },
       evidence_ref: { type: 'string', description: '证据文件/会话引用，例如 runs/session-vnc.md' },
       recorded_by: { type: 'string' },
-      point_code: { type: 'string', description: '【这一步拿了分就填】得分点 code，服务端会自动记一次分并把步骤与得分互相挂上' },
-      stage_code: { type: 'string', description: '所属作战阶段：external(外网打点) | foothold(撕破口子) | tunnel(隧道搭建·内网漫游) | privilege(拿下资产权限) | target(靶标系统权限)' },
-      evidence: { type: 'string', description: '配合 point_code 使用：这一分拿到了什么（目标资产 + 账号/权限/数据量）' },
+      point_code: { type: 'string', description: '【这一步拿了分就填】得分点 code（如 rce / webshell / boundary），服务端会自动记一次分并把步骤与得分互相挂上。**必须同时给 evidence，否则不会记分**（步骤照常入库）。' },
+      stage_code: { type: 'string', enum: ['recon', 'internet', 'boundary', 'internal', 'target'], description: '所属作战阶段（只有这 5 个合法值）：recon(信息收集) | internet(互联网资产权限) | boundary(边界突破·搭隧道) | internal(内网资产权限) | target(靶标系统权限)。写别的值（如外部工具常见的 external/foothold/tunnel/privilege）会被忽略并退回按 stage 兜底，步骤就不落在任何阶段。' },
+      evidence: { type: 'string', description: '配合 point_code 使用：这一分拿到了什么（目标资产 + 账号/权限/数据量）——**不填就不记分**。' },
       self_created: { type: 'boolean', description: '配合 point_code 使用：这一步拿到的账号/权限是**自己注册/自建**的吗？是则 true（只留过程，不计分）' },
       target: { type: 'string', description: '配合 point_code 使用：目标资产' },
       seq: { type: 'number', description: '不填则自动追加到链尾' },
@@ -954,7 +955,7 @@ export function apply(ctx) {
           assets: (st.assets || []).map((a) => a.ip + (a.scope === 'internal' ? '(内网)' : '(外网)') + ' 贡献' + a.points + '分'),
           tunnels: (st.tunnels || []).map((t) => t.kind + ' ' + t.listen + ' [' + t.status + '] 可达 ' + (t.reach || '—')),
         })),
-        hint: '得分阶段是自动推导的（core-system→靶标、boundary→边界突破，其余按资产内外网归属）；写攻击链步骤时带 stage_code 可让步骤计数落到正确阶段。',
+        hint: '得分阶段是自动推导的（core-system→靶标、boundary→边界突破，其余按资产内外网归属）；写攻击链步骤时带 stage_code（只接受 recon/internet/boundary/internal/target）步骤计数才会落到正确阶段，写别的值会被忽略。',
       }, null, 2)
     },
   }))
