@@ -1,6 +1,6 @@
 # 提示词精准手术（A 批次）改动说明
 
-日期：2026-09-15 · 版本：v0.7.7 · 范围：**只修硬伤，不动结构**（B 结构重构 / C 机制增强未做）
+日期：2026-09-15 · 版本：**v0.7.8**（内容对应提交 `be7909b`；首发的 v0.7.7 因 npm 暂存冲突作废，见文末「发版备注」） · 范围：**只修硬伤，不动结构**（B 结构重构 / C 机制增强未做）
 
 起因：一次提示词审计发现提示词里存在"写了但不会生效"的指令，其中最严重的一条已经在真实靶标上造成数据丢失。
 
@@ -63,3 +63,26 @@ node packages/redteam-bundle/tools/build.mjs --check
 
 - **B 结构重构**：抽公共段落、四角色瘦身 ~30%、commander 章节重排、委派并发上限——纯效率优化，不影响正确性。
 - **C 机制增强**：给 `tool-subagent` 配 `maxDepth: 1`（当前默认 3，靠提示词劝"不要再派子智能体"是软的）；`assets.db` 里 48 条历史废弃 `stage_code` 的清洗脚本（迁移只清 `stage_code` 不再新增的旧值，历史数据仍在）。
+
+## 五、发版备注（npm 暂存冲突）
+
+首发的 `v0.7.7` 遇到 npm 的暂存（staged publish）机制：
+
+```
+npm http fetch PUT 409 https://registry.npmjs.org/dsh-redteam-mode
+409 Conflict - Cannot publish over previously staged version "0.7.7".
+```
+
+特征：`npm publish` 的输出**看起来成功**（最后打印 `+ dsh-redteam-mode@0.7.7`），但 tarball 取不到
+（`https://registry.npmjs.org/dsh-redteam-mode/-/dsh-redteam-mode-0.7.7.tgz` → 404），
+等 90 秒重试仍报同一个 409 —— 版本号被服务端的暂存记录占住。
+
+处置：**内容不变、版本号 +1 重发**（`0.7.8`），`v0.7.7` 的 commit 与 tag 保留在 git 历史里作为记录。
+以后遇到同名报错直接升版本号，不要在同一个版本号上反复重试。
+
+**判断发布是否真的成功，别只看 npm 的输出**，用这两条验证：
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" https://registry.npmjs.org/dsh-redteam-mode/-/dsh-redteam-mode-0.7.8.tgz   # 期望 200
+npm view dsh-redteam-mode version dist-tags                                                                        # latest 应指向新版本
+```
