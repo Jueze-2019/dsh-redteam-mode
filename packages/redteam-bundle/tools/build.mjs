@@ -41,12 +41,17 @@ const write = (rel, text) => {
 /* 1) 资产库核心：零依赖，原样拷过来；插件壳里的 './core.js' 改成 './store-core.js' */
 const core = read('redteam-store/lib/core.js')
 write('lib/store-core.js', core)
+
+/* 1b) 技能可用性判定：tools 与面板共用的一份实现（零依赖，原样拷） */
+const skillAvailability = read('redteam-store/lib/skill-availability.js')
+write('lib/skill-availability.js', skillAvailability)
 const storeIndex = read('redteam-store/lib/index.js').replace("from './core.js'", "from './store-core.js'")
 write('lib/store.js', storeIndex)
 
 /* 2) 控制台 host 半侧：把跨包的 core 引用改成本地 store-core */
 const uiIndex = read('redteam-ui/lib/index.js')
   .replace("from '../../redteam-store/lib/core.js'", "from './store-core.js'")
+  .replace("from '../../redteam-store/lib/skill-availability.js'", "from './skill-availability.js'")
 write('lib/ui.js', uiIndex)
 
 /* 3) 浏览器半侧：拷过来，并把注册 id 改成**本包的包名**。
@@ -70,6 +75,7 @@ write('lib/client.js', clientOut)
 /* 4) 工具集：跨包引用 ROLE_TITLES，改成本地 store-core */
 const tools = read('redteam-tools/lib/index.js')
   .replace("from '../../redteam-store/lib/core.js'", "from './store-core.js'")
+  .replace("from '../../redteam-store/lib/skill-availability.js'", "from './skill-availability.js'")
 write('lib/tools.js', tools)
 
 /* 5) 预设：工具行指向本包子路径；技能目录用占位符，由插件在首次启动时
@@ -126,7 +132,7 @@ for (const f of readdirSync(skillsSrc)) {
 }
 
 /* 校验：生成的 lib 里不允许再出现跨包的相对路径 */
-const generated = ['lib/store-core.js', 'lib/store.js', 'lib/ui.js', 'lib/tools.js', 'lib/client.js']
+const generated = ['lib/store-core.js', 'lib/skill-availability.js', 'lib/store.js', 'lib/ui.js', 'lib/tools.js', 'lib/client.js']
 const offenders = []
 for (const rel of generated) {
   const text = readFileSync(join(pkgRoot, rel), 'utf8')
@@ -148,7 +154,7 @@ if (CHECK) {
     for (const d of drift) console.error('   ' + d)
     process.exit(1)
   }
-  console.log(`✓ 生成物与源码同步（lib/ 5 个文件、预设 2 个、技能 ${skills} 个）`)
+  console.log(`✓ 生成物与源码同步（lib/ 6 个文件、预设 2 个、技能 ${skills} 个）`)
   process.exit(0)
 }
-console.log(`✓ dsh-redteam-mode 已生成：lib/ 5 个文件、预设 2 个、技能 ${skills} 个`)
+console.log(`✓ dsh-redteam-mode 已生成：lib/ 6 个文件、预设 2 个、技能 ${skills} 个`)

@@ -14,10 +14,10 @@
  *     卡住"同一靶标最多 3 个执行智能体"，超了直接拒绝，不靠提示词自觉。
  */
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { existsSync, statSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { resolve } from 'node:path'
+import { existsSync } from 'node:fs'
 import { ROLE_TITLES, PLANNER_ROLE, ROLE_ORDER } from '../../redteam-store/lib/core.js'
+/* 技能可用性判定只有一份实现：面板的「技能库」页签与这里共用（见该文件头注释） */
+import { checkSkill, summarizeSkills, expandSkillPath } from '../../redteam-store/lib/skill-availability.js'
 
 /** Cordis 插件名。 */
 export const name = 'redteam-tools'
@@ -158,15 +158,6 @@ function inheritedHint(exec, id) {
   const info = sessionInfoOf(exec)
   if (info.parentId === undefined) return undefined
   return '本会话是子智能体：靶标 ' + id + ' 继承自父会话（会话隔离生效，不会写到别的靶标库里）。'
-}
-
-/** 解析 $DSH_HOME / ~（技能正文里两种写法都有）。 */
-function expandPath(p) {
-  const dshHome = process.env.DSH_HOME || resolve(homedir(), '.dsh')
-  let out = String(p).trim()
-  out = out.replace(/\$\{DSH_HOME\}/g, dshHome).replace(/\$DSH_HOME/g, dshHome)
-  if (out.startsWith('~/')) out = resolve(homedir(), out.slice(2))
-  return out
 }
 
 /** 逗号/空白分隔的清单 → 去重数组。 */
@@ -394,53 +385,28 @@ export function apply(ctx) {
       for (const summary of wanted) {
         let def
         try { def = await skills.get(summary.name) } catch { def = undefined }
-        const body = def && typeof def.content === 'string' ? def.content : ''
-        const path = def && typeof def.path === 'string' ? def.path : (summary.resourceBase && summary.resourceBase.kind === 'directory' ? summary.resourceBase.path : null)
-        /* ① 技能文件本身 */ const problems = []
-        if (path !== null && !existsSync(path)) problems.push('技能文件不存在：' + path)
-        if (body === '') problems.push('技能正文为空（加载不出来）')
-        /* ② 必需环境变量：只认"带默认值"以外的读取 —— 有 os.environ.get("X", "默认") 也算可用 */
-        const envNeeded = new Set()
-        for (const m of body.matchAll(/process\.env\.([A-Z][A-Z0-9_]{2,})/g)) envNeeded.add(m[1])
-        for (const m of body.matchAll(/os\.environ(?:\.get)?[\[(]\s*["']([A-Z][A-Z0-9_]{2,})["']\s*(,)?/g)) {
-          if (m[2] === undefined) envNeeded.add(m[1])
-        }
-        for (const m of body.matchAll(/\$\{?([A-Z][A-Z0-9_]{2,})\}?/g)) {
-          if (['DSH_HOME', 'PATH', 'HOME', 'PWD', 'LANG', 'HTTP_PROXY', 'HTTPS_PROXY'].includes(m[1])) continue
-        }
-        const missingEnv = Array.from(envNeeded).filter((name) => !process.env[name])
-        for (const name of missingEnv) problems.push('缺环境变量 ' + name + '（export ' + name + '=... 后重启 dsh web）')
-        /* ③ 技能里写死的本机路径 / 二进制：抽 toolkit 与常见绝对路径，存在性可判定的才检查 */
-        const pathCandidates = new Set()
-        for (const m of body.matchAll(/(?:~|\$DSH_HOME|\/home\/[^\s"'`,)]+?)\/[\w./\u4e00-\u9fa5-]+/g)) {
-          const raw = m[0].replace(/[，。；、：)）]+$/, '')
-          if (!/\/(toolkit|bin|local)\//.test(raw)) continue
-          if (/[<>{}*]/.test(raw)) continue
-          pathCandidates.add(raw)
-        }
-        const missingPaths = []
-        for (const raw of pathCandidates) {
-          const full = expandPath(raw)
-          if (!existsSync(full)) missingPaths.push(raw)
-        }
-        if (missingPaths.length > 0) problems.push('引用的本机路径不存在：' + missingPaths.slice(0, 6).join('、'))
-        /* ④ 外部基础设施（VPS 等）：技能里出现 <你的VPS_IP> 占位符说明还没配 */
-        const needsUser = []
-        if (body.includes('<你的VPS_IP>')) needsUser.push('反弹 Shell / 载荷投递用的 VPS 地址（技能里是占位符 <你的VPS_IP>）')
-        if (missingEnv.length > 0) needsUser.push('环境变量：' + missingEnv.join('、'))
-        checked.push({
-          name: summary.name,
+        const path = def && typeof def.path === 'string'
+          ? def.path
+          : (summary.resourceBase && summary.resourceBase.kind === 'directory' ? summary.resourceBase.path : null)
+        /* 判定逻辑（环境变量 / 本机路径 / 占位符）全部来自共享模块，与面板显示的是同一份结论 */
+        const verdict = checkSkill({ name: summary.name, content: def && def.content, path }, { env: process.env })
+        checked.push(Object.assign({}, verdict, {
           title: summary.description,
           path,
-          status: problems.length === 0 ? 'available' : 'broken',
-          problems,
-          needs_user: needsUser,
-        })
+          /* 面板上要能看出"这条是给哪个角色用的" */
+          when_to_use: summary.whenToUse || '',
+          /* 需要用户补的东西：说得具体一点，方便一次性列给他 */
+          needs_user: verdict.needs_user.map((n) => (n.startsWith('环境变量')
+            ? n + '（拿到后 export 并重启 dsh web）'
+            : n === 'VPS 地址' || n === 'VPS 主机名'
+              ? '反弹 Shell / 载荷投递用的 ' + n + '（技能里还是占位符）'
+              : n)),
+        }))
       }
       const broken = checked.filter((s) => s.status === 'broken')
       const available = checked.filter((s) => s.status === 'available')
       /* 工具箱现状：让用户一眼看到"本机到底有什么" */
-      const toolkit = expandPath('$DSH_HOME/redteam/toolkit')
+      const toolkit = expandSkillPath('$DSH_HOME/redteam/toolkit')
       let toolkitEntries = []
       try {
         if (existsSync(toolkit)) {
@@ -448,11 +414,14 @@ export function apply(ctx) {
           toolkitEntries = readdirSync(toolkit).slice(0, 60)
         }
       } catch { /* 忽略 */ }
+      const summary = summarizeSkills(checked)
       return JSON.stringify({
         ok: broken.length === 0,
+        summary,
         checked: checked.length,
         available: available.map((s) => s.name),
         broken: broken.map((s) => ({ name: s.name, problems: s.problems, needs_user: s.needs_user })),
+        unknown: checked.filter((s) => s.status === 'unknown').map((s) => s.name),
         toolkit: { dir: toolkit, exists: existsSync(toolkit), entries: toolkitEntries },
         skills_root_hint: '技能来自 DSH 原生注册表：本插件自带 + $DSH_HOME/skills + 项目根 + 各插件注册的根。',
         next: broken.length === 0

@@ -20,7 +20,7 @@
  * 之后 host 侧改动仍需重启 dsh web 才生效（客户端 UI 会自动热重载）。
  */
 import { execFileSync, spawn } from 'node:child_process'
-import { copyFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -47,6 +47,26 @@ for (const profile of profiles) {
   const files = readdirSync(join(bundle, 'lib'))
   for (const file of files) {
     copyFileSync(join(bundle, 'lib', file), join(libDir, file))
+  }
+  /* ⚠️ **presets/ 必须一起同步**：installPreset 是从**已安装包**的 presets/ 读模板再落地的，
+     只同步 lib/ 的话它会用上一次部署留下的旧预设覆盖用户预设 —— 表现是"代码更新了、人设还是旧的"，
+     更糟的是会把带占位符的坏预设重新写回去（v0.9.0 踩过）。技能目录同理（随包分发）。 */
+  const installedRoot = join(profilesRoot, profile, 'node_modules', 'dsh-redteam-mode')
+  for (const sub of ['presets', 'skills']) {
+    const srcDir = join(bundle, sub)
+    if (!existsSync(srcDir)) continue
+    for (const file of readdirSync(srcDir, { withFileTypes: true })) {
+      const from = join(srcDir, file.name)
+      const to = join(installedRoot, sub, file.name)
+      if (file.isDirectory()) {
+        mkdirSync(to, { recursive: true })
+        for (const inner of readdirSync(from)) copyFileSync(join(from, inner), join(to, inner))
+      } else {
+        mkdirSync(join(installedRoot, sub), { recursive: true })
+        copyFileSync(from, to)
+      }
+    }
+    console.log(`   ${sub}/ 已同步`)
   }
   /* 版本号对齐（面板显示的是这份 package.json） */
   const installedPkgPath = join(profilesRoot, profile, 'node_modules', 'dsh-redteam-mode', 'package.json')

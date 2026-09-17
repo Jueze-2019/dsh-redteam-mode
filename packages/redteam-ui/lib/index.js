@@ -17,6 +17,8 @@ import { resolve, join } from 'node:path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { dispatch, dispatchAsync } from '../../redteam-store/lib/core.js'
+/* 技能可用性判定与 redteam_preflight 共用同一份实现（环境变量 / 本机路径 / 占位符） */
+import { checkSkill, summarizeSkills } from '../../redteam-store/lib/skill-availability.js'
 
 /** 本包自带技能目录（随包分发；dev 安装的 UI 包没有 skills/，此时恒为 false）。 */
 const PLUGIN_SKILLS_DIR = (() => {
@@ -273,6 +275,38 @@ function sendJson(res, status, value) {
   res.end(body)
 }
 
+/** 技能可用性缓存：`{ at, scope, byName: Map }`；30 秒内复用。 */
+let skillAvailabilityCache = null
+const SKILL_AVAILABILITY_TTL_MS = 30000
+
+/**
+ * 逐个技能的可用性（读正文 → 共享判定模块）。
+ * @param ctx - 插件上下文。
+ * @param list - `ctx.skills.list()` 的返回（SkillSummary[]）。
+ * @param scope - 当前作用域。
+ * @param force - true 时跳过快取缓存。
+ */
+async function skillAvailabilityOf(ctx, list, scope, force) {
+  const now = Date.now()
+  if (!force && skillAvailabilityCache !== null
+    && now - skillAvailabilityCache.at < SKILL_AVAILABILITY_TTL_MS
+    && skillAvailabilityCache.size === list.length) {
+    return { at: skillAvailabilityCache.at, cached: true, byName: skillAvailabilityCache.byName }
+  }
+  const byName = new Map()
+  for (const summary of list) {
+    let def
+    try { def = await ctx.skills.get(summary.name, { scope }) } catch { def = undefined }
+    const path = def && typeof def.path === 'string'
+      ? def.path
+      : (summary.resourceBase && summary.resourceBase.kind === 'directory' ? summary.resourceBase.path : null)
+    const verdict = checkSkill({ name: summary.name, content: def && def.content, path }, { env: process.env })
+    byName.set(summary.name, verdict)
+  }
+  skillAvailabilityCache = { at: now, size: list.length, byName }
+  return { at: now, cached: false, byName }
+}
+
 /**
  * 技能目录：按红队 preset 的 standing scope 读取原生 skill 注册表。
  * 技能由 DSH 管理（$DSH_HOME/skills、项目 .dsh/skills、.agents/skills、内置根），
@@ -291,6 +325,10 @@ async function handleSkillOp(ctx, request) {
   }
   if (request.op === 'skillCatalog') {
     const list = await ctx.skills.list({ scope })
+    /* 可用性检查要读每个技能的正文（可能几百个），做 30 秒缓存：
+       面板反复打开、切页签都不会重复打注册表；技能是磁盘文件，半分钟粒度足够。
+       `refresh: true` 跳过缓存（面板上的「重新检查可用性」按钮用）。 */
+    const availability = await skillAvailabilityOf(ctx, list, scope, request.refresh === true)
     /* 技能目录来自 DSH 原生注册表：自带根 + $DSH_HOME/skills + 项目根 + **每个插件注册的根**
        （本插件只是其中之一）。所以这里把"每个技能来自哪个目录/哪个来源"如实给出来，
        否则用户看到几百个技能会以为是我们塞进去的。 */
@@ -301,6 +339,7 @@ async function handleSkillOp(ctx, request) {
       const name = dir === null ? '(非文件系统来源)' : dir
       byDir.set(name, (byDir.get(name) || 0) + 1)
       bySource.set(s.source, (bySource.get(s.source) || 0) + 1)
+      const avail = availability.byName.get(s.name)
       return {
         name: s.name,
         description: s.description,
@@ -311,12 +350,26 @@ async function handleSkillOp(ctx, request) {
         modelInvocable: s.invocation ? s.invocation.modelInvocable !== false : true,
         userInvocable: s.invocation ? s.invocation.userInvocable !== false : true,
         fromPlugin: sameDir(dir, PLUGIN_SKILLS_DIR),
+        /* 可用性：available 能直接跑 / broken 有明确缺口 / unknown 正文读不到判不了 */
+        availability: avail ? avail.status : 'unknown',
+        problems: avail ? avail.problems : ['未检查'],
+        needs_user: avail ? avail.needs_user : [],
       }
     })
+    const availSummary = summarizeSkills(Array.from(availability.byName.values()))
     return {
       ok: true,
       total: items.length,
       fromPlugin: items.filter((x) => x.fromPlugin).length,
+      availability: {
+        summary: availSummary,
+        checked_at: availability.at,
+        cached: availability.cached,
+        broken: Array.from(availability.byName.values()).filter((x) => x.status === 'broken')
+          .map((x) => ({ name: x.name, problems: x.problems, needs_user: x.needs_user })),
+        note: '可用性 = 技能文件存在 + 正文能加载 + 必需环境变量已设置 + 正文引用的本机路径存在 + 没有未填的基础设施占位符；'
+          + '判定用的是运行 dsh 的这个进程的环境变量（不是 shell 里 export 的）。未列出的技能正文读不到，状态为未知。',
+      },
       bySource: Array.from(bySource, ([k, n]) => ({ key: k, n })).sort((a, b) => b.n - a.n),
       byDir: Array.from(byDir, ([k, n]) => ({ key: k, n })).sort((a, b) => b.n - a.n),
       note: '技能由 DSH 原生注册表管理：DSH 自带根 + $DSH_HOME/skills + 项目根 .dsh/skills、.agents/skills + 各插件注册的根。本插件只自带 ' +

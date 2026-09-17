@@ -476,6 +476,12 @@ window.__ModuleLoader__.load({
 .rt-kb-cat{display:flex;align-items:center;gap:7px;padding:7px 10px;background:var(--dsw-alias-bg-layer-2);
   border-bottom:1px solid var(--dsw-alias-border-l1);position:sticky;top:0;z-index:1}
 .rt-kb-cat-name{font-weight:600;font-size:12.5px}
+/* 技能可用性徽章（技能库页签） */
+.rt-avail{display:inline-block;padding:0 5px;border-radius:4px;font-size:10.5px;white-space:nowrap;
+  border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary)}
+.rt-avail-available{color:#10b981;border-color:#10b98155;background:#10b9811a}
+.rt-avail-broken{color:#ef4444;border-color:#ef444455;background:#ef44441a}
+.rt-avail-unknown{color:#94a3b8;border-color:#94a3b855;background:#94a3b81a}
 /* 版本 / 更新弹窗 */
 .rt-modal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center}
 .rt-modal-box{width:min(560px,92vw);max-height:80vh;overflow:auto;background:var(--dsw-alias-bg-layer-1);
@@ -1241,10 +1247,12 @@ window.__ModuleLoader__.load({
       const [active, setActive] = React.useState(null)
       const [detail, setDetail] = React.useState(null)
       const [busy, setBusy] = React.useState(false)
+      const [brokenOnly, setBrokenOnly] = React.useState(false)
 
-      const load = () => {
+      /* refresh=true 跳过后端 30 秒可用性缓存（技能正文/环境变量可能刚改过） */
+      const load = (force) => {
         setBusy(true)
-        api({ op: 'skillCatalog' }).then((r) => {
+        api({ op: 'skillCatalog', refresh: force === true }).then((r) => {
           setBusy(false)
           if (!r || r.ok === false) { setErr((r && r.error) || '读取失败'); return }
           setErr(null)
@@ -1269,8 +1277,10 @@ window.__ModuleLoader__.load({
         ? items.filter((s) => (s.name + ' ' + s.description + ' ' + s.whenToUse).toLowerCase().indexOf(needle) >= 0)
         : items
       if (srcOnly) filtered = filtered.filter((s) => s.fromPlugin === true)
+      if (brokenOnly) filtered = filtered.filter((s) => s.availability === 'broken' || s.availability === 'unknown')
       /* 目录聚合：一眼看出"这么多技能是哪来的"（本项目/别的插件/自带根…） */
       const dirs = (meta.byDir || []).filter((d) => d.n > 0).slice(0, 6)
+      const availSummary = meta.availability ? meta.availability.summary : null
       const needRestart = err !== null && String(err).indexOf('unknown op') >= 0
 
       const listItems = filtered.map((s) => h('div', {
@@ -1278,13 +1288,25 @@ window.__ModuleLoader__.load({
         onClick: () => open(s.name),
       },
         h('div', { className: 'rt-item-name' }, s.name,
-          s.modelInvocable === false ? h('span', { className: 'rt-tag', style: { marginLeft: 6 } }, '仅人工') : null),
+          s.modelInvocable === false ? h('span', { className: 'rt-tag', style: { marginLeft: 6 } }, '仅人工') : null,
+          /* 可用性状态：能跑 / 有缺口 / 判不了 —— 一眼看出哪些技能现在用不了 */
+          h('span', {
+            className: 'rt-avail rt-avail-' + (s.availability || 'unknown'),
+            style: { marginLeft: 6 },
+            title: (s.availability === 'available'
+              ? '可用：正文能加载，必需的环境变量/本机路径/基础设施都在'
+              : (s.problems || []).join('\n') || '未知'),
+          }, s.availability === 'available' ? '可用' : s.availability === 'broken' ? '不可用' : '未知')),
         h('div', { className: 'rt-item-desc' }, s.description || '（无描述）'),
         h('div', { className: 'rt-kb-sub' },
           [s.source ? '来源 ' + s.source : null,
             s.fromPlugin ? '本插件自带' : null,
             s.provider ? s.provider : null,
-            s.dir ? s.dir : null].filter(Boolean).join(' · '))))
+            s.dir ? s.dir : null].filter(Boolean).join(' · ')),
+        (s.problems || []).length > 0 && s.availability !== 'available'
+          ? h('div', { className: 'rt-kb-sub', style: { color: 'var(--dsw-alias-state-warn-primary, #f59e0b)' } },
+              '⚠ ' + String(s.problems[0]).slice(0, 60))
+          : null))
 
       return h('div', { className: 'rt-split' },
         h('div', { className: 'rt-list' },
@@ -1292,9 +1314,28 @@ window.__ModuleLoader__.load({
             className: 'rt-input', style: { width: '100%', marginBottom: 8, boxSizing: 'border-box' },
             placeholder: '过滤技能', value: q, onChange: (e) => setQ(e.target.value),
           }),
-          h('label', { className: 'rt-kb-check', style: { display: 'flex', margin: '0 0 8px' } },
+          h('label', { className: 'rt-kb-check', style: { display: 'flex', margin: '0 0 6px' } },
             h('input', { type: 'checkbox', checked: srcOnly, onChange: (e) => setSrcOnly(e.target.checked) }),
             '只看本插件自带（' + (meta.fromPlugin || 0) + ' 个）'),
+          availSummary && (availSummary.broken > 0 || availSummary.unknown > 0)
+            ? h('label', {
+                className: 'rt-kb-check', style: { display: 'flex', margin: '0 0 8px' },
+                title: '只看有明确缺口（缺 key / 缺本机路径 / 基础设施还是占位符）或判不了可用性的技能',
+              },
+                h('input', { type: 'checkbox', checked: brokenOnly, onChange: (e) => setBrokenOnly(e.target.checked) }),
+                '只看不可用/未知（' + ((availSummary.broken || 0) + (availSummary.unknown || 0)) + ' 个）')
+            : null,
+          availSummary
+            ? h('div', { style: { display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 } },
+                h('span', { className: 'rt-avail rt-avail-available' }, '可用 ' + (availSummary.available || 0)),
+                availSummary.broken > 0 ? h('span', { className: 'rt-avail rt-avail-broken' }, '不可用 ' + availSummary.broken) : null,
+                availSummary.unknown > 0 ? h('span', { className: 'rt-avail rt-avail-unknown' }, '未知 ' + availSummary.unknown) : null,
+                h('span', {
+                  className: 'rt-tag', style: { cursor: 'pointer' },
+                  title: '技能正文或环境变量刚改过？点这里跳过 30 秒缓存重查',
+                  onClick: () => load(true),
+                }, '重查可用性'))
+            : null,
           h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)', marginBottom: 6 } },
             '共 ' + items.length + ' 个技能 · 来自 ' + ((meta.byDir || []).length) + ' 个目录',
             items.length > 100 ? h('div', { style: { marginTop: 3 } },
@@ -1304,7 +1345,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'rt-toolbar' },
             h('span', { style: { fontWeight: 600 } }, detail ? detail.name : '技能目录（DSH 原生）'),
             h('div', { className: 'rt-spacer' }),
-            h('button', { className: 'rt-btn', disabled: busy, onClick: load }, busy ? '刷新中…' : '刷新')),
+            h('button', { className: 'rt-btn', disabled: busy, onClick: () => load(true) }, busy ? '刷新中…' : '刷新')),
           err
             ? (needRestart
                 ? h('div', { className: 'rt-empty' }, '该模块的宿主代码已更新，需重启一次 dsh web 后生效')
@@ -1315,11 +1356,44 @@ window.__ModuleLoader__.load({
                 h('div', { className: 'rt-kv' }, h('b', null, '描述'), h('span', null, detail.description || '—')),
                 h('div', { className: 'rt-kv' }, h('b', null, '何时使用'), h('span', null, detail.whenToUse || '—')),
                 h('div', { className: 'rt-kv' }, h('b', null, '来源'), h('span', null, (detail.provider || '—') + ' / ' + (detail.source || '—'))),
+                (() => {
+                  const s2 = items.find((x) => x.name === detail.name)
+                  if (!s2) return null
+                  const avail = s2.availability || 'unknown'
+                  return h('div', null,
+                    h('div', { className: 'rt-kv' }, h('b', null, '可用性'),
+                      h('span', { className: 'rt-avail rt-avail-' + avail },
+                        avail === 'available' ? '可用' : avail === 'broken' ? '不可用（有明确缺口）' : '未知（正文读不到）')),
+                    (s2.problems || []).length > 0
+                      ? h('div', { className: 'rt-kv' }, h('b', null, '缺口'),
+                          h('span', null, s2.problems.map((x, i) => h('div', { key: 'p' + i }, '· ' + x))))
+                      : null,
+                    (s2.needs_user || []).length > 0
+                      ? h('div', { className: 'rt-kv' }, h('b', null, '需要你提供'),
+                          h('span', { style: { color: 'var(--dsw-alias-state-warn-primary, #f59e0b)' } },
+                            s2.needs_user.map((x, i) => h('div', { key: 'n' + i }, '· ' + x))))
+                      : null)
+                })(),
                 detail.path ? h('div', { className: 'rt-kv' }, h('b', null, '文件'), h('span', { className: 'rt-mono', style: { wordBreak: 'break-all' } }, detail.path)) : null,
                 h('pre', { className: 'rt-md', style: { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 6, maxHeight: '52vh' } }, detail.content || '（空）'))
             : h('div', { className: 'rt-pane' },
                 h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)', marginBottom: 8 } },
                   meta.note || '技能由 DSH 原生 skill 体系管理，红队智能体通过 skill 工具调用。'),
+                availSummary
+                  ? h('div', { style: { fontSize: 12, marginBottom: 8, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' } },
+                      h('span', { className: 'rt-avail rt-avail-available' }, '可用 ' + (availSummary.available || 0)),
+                      availSummary.broken > 0 ? h('span', { className: 'rt-avail rt-avail-broken' }, '不可用 ' + availSummary.broken) : null,
+                      availSummary.unknown > 0 ? h('span', { className: 'rt-avail rt-avail-unknown' }, '未知 ' + availSummary.unknown) : null,
+                      h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } },
+                        '（' + (meta.availability && meta.availability.cached ? '缓存于 ' : '检查于 ')
+                        + (meta.availability && meta.availability.checked_at ? fmt(meta.availability.checked_at) : '—') + '）'))
+                  : null,
+                meta.availability && (meta.availability.broken || []).length > 0
+                  ? h('div', { className: 'rt-hint' },
+                      h('div', { style: { fontWeight: 600, marginBottom: 4 } }, '现在跑不起来的技能：'),
+                      meta.availability.broken.slice(0, 12).map((b) => h('div', { key: b.name },
+                        '· ' + b.name + (b.problems && b.problems.length ? ' — ' + b.problems[0] : ''))))
+                  : null,
                 (meta.byDir || []).slice(0, 6).map((d) => h('div', { key: d.key, className: 'rt-mono', style: { fontSize: 11, marginBottom: 2, overflowWrap: 'anywhere' } },
                   d.n + ' 个 · ' + d.key)),
                 (meta.byDir || []).length > 6

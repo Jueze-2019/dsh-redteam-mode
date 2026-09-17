@@ -90,6 +90,8 @@ ok(/最多 3 个/.test(preset), '人设写明并发上限 3')
 ok(/会话隔离/.test(preset), '人设写明会话隔离（多会话不串写靶标）')
 ok(/不动手/.test(preset) && /不扫描、不爆破、不利用/.test(preset), '人设写明主会话只计划/汇总、不参与动手')
 ok(/assess/.test(preset) && /资产梳理/.test(preset), '人设写明六个角色（含资产梳理）')
+ok(/gogo-intranet/.test(preset) && /fscan-intranet/.test(preset),
+  '人设写明内网信息收集要用 gogo/fscan 技能（不要把 nmap 那套带进内网）')
 ok(!preset.includes('/home/'), '预设里没有本机绝对路径')
 
 console.log('— 子智能体委派的硬约束（toolFilter / maxDepth）')
