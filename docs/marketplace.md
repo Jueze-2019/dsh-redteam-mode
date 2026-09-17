@@ -84,6 +84,9 @@ git add -A && git commit -m "data: update dsh-redteam-mode entry for vX.Y.Z" && 
 - [ ] `node tools/build.mjs --check` 通过（生成物与源码同步）
 - [ ] `npm publish --access public` 成功（`npm view dsh-redteam-mode version` 能看到新版本）
 - [ ] `git tag vX.Y.Z && git push origin main --tags`
+- [ ] **GitHub Release 已建**：`bash scripts/release-notes.sh vX.Y.Z`
+      （说明写在 `docs/releases/vX.Y.Z.md`；**只推 tag 不建 Release 的话 Releases 页面不会更新**，
+      v0.9.0/0.9.1/0.9.2 就这样漏过一次 —— `bash scripts/release-notes.sh --check` 可以查出哪些 tag 还没有 Release）
 - [ ] **市场条目里的数字与文案已同步到本版**（角色数 / 工具数 / 技能数 / 关键能力）
 - [ ] PR 评论里说明"上一版描述哪里过时、现在是什么"，方便维护者复核
 

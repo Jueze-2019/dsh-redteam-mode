@@ -367,6 +367,16 @@ npm version patch && npm publish --access public            # 需要 npm 账号�
 git tag vX.Y.Z && git push origin main --tags
 ```
 
+发完 npm 与 tag 后**别忘了建 GitHub Release**（说明写在 `docs/releases/vX.Y.Z.md`）：
+
+```bash
+bash scripts/release-notes.sh vX.Y.Z     # 需要 gh 登录（gh auth login）或 GH_TOKEN
+bash scripts/release-notes.sh --check    # 只查哪些 tag 还没有 Release
+```
+
+> **只推 tag 不建 Release，Releases 页面是不会更新的**（v0.9.0/0.9.1/0.9.2 漏过一次）。
+> 完整发版清单见 [`docs/marketplace.md`](docs/marketplace.md) 第 2 节末尾。
+
 之后往精选列表 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) 提 PR 加一条，
 市场和目录站当天自动收录；文案要点与验收口径见 [`docs/marketplace.md`](docs/marketplace.md)。
 
