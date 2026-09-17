@@ -37,21 +37,55 @@ dsh plugin --profile web add ./dsh-redteam-mode-<版本>.tgz
 
 ### 2) 往 awesome-dsh-plugin 提 PR
 
-在那个仓库的 `README.md`（以及中文 `README.zh.md`）**Security & Permissions** 分类下加一条，
-然后开 PR。条目文案（中英各一份，描述里的数字都是实测过的：48 个工具 / 13 个技能）：
+市场里的插件列表**不是** npm 搜索，而是精选列表仓库生成的一份目录：
+`https://awesome-dsh-plugin.com/plugins.json` ← `github.com/awesome-dsh-plugin/awesome-dsh-plugin`
+（`data/plugins/*.yml` 为数据源，两个 README 由脚本生成，**不要手工编辑 README**）。所以
+"包发到 npm 了但市场搜不到"几乎总是同一个原因：**投稿 PR 还没被合并**。校验一下：
 
-```markdown
-- [Jueze-2019/dsh-redteam-mode#packages/redteam-bundle](https://github.com/Jueze-2019/dsh-redteam-mode/tree/main/packages/redteam-bundle) - Red-team engagement mode: send one target organization name and a four-role agent team (recon, vulnerability detection, exploitation, internal pivot) runs the engagement, landing every finding in a local SQLite fact base with a persistent right-side console (asset mapping, five-stage attack chain, scoring targets, evidence report, cross-engagement POC/EXP knowledge base); ships 13 native skills and 48 `redteam_*` tools.
+```sh
+curl -sL https://awesome-dsh-plugin.com/plugins.json | grep -c "Jueze-2019"   # 0 = 还没收录
 ```
 
-中文 README 对应条目：
+投稿方式（v0.9.0 时的规则，见对方 `contributing.md`）：新增**一个文件**
+`data/plugins/<owner>__<repo>.yml`（monorepo 子包用 `owner/repo#subname` + `url` 指子目录）：
 
-```markdown
-- [Jueze-2019/dsh-redteam-mode#packages/redteam-bundle](https://github.com/Jueze-2019/dsh-redteam-mode/tree/main/packages/redteam-bundle) - 红队作战模式：只发一个靶标单位名称，四个角色（信息收集/漏洞检测/漏洞利用/内网渗透）的智能体团队自动推进演练，所有发现落进本机 SQLite 事实库，右侧常驻控制台看资产测绘、五阶段攻击链、得分目标、复现报告与跨靶标 POC/EXP 知识库；随包分发 13 个原生技能与 48 个 `redteam_*` 模型工具。
+```yaml
+url: https://github.com/Jueze-2019/dsh-redteam-mode/tree/main/packages/redteam-bundle
+name: Jueze-2019/dsh-redteam-mode#packages/redteam-bundle
+category: security
+description:
+  en: "Red-team engagement mode: ... ships 13 native skills, 53 redteam_* tools and one-command self-update."
+  zh: "红队作战模式：... 随包 13 个原生技能、53 个 redteam_* 工具与一键自更新。"
 ```
 
-> 评审会对着源码逐条核对（例如"48 个工具"会被数一遍）：改动工具数量或技能数量时，
-> 记得同步这里的文案与 `packages/redteam-tools/`、`packages/redteam-bundle/skills/`。
+> 描述里**含 `: `（冒号+空格）必须整体加引号**，否则 YAML 会当成嵌套键。
+
+**当前 PR**：[#5034](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5034)
+（fork 分支 `Jueze-2019:add-dsh-redteam-mode`）。对方规则的两条要点：
+
+* **CI 通过只是前置条件**：`Submission gate` / `check` 绿了不代表会合，维护者会**实际读仓库**，
+  而且是**对着描述里的数字逐个核对**（"53 个工具"会被数一遍）。
+* 所以**每次改版都要回头更新这个条目**：角色数、工具数、技能数、页签数、关键能力点变了就要改，
+  否则评审第 1 条（代码是否与条目声明一致）就会被打回。更新只改自己那一个文件，别碰 README。
+
+更新条目（稀疏检出很快，别整仓 clone：仓库很大）：
+
+```sh
+git clone --depth 1 --filter=blob:none --sparse -b add-dsh-redteam-mode \
+  git@github.com:Jueze-2019/awesome-dsh-plugin.git /tmp/awesome
+cd /tmp/awesome && git sparse-checkout set data/plugins
+$EDITOR data/plugins/Jueze-2019__dsh-redteam-mode--packages-redteam-bundle.yml
+git add -A && git commit -m "data: update dsh-redteam-mode entry for vX.Y.Z" && git push
+```
+
+**发布前自检清单**（v0.9.0 起）：
+
+- [ ] `packages/redteam-bundle/package.json` 版本号 = 本次要发的版本
+- [ ] `node tools/build.mjs --check` 通过（生成物与源码同步）
+- [ ] `npm publish --access public` 成功（`npm view dsh-redteam-mode version` 能看到新版本）
+- [ ] `git tag vX.Y.Z && git push origin main --tags`
+- [ ] **市场条目里的数字与文案已同步到本版**（角色数 / 工具数 / 技能数 / 关键能力）
+- [ ] PR 评论里说明"上一版描述哪里过时、现在是什么"，方便维护者复核
 
 ## 升级迁移（预发布期用户）
 
