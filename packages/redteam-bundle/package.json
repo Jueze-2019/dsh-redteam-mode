@@ -1,6 +1,6 @@
 {
   "name": "dsh-redteam-mode",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "DSH RedTeam 模式：一句话拉起红队作战智能体（资产测绘 / 攻击链 / 得分目标 / 报告 / POC 知识库），含六个角色、13 个原生技能、常驻右侧控制台与一键自动更新",
   "license": "MIT",
   "type": "module",
