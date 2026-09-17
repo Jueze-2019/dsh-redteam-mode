@@ -82,7 +82,14 @@ ok(preset.includes('name: dsh-redteam-mode/tools'), '工具行指向本包子路
 ok(preset.includes('{{REDTEAM_SKILLS_DIR}}'), '技能目录是待替换占位符')
 ok(/includeDefaultRoots: false/.test(preset), '关掉默认技能根（否则会把 .agents/skills 等几百个技能一起吞进来）')
 ok(/dshHomePath\('skills'\)/.test(preset), '额外只放行 $DSH_HOME/skills')
-ok(/红队（RedTeam）作战指挥智能体/.test(preset), '人设正文在')
+ok(/红队（RedTeam）作战\*\*指挥\*\*智能体/.test(preset), '人设正文在')
+/* v0.9.0 人设重写：必须把"主会话只指挥不动手 + 预检 + 并发上限 + 会话隔离"写进预设 */
+ok(/redteam_preflight/.test(preset), '人设要求开工前跑 redteam_preflight（技能与资源预检）')
+ok(/redteam_agent_slot/.test(preset), '人设写明并发闸门 redteam_agent_slot（最多 3 个）')
+ok(/最多 3 个/.test(preset), '人设写明并发上限 3')
+ok(/会话隔离/.test(preset), '人设写明会话隔离（多会话不串写靶标）')
+ok(/不动手/.test(preset) && /不扫描、不爆破、不利用/.test(preset), '人设写明主会话只计划/汇总、不参与动手')
+ok(/assess/.test(preset) && /资产梳理/.test(preset), '人设写明六个角色（含资产梳理）')
 ok(!preset.includes('/home/'), '预设里没有本机绝对路径')
 
 console.log('— 子智能体委派的硬约束（toolFilter / maxDepth）')
@@ -123,6 +130,24 @@ console.log('— 浏览器半侧的注册 id')
   const m = /__ModuleLoader__\.load\(\{\s*id:\s*'([^']+)'/.exec(client)
   ok(m !== null, 'client.js 里有 __ModuleLoader__.load({ id })')
   ok(m !== null && m[1] === manifest.name, `注册 id 等于包名（${m ? m[1] : '?'} vs ${manifest.name}）`)
+  /* v0.9.0 面板新增能力：版本/自动更新、资产发现时间、知识库归类、报告链路、智能体页签。
+     这些是"用户看得见"的交付面，缺一个都算发版漏了。 */
+  ok(/updateCheck/.test(client) && /updateApply/.test(client), 'client.js 带版本检查与一键更新')
+  ok(/VersionBar/.test(client) && /有新版本/.test(client), 'client.js 有版本显示与"有新版本"按钮')
+  ok(/'agents', '智能体'/.test(client), 'client.js 有「智能体」页签')
+  ok(/agentsStatus/.test(client), 'client.js 读并发占用（agentsStatus）')
+  ok(/发现时间/.test(client) && /discoveryTimeline/.test(client), 'client.js 有资产「发现时间」视图')
+  ok(/POC_CAT_NAME/.test(client) && /按归类分组/.test(client), 'client.js 知识库按归类分组')
+  ok(/这一步怎么来的/.test(client) && /复现链不完整/.test(client), 'client.js 报告展示「这一步怎么来的」与复现缺口')
+}
+
+/* 仓库源预设里**不允许**出现占位符：占位符是给"打包后落地"用的，
+   混进源码会让 build.mjs 的"找不到 skill-filesystem 行"检查直接失败。
+   （打包后的预设必须有占位符，这条在下面的"预设置换"检查里。） */
+{
+  const srcPreset = readFileSync(join(root, '..', '..', 'preset', 'agent.cordis.yml'), 'utf8')
+  ok(!srcPreset.includes('{{REDTEAM_SKILLS_DIR}}'), '仓库源预设不含落地占位符（占位符只属于打包产物）')
+  ok(!/customSkillDirs/.test(srcPreset), '仓库源预设不含 skill-filesystem 的技能目录配置（由 build 注入）')
 }
 
 console.log('— 技能随包分发')
@@ -185,6 +210,27 @@ try {
   ok(second.action === 'kept' && readFileSync(installed, 'utf8').includes('用户自己改过'), '已存在时不覆盖用户预设')
   const forced = installPreset({ force: true, log: () => {} })
   ok(forced.action === 'installed' && !readFileSync(installed, 'utf8').includes('用户自己改过'), 'REDTEAM_PRESET_REFRESH=1 时强制覆盖')
+
+  /* ── 坏预设自愈（v0.9.0 真实事故回归）────────────────────────────────────
+     事故：部署时把**打包模板**直接 cp 进用户预设目录，占位符没被替换 → YAML 把它解析成
+     对象 → skill-filesystem 配置校验失败 → 整个预设挂载失败 → 建不了会话、发不出消息
+     （界面能进，但一发消息就报 agent-preset/invalid，客户端不断重试把 CPU 打满）。
+     现在 installPreset 会在已存在时自愈，所以误拷模板的机器下次启动就能恢复。 */
+  writeFileSync(installed, "- id: skill-filesystem\n  config:\n    customSkillDirs:\n      - {{REDTEAM_SKILLS_DIR}}\n      - !!js dshHomePath('skills')\n", 'utf8')
+  const healed = installPreset({ log: () => {} })
+  const healedText = readFileSync(installed, 'utf8')
+  ok(healed.action === 'repaired' && healed.repaired === 'placeholder', '占位符残留的预设被判为需要自愈（不再"保留不动"）')
+  ok(!healedText.includes('{{REDTEAM_SKILLS_DIR}}') && healedText.includes(packagePaths().skills), '自愈后占位符替换成包内真实路径')
+  ok(healedText.includes("!!js dshHomePath('skills')"), '自愈只改技能目录那一行，其它内容保留')
+  /* 包换过位置：旧的绝对路径指向不存在的目录 → 技能静默消失，同样要自愈 */
+  writeFileSync(installed, "- id: skill-filesystem\n  config:\n    customSkillDirs:\n      - /old/npx/hash/node_modules/dsh-redteam-mode/skills\n      - !!js dshHomePath('skills')\n", 'utf8')
+  const healed2 = installPreset({ log: () => {} })
+  ok(healed2.action === 'repaired' && healed2.repaired === 'stale-path', '失效的旧包路径被判为需要自愈')
+  ok(readFileSync(installed, 'utf8').includes('- ' + packagePaths().skills), '失效路径被换成当前包内路径')
+  /* 正常的用户预设（含自写内容）不许被动 */
+  writeFileSync(installed, "- id: persona\n  config:\n    prefix: |\n      用户自己写的人设\n- id: skill-filesystem\n  config:\n    customSkillDirs:\n      - " + packagePaths().skills + "\n", 'utf8')
+  const kept = installPreset({ log: () => {} })
+  ok(kept.action === 'kept' && readFileSync(installed, 'utf8').includes('用户自己写的人设'), '正常的用户预设仍然原样保留（不越权改动）')
 } catch (error) {
   ok(false, '自举流程抛错：' + (error && error.message))
 } finally {

@@ -42,9 +42,58 @@ export function userPresetRoot() {
 }
 
 /**
- * 把包内预设落地到用户 preset 根（已存在则跳过）。
+ * 预设模板里技能目录的占位符（build.mjs 写进打包预设，落地时才替换）。
+ * 扩展名等都不允许写成别的形式，否则替换会漏。
+ */
+const SKILLS_PLACEHOLDER = '{{REDTEAM_SKILLS_DIR}}'
+
+/** customSkillDirs 里"像本包 skills/ 目录"的那一行（老的绝对路径 / 占位符都算）。 */
+function isSkillsDirLine(line) {
+  const text = line.trim().replace(/^-\s*/, '')
+  if (text === SKILLS_PLACEHOLDER) return true
+  /* 历史安装留下的绝对路径：<...>/dsh-redteam-mode/skills 或 <...>/redteam-bundle/skills */
+  return /[/\\](dsh-redteam-mode|redteam-bundle)[/\\]skills\/?$/.test(text)
+}
+
+/**
+ * 把预设正文里的技能目录占位符 / 失效的绝对路径渲染成**当前**包内 skills/ 路径。
+ *
+ * 为什么不能只替换占位符：
+ *   · 占位符没被替换时，YAML 会把它解析成对象 → `skill-filesystem` 配置校验失败
+ *     → **整个预设挂载失败** → 该会话建不了、发不出消息（v0.9.0 真出过这个事故：
+ *     部署时把打包模板直接 cp 进了用户预设目录）；
+ *   · 包换过位置（npx 缓存换了 hash、profile 重装、从源码包切到市场包）时，上次写下的
+ *     绝对路径会指向不存在的目录 —— 技能"静默变少"，比直接报错更难发现。
+ * 两种都在这里就地修正；只有真的改动了才写盘。
+ */
+function renderSkillsDir(text, skillsDir) {
+  if (text.includes(SKILLS_PLACEHOLDER)) {
+    return { text: text.split(SKILLS_PLACEHOLDER).join(skillsDir), changed: true, reason: 'placeholder' }
+  }
+  let changed = false
+  const out = text.split('\n').map((line) => {
+    if (!isSkillsDirLine(line)) return line
+    const indent = /^(\s*)/.exec(line)[1]
+    const wanted = indent + '- ' + skillsDir
+    if (line === wanted) return line
+    changed = true
+    return wanted
+  }).join('\n')
+  return { text: out, changed, reason: changed ? 'stale-path' : 'none' }
+}
+
+/**
+ * 把包内预设落地到用户 preset 根。
+ *
+ * 语义（v0.9.0 起）：
+ *   · 目标不存在 → 完整安装（占位符替换成真实路径）；
+ *   · 目标已存在 → **默认不覆盖用户内容，但会自愈**：只要里面还留着
+ *     `{{REDTEAM_SKILLS_DIR}}` 或指向不存在的旧包路径，就就地修正（这是唯一必需字段，
+ *     不改就会整个预设挂载失败）。其余内容一律保留 —— 用户可以就地改预设。
+ *   · `force: true` 才用包内模板整体覆盖。
+ *
  * @param options - `{ force?: boolean, log?: (msg: string) => void }`
- * @returns `{ action: 'installed'|'kept', dir, skillsDir }`
+ * @returns `{ action: 'installed'|'kept'|'repaired', dir, skillsDir, skills, repaired? }`
  */
 export function installPreset(options = {}) {
   const paths = packagePaths()
@@ -53,8 +102,31 @@ export function installPreset(options = {}) {
   const skillCount = existsSync(paths.skills)
     ? readdirSync(paths.skills).filter((f) => f.endsWith('.md')).length
     : 0
+  const presetFile = join(target, 'agent.cordis.yml')
 
-  if (existsSync(join(target, 'agent.cordis.yml')) && options.force !== true) {
+  if (existsSync(presetFile) && options.force !== true) {
+    /* 自愈：占位符没替换 / 技能目录指向已失效的旧包路径 → 就地修好 */
+    let text
+    try {
+      text = readFileSync(presetFile, 'utf8')
+    } catch (error) {
+      log(`读取 ${presetFile} 失败：${error && error.message ? error.message : String(error)}`)
+      return { action: 'kept', dir: target, skillsDir: paths.skills, skills: skillCount }
+    }
+    const rendered = renderSkillsDir(text, paths.skills)
+    if (rendered.changed) {
+      writeFileSync(presetFile, rendered.text, 'utf8')
+      log(
+        (rendered.reason === 'placeholder'
+          ? '预设里还留着 ' + SKILLS_PLACEHOLDER + '（会导致整个预设挂载失败）'
+          : '预设里的技能目录指向已失效的旧包路径')
+        + `，已就地修正为 ${paths.skills}`,
+      )
+      return {
+        action: 'repaired', dir: target, skillsDir: paths.skills, skills: skillCount,
+        repaired: rendered.reason,
+      }
+    }
     log(`已存在用户自己的预设 ${target}，保留不动（要覆盖：REDTEAM_PRESET_REFRESH=1 启动一次）`)
     return { action: 'kept', dir: target, skillsDir: paths.skills, skills: skillCount }
   }
@@ -62,8 +134,7 @@ export function installPreset(options = {}) {
   mkdirSync(target, { recursive: true })
   for (const file of readdirSync(paths.presetDir)) {
     const text = readFileSync(join(paths.presetDir, file), 'utf8')
-      .replace(/\{\{REDTEAM_SKILLS_DIR\}\}/g, paths.skills)
-    writeFileSync(join(target, file), text, 'utf8')
+    writeFileSync(join(target, file), renderSkillsDir(text, paths.skills).text, 'utf8')
   }
   log(`预设已安装到 ${target}（打包技能 ${skillCount} 个：${paths.skills}）`)
   return { action: 'installed', dir: target, skillsDir: paths.skills, skills: skillCount }

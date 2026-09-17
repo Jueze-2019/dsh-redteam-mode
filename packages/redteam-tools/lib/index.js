@@ -7,42 +7,171 @@
  * 设计约定：
  *   · 写入一律走 redteam_asset_add / redteam_asset_link，智能体不直接碰 SQL；
  *   · 每次发现都带 provenance（passive|active）与 tool，保证界面上的来源标注可信；
- *   · 靶标按会话绑定：redteam_engagement_open 记住本次会话的靶标，其余工具默认沿用。
+ *   · **靶标按根会话隔离**：绑定键是会话的根祖先 id，子智能体顺着
+ *     `session.header.parentSession` 继承父会话的靶标 —— 多会话并行时互不串写，
+ *     报告不会再被别的靶标的成果污染（v0.9.0 之前的全局「当前靶标」指针正是串写的根源）；
+ *   · 并发硬约束：`redteam_agent_slot` 用 `ctx.subagents.listChildren` 的真实运行数
+ *     卡住"同一靶标最多 3 个执行智能体"，超了直接拒绝，不靠提示词自觉。
  */
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { ROLE_TITLES } from '../../redteam-store/lib/core.js'
+import { existsSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { resolve } from 'node:path'
+import { ROLE_TITLES, PLANNER_ROLE, ROLE_ORDER } from '../../redteam-store/lib/core.js'
 
 /** Cordis 插件名。 */
 export const name = 'redteam-tools'
 
-/** 硬依赖：资产库服务 + 工具注册表。 */
+/** 硬依赖：资产库服务 + 工具注册表（subagents / skills 走 ctx.get 可选获取）。 */
 export const inject = ['redteam', 'tools']
 
-/** sessionId → engagementId 绑定（一次会话内稳定；进程重启后由 agent 重新绑定）。 */
+/** 根会话 id → engagementId 绑定（一次会话内稳定；进程重启后由 agent 重新绑定）。 */
 const bindings = new Map()
 
-/** 从工具执行上下文取出调用方会话 id。 */
-function sessionOf(exec) {
+/** 并发闸门：根会话 id → Map(子智能体键 → 预留时间戳)。子智能体结束时自动释放。 */
+const reservations = new Map()
+
+/**
+ * 并发上限：同一靶标（根会话）同时最多几个执行智能体。
+ * 可用 `REDTEAM_MAX_AGENTS` 覆盖；默认 3（用户口径：整个项目最多并发 3 个智能体）。
+ */
+const MAX_AGENTS = (() => {
+  const raw = Number(process.env.REDTEAM_MAX_AGENTS)
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 3
+})()
+
+/** 一次调用的会话解析结果。 */
+function sessionInfoOf(exec) {
   const agent = exec && exec.agent
   const session = agent && agent.session
-  return session && session.id !== undefined ? String(session.id) : undefined
+  if (session === undefined || session === null) return {}
+  const id = session.id === undefined ? undefined : String(session.id)
+  let parentId
+  try {
+    const header = session.header
+    parentId = header && header.parentSession !== undefined && header.parentSession !== null
+      ? String(header.parentSession)
+      : undefined
+  } catch { parentId = undefined }
+  return { id: id, parentId: parentId, session: session }
 }
 
-/** 解析本次调用应作用在哪个靶标上。 */
+/** 会话 id（兼容旧调用点）。 */
+function sessionOf(exec) {
+  return sessionInfoOf(exec).id
+}
+
+/**
+ * 解析"根会话"：一路沿 parentSession 走到最顶层的会话 id。
+ * 主会话派出的子智能体因此共享同一个绑定键，而**不同主会话之间天然隔离**。
+ * 顺手把沿途会话 id 都返回，便于把绑定缓存到子会话上。
+ */
+function resolveRootSession(session) {
+  const chain = []
+  let cur = session
+  let guard = 0
+  while (cur !== undefined && cur !== null && guard < 64) {
+    const info = sessionInfoOf({ agent: { session: cur } })
+    if (info.id === undefined) break
+    chain.push(info.id)
+    if (info.parentId === undefined || info.parentId === '') break
+    let parent
+    try {
+      const store = cur.store
+      parent = store && typeof store.get === 'function' ? store.get(info.parentId) : undefined
+    } catch { parent = undefined }
+    if (parent === undefined || parent === null) {
+      /* 父会话不在内存里（被回收 / 冷启动）：父 id 本身就是稳定的根键 */
+      return { rootId: info.parentId, chain: chain.concat([info.parentId]) }
+    }
+    cur = parent
+    guard += 1
+  }
+  return { rootId: chain.length > 0 ? chain[chain.length - 1] : undefined, chain: chain }
+}
+
+/** 绑定键 + 会话链。 */
+function bindingKeyOf(exec) {
+  const info = sessionInfoOf(exec)
+  if (info.id === undefined) return { rootId: undefined, sessionId: undefined, chain: [] }
+  const resolved = resolveRootSession(info.session)
+  const rootId = resolved.rootId === undefined ? info.id : resolved.rootId
+  return { rootId, sessionId: info.id, chain: resolved.chain }
+}
+
+/**
+ * 解析本次调用应作用在哪个靶标上（会话隔离版）。
+ *
+ * 顺序：① 显式传入 → ② 本会话/父链上的绑定 → ③ 全局「当前靶标」指针
+ * （仅当没有被别的会话占用；被占用时报错并提示显式绑定，**绝不静默串写**）。
+ *
+ * 抛错而不是"随便挑一个"是刻意的：多会话并行时挑错靶标 = 把 A 单位的成果写进
+ * B 单位的库、A 的报告里出现 B 的数据（这正是要多会话隔离的原因）。
+ */
 function resolveEngagement(store, exec, explicit) {
   if (typeof explicit === 'string' && explicit.length > 0) return explicit
-  const key = sessionOf(exec)
-  if (key !== undefined && bindings.has(key)) return bindings.get(key)
-  /* 子智能体是另一个会话，没有本会话绑定：跟随「当前靶标」指针
-     （由 redteam_engagement_open / 界面切换写入），这样委派出去的角色
-     不必每次都手传靶标 id。 */
+  const { rootId, sessionId, chain } = bindingKeyOf(exec)
+  const keys = Array.from(new Set([rootId, sessionId, ...chain].filter(Boolean)))
+  for (const key of keys) {
+    const bound = bindings.get(key)
+    if (typeof bound === 'string' && bound.length > 0) return bound
+  }
   if (typeof store.activeEngagementId === 'function') {
     const active = store.activeEngagementId()
-    if (active !== undefined) return active
+    if (active !== undefined) {
+      const holder = Array.from(bindings.entries()).find(([k, v]) => v === active && !keys.includes(k))
+      if (holder !== undefined) {
+        throw new Error(
+          '本会话尚未绑定靶标，而全局「当前靶标」' + active + ' 已被另一个会话占用；'
+          + '为避免多会话串写同一个靶标库，请显式绑定：redteam_engagement_open（新建/打开）'
+          + ' 或 redteam_session_bind（绑定到已有靶标）。',
+        )
+      }
+      for (const key of keys) bindings.set(key, active)
+      return active
+    }
   }
   const list = store.listEngagements()
-  if (list.length === 1) return list[0].id
+  if (list.length === 1) {
+    for (const key of keys) bindings.set(key, list[0].id)
+    return list[0].id
+  }
   throw new Error('尚未绑定靶标：请先调用 redteam_engagement_open 传入靶标单位名称')
+}
+
+/** 当前会话的绑定关系（redteam_session_info 与面板展示用）。 */
+function bindingViewOf(exec) {
+  const info = sessionInfoOf(exec)
+  const { rootId, chain } = bindingKeyOf(exec)
+  return {
+    session_id: info.id ?? null,
+    parent_session: info.parentId ?? null,
+    root_session: rootId ?? null,
+    session_chain: chain,
+    is_subagent: info.parentId !== undefined,
+    bound_engagement: rootId !== undefined ? (bindings.get(rootId) ?? null) : null,
+  }
+}
+
+/** 子智能体的继承说明（写进返回值，让模型知道为什么它不用再绑定一次）。 */
+function inheritedHint(exec, id) {
+  const info = sessionInfoOf(exec)
+  if (info.parentId === undefined) return undefined
+  return '本会话是子智能体：靶标 ' + id + ' 继承自父会话（会话隔离生效，不会写到别的靶标库里）。'
+}
+
+/** 解析 $DSH_HOME / ~（技能正文里两种写法都有）。 */
+function expandPath(p) {
+  const dshHome = process.env.DSH_HOME || resolve(homedir(), '.dsh')
+  let out = String(p).trim()
+  out = out.replace(/\$\{DSH_HOME\}/g, dshHome).replace(/\$DSH_HOME/g, dshHome)
+  if (out.startsWith('~/')) out = resolve(homedir(), out.slice(2))
+  return out
+}
+
+/** 逗号/空白分隔的清单 → 去重数组。 */
+function splitList(value) {
+  return String(value || '').split(/[,，\s]+/).map((x) => x.trim()).filter(Boolean)
 }
 
 /** 把一行资产压成模型可读的紧凑结构（避免把整库原始数据塞进上下文）。 */
@@ -59,41 +188,331 @@ function compactAsset(a) {
     fingerprints: a.fingerprints.map((f) => [f.category, f.vendor, f.product, f.version].filter(Boolean).join(' ') + ' [' + f.provenance + ']'),
     passive: a.passive,
     active: a.active,
+    /* 发现时间：这条资产第一次进入本库的时刻（面板与报告都按它排时间线） */
+    discovered_at: a.discovered_at,
     first_seen: a.first_seen,
     last_seen: a.last_seen,
+    test_status: a.test_status,
+    priority: a.priority,
   }
 }
 
 const text = (value) => [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }]
 
+/** 角色 code 的合法值说明（写进工具 description，模型不用猜）。 */
+const ROLE_HINT = '角色 code：' + ROLE_ORDER.map((r) => '`' + r + '`（' + ROLE_TITLES[r] + '）').join('、')
+
+/** 当前会话的绑定键（根会话 + 本会话 + 父链），用于把绑定写全。 */
+function bindKeysOf(exec) {
+  const { rootId, sessionId, chain } = bindingKeyOf(exec)
+  return Array.from(new Set([rootId, sessionId, ...chain].filter(Boolean)))
+}
+
+/** 实时并发占用：读 subagents 注册表里"真正在跑"的直接子会话数。 */
+async function liveRunningChildren(ctx, rootSessionId) {
+  const subagents = ctx.get('subagents')
+  if (subagents === undefined || subagents === null || typeof subagents.listChildren !== 'function') {
+    return { available: false, running: 0, error: 'subagents 注册表不可用（无法核对实际并发数，只能按预留计数）' }
+  }
+  try {
+    const entries = await subagents.listChildren(rootSessionId)
+    const rows = Array.isArray(entries) ? entries : []
+    const running = rows.filter((e) => e && e.kind === 'child' && e.activity === 'running')
+    return {
+      available: true,
+      running: running.length,
+      running_labels: running.map((e) => e.label || e.id).slice(0, 20),
+      total_children: rows.filter((e) => e && e.kind === 'child').length,
+    }
+  } catch (error) {
+    return { available: false, running: 0, error: '列子会话失败：' + (error && error.message ? error.message : String(error)) }
+  }
+}
+
+/** 预留（未被 subagents 注册表覆盖的那部分，例如刚 acquire 还没起来的）。 */
+function reservationList(rootId) {
+  const map = reservations.get(rootId)
+  if (map === undefined) return []
+  return Array.from(map, ([key, at]) => ({ key, at }))
+}
+
+function addReservation(rootId, key) {
+  if (!reservations.has(rootId)) reservations.set(rootId, new Map())
+  reservations.get(rootId).set(key, Date.now())
+}
+
+function dropReservation(rootId, key) {
+  const map = reservations.get(rootId)
+  if (map === undefined) return false
+  if (key === undefined) {
+    const n = map.size
+    reservations.delete(rootId)
+    return n > 0
+  }
+  return map.delete(key)
+}
+
 /**
- * @param ctx - 插件上下文。
+ * 产出这条记录的智能体角色：显式传的优先，否则默认按主会话记账。
+ * 这个值会写进库里的 `agent` 列，报告里"这一步是谁做的"就靠它。
  */
+function agentOf(args) {
+  const raw = typeof args.agent === 'string' ? args.agent.trim() : ''
+  return raw !== '' ? raw : PLANNER_ROLE
+}
+
+/** 写库工具共用的 agent 参数（角色 code 白名单提示写进 description）。 */
+const AGENT_PARAM = {
+  type: 'string',
+  description: '【建议填】产出这条记录的角色 —— ' + ROLE_HINT
+    + '。报告里会按它标注"这一步是谁做的"，不填按主会话记账。',
+}
+
 export function apply(ctx) {
   const store = ctx.redteam
 
+  /* ── 子智能体结束时自动释放并发名额（不依赖模型记得调 release）──────────── */
+  try {
+    ctx.on('subagent/end', (info, parent) => {
+      const parentSession = parent && parent.session
+      const { rootId } = bindingKeyOf({ agent: { session: parentSession } })
+      const childId = info && info.id !== undefined ? String(info.id) : undefined
+      if (rootId === undefined) return
+      if (childId !== undefined && dropReservation(rootId, childId)) return
+      /* 注册表里的键可能与 runId 不同：按时间兜底清掉最早的一个预留 */
+      const map = reservations.get(rootId)
+      if (map === undefined || map.size === 0) return
+      let oldestKey
+      let oldestAt = Number.POSITIVE_INFINITY
+      for (const [key, at] of map) { if (at < oldestAt) { oldestAt = at; oldestKey = key } }
+      if (oldestKey !== undefined) map.delete(oldestKey)
+    })
+  } catch { /* 事件不可用时只影响自动释放，手动 release 仍然可用 */ }
+
   ctx.tools.register(defineTool({
     name: 'redteam_engagement_open',
-    description: '打开或创建一次攻防演练靶标（按单位名称），并把当前会话绑定到该靶标。后续所有资产工具默认作用于它。若靶标已存在则直接复用其资产库。',
+    description: '打开或创建一次攻防演练靶标（按单位名称），并把**当前会话**绑定到该靶标（子智能体会自动继承）。后续所有资产工具默认作用于它。若靶标已存在则复用其资产库。写入的是本会话的绑定，不会改动其它会话正在用的靶标。',
     parameters: {
       target: { type: 'string', required: true, description: '靶标单位名称，例如「示例科技有限公司」' },
       scope: {
         type: 'array',
-        description: '授权范围 CIDR 列表（强烈建议显式给出；未给则沿用既有范围）',
+        description: '授权范围 CIDR 列表（可选：用户没给就不用问，按公开可见资产面自主推进）',
         items: { type: 'string' },
       },
     },
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
     async execute(args, exec) {
-      const engagement = store.openEngagement(args.target, args.scope)
-      const key = sessionOf(exec)
-      if (key !== undefined) bindings.set(key, engagement.id)
+      /* bindCurrent: false —— 不动全局「当前靶标」指针：多会话并行时那个指针是串写的根源 */
+      const engagement = store.openEngagement(args.target, args.scope, { bindCurrent: false })
+      const keys = bindKeysOf(exec)
+      for (const key of keys) bindings.set(key, engagement.id)
+      const view = bindingViewOf(exec)
       return JSON.stringify({
         ok: true,
         engagement,
         stats: store.stats(engagement.id),
-        note: '已绑定到当前会话；请确认授权范围后再发起主动探测。',
+        session: view,
+        note: '已绑定到本会话（会话隔离：其它会话的绑定不受影响）；子智能体会继承本靶标。'
+          + (view.is_subagent ? ' 注意：本会话是子智能体，通常不需要再 open，直接继承父会话靶标即可。' : ''),
       }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_session_bind',
+    description: '把一个**已经存在**的靶标绑定到当前会话（多会话并行时用：每个会话绑自己的靶标，互不串写）。可用靶标 id 或单位名称，省略则列出可绑定的靶标。',
+    parameters: {
+      engagement: { type: 'string', description: '靶标 id 或单位名称；省略只列出候选' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const list = store.listEngagements()
+      const wanted = typeof args.engagement === 'string' ? args.engagement.trim() : ''
+      if (wanted === '') {
+        return JSON.stringify({
+          ok: false,
+          candidates: list.map((e) => ({ id: e.id, name: e.name, created_at: e.created_at, stats: e.stats })),
+          note: '请传 engagement（靶标 id 或单位名称）完成绑定。',
+        }, null, 2)
+      }
+      const hit = list.find((e) => e.id === wanted)
+        || list.find((e) => String(e.name) === wanted)
+        || list.find((e) => String(e.name).includes(wanted))
+      if (hit === undefined) {
+        return JSON.stringify({ ok: false, error: '靶标不存在：' + wanted, candidates: list.map((e) => e.id) }, null, 2)
+      }
+      const keys = bindKeysOf(exec)
+      for (const key of keys) bindings.set(key, hit.id)
+      return JSON.stringify({
+        ok: true, engagement: { id: hit.id, name: hit.name },
+        session: bindingViewOf(exec),
+        note: '本会话已绑定到「' + hit.name + '」；后续工具与报告都只作用于它。',
+      }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_session_info',
+    description: '查看**当前会话绑定的是哪个靶标**（会话 id、父会话、根会话、绑定链）。多会话同时开工时，先跑它确认自己没串到别人的靶标上。',
+    parameters: {},
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(_args, exec) {
+      const view = bindingViewOf(exec)
+      const changed = view.bound_engagement !== null ? store.stats(view.bound_engagement) : null
+      return JSON.stringify({
+        ok: true, session: view, stats: changed,
+        bindings_now: Array.from(bindings, ([k, v]) => ({ session: k, engagement: v })),
+        note: '绑定是进程内状态：dsh 重启后各会话需要重新绑定一次（redteam_engagement_open / redteam_session_bind）。',
+      }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_preflight',
+    description: '【开工前必须跑一次】平台技能与资源自检：逐个检查红队技能的必需环境变量（如 FOFA 测绘的 FOFA_KEY）、本机工具与二进制（suo5 / fscan / gogo / frp / 冰蝎 / 哥斯拉 / nmap / nuclei…）、外部基础设施（反弹 Shell 用的 VPS）。返回 available/broken 清单与每个坏掉的技能"缺什么、怎么补"。**缺 key / 缺 VPS 时直接向用户要，或改用替代方案，不要假装能跑。**',
+    parameters: {
+      include: { type: 'string', description: '只检查这些技能（逗号分隔）；省略则检查全部红队技能' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args) {
+      const skills = ctx.get('skills')
+      if (skills === undefined || skills === null || typeof skills.list !== 'function') {
+        return JSON.stringify({
+          ok: false,
+          error: '技能注册表不可用：无法做技能自检。请改用系统注入的 <available_skills> 清单人工核对，并向用户索要缺失的 key/资源。',
+        }, null, 2)
+      }
+      let summaries = []
+      try {
+        summaries = await skills.list()
+      } catch (error) {
+        return JSON.stringify({ ok: false, error: '读取技能目录失败：' + (error && error.message ? error.message : String(error)) }, null, 2)
+      }
+      const only = splitList(args.include)
+      const wanted = summaries.filter((s) => only.length === 0 || only.includes(s.name))
+      const checked = []
+      for (const summary of wanted) {
+        let def
+        try { def = await skills.get(summary.name) } catch { def = undefined }
+        const body = def && typeof def.content === 'string' ? def.content : ''
+        const path = def && typeof def.path === 'string' ? def.path : (summary.resourceBase && summary.resourceBase.kind === 'directory' ? summary.resourceBase.path : null)
+        /* ① 技能文件本身 */ const problems = []
+        if (path !== null && !existsSync(path)) problems.push('技能文件不存在：' + path)
+        if (body === '') problems.push('技能正文为空（加载不出来）')
+        /* ② 必需环境变量：只认"带默认值"以外的读取 —— 有 os.environ.get("X", "默认") 也算可用 */
+        const envNeeded = new Set()
+        for (const m of body.matchAll(/process\.env\.([A-Z][A-Z0-9_]{2,})/g)) envNeeded.add(m[1])
+        for (const m of body.matchAll(/os\.environ(?:\.get)?[\[(]\s*["']([A-Z][A-Z0-9_]{2,})["']\s*(,)?/g)) {
+          if (m[2] === undefined) envNeeded.add(m[1])
+        }
+        for (const m of body.matchAll(/\$\{?([A-Z][A-Z0-9_]{2,})\}?/g)) {
+          if (['DSH_HOME', 'PATH', 'HOME', 'PWD', 'LANG', 'HTTP_PROXY', 'HTTPS_PROXY'].includes(m[1])) continue
+        }
+        const missingEnv = Array.from(envNeeded).filter((name) => !process.env[name])
+        for (const name of missingEnv) problems.push('缺环境变量 ' + name + '（export ' + name + '=... 后重启 dsh web）')
+        /* ③ 技能里写死的本机路径 / 二进制：抽 toolkit 与常见绝对路径，存在性可判定的才检查 */
+        const pathCandidates = new Set()
+        for (const m of body.matchAll(/(?:~|\$DSH_HOME|\/home\/[^\s"'`,)]+?)\/[\w./\u4e00-\u9fa5-]+/g)) {
+          const raw = m[0].replace(/[，。；、：)）]+$/, '')
+          if (!/\/(toolkit|bin|local)\//.test(raw)) continue
+          if (/[<>{}*]/.test(raw)) continue
+          pathCandidates.add(raw)
+        }
+        const missingPaths = []
+        for (const raw of pathCandidates) {
+          const full = expandPath(raw)
+          if (!existsSync(full)) missingPaths.push(raw)
+        }
+        if (missingPaths.length > 0) problems.push('引用的本机路径不存在：' + missingPaths.slice(0, 6).join('、'))
+        /* ④ 外部基础设施（VPS 等）：技能里出现 <你的VPS_IP> 占位符说明还没配 */
+        const needsUser = []
+        if (body.includes('<你的VPS_IP>')) needsUser.push('反弹 Shell / 载荷投递用的 VPS 地址（技能里是占位符 <你的VPS_IP>）')
+        if (missingEnv.length > 0) needsUser.push('环境变量：' + missingEnv.join('、'))
+        checked.push({
+          name: summary.name,
+          title: summary.description,
+          path,
+          status: problems.length === 0 ? 'available' : 'broken',
+          problems,
+          needs_user: needsUser,
+        })
+      }
+      const broken = checked.filter((s) => s.status === 'broken')
+      const available = checked.filter((s) => s.status === 'available')
+      /* 工具箱现状：让用户一眼看到"本机到底有什么" */
+      const toolkit = expandPath('$DSH_HOME/redteam/toolkit')
+      let toolkitEntries = []
+      try {
+        if (existsSync(toolkit)) {
+          const { readdirSync } = await import('node:fs')
+          toolkitEntries = readdirSync(toolkit).slice(0, 60)
+        }
+      } catch { /* 忽略 */ }
+      return JSON.stringify({
+        ok: broken.length === 0,
+        checked: checked.length,
+        available: available.map((s) => s.name),
+        broken: broken.map((s) => ({ name: s.name, problems: s.problems, needs_user: s.needs_user })),
+        toolkit: { dir: toolkit, exists: existsSync(toolkit), entries: toolkitEntries },
+        skills_root_hint: '技能来自 DSH 原生注册表：本插件自带 + $DSH_HOME/skills + 项目根 + 各插件注册的根。',
+        next: broken.length === 0
+          ? '全部可用，可以开工。'
+          : '把 broken 里 needs_user 的每一项**一次性列给用户**（要什么、为什么、给到哪），补齐后再开工；补不齐就对用户说明哪部分能力降级、并给替代方案（例如 FOFA 不可用 → crt.sh / 被动 DNS / subfinder；没有 VPS → 先做不需要落地的成果）。',
+      }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_agent_slot',
+    description: '【主会话派活前后用】执行智能体的并发闸门：同一靶标**最多同时 3 个**在跑（可用 REDTEAM_MAX_AGENTS 配置）。action=status 看还剩几个名额与谁在跑；action=acquire 占一个名额（满了会直接拒绝，**不要重试硬塞**）；action=release 释放（子智能体结束时服务端也会自动释放）。',
+    parameters: {
+      action: { type: 'string', required: true, enum: ['status', 'acquire', 'release'], description: 'status 查看 / acquire 占用 / release 释放' },
+      label: { type: 'string', description: 'acquire 时的任务标签，例如「信息收集：主域与 C 段」' },
+      key: { type: 'string', description: 'release 时指定要释放的键（省略则释放最早的一个预留）' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const { rootId, sessionId } = bindingKeyOf(exec)
+      const owner = rootId ?? sessionId
+      if (owner === undefined) {
+        return JSON.stringify({ ok: false, error: '取不到会话 id：无法统计并发（请确认工具调用带着 agent 上下文）。' }, null, 2)
+      }
+      const live = await liveRunningChildren(ctx, owner)
+      const reserved = reservationList(owner)
+      /* 注册表里 running 的子会话已经包含正在跑的；预留是"刚占位还没出现在注册表"的那部分，
+         两者取较大值，避免重复计数又不会漏计 */
+      const used = Math.max(live.running, reserved.length)
+      const free = Math.max(MAX_AGENTS - used, 0)
+      const base = {
+        ok: true, max: MAX_AGENTS, used, free,
+        running_from_registry: live.running,
+        running_labels: live.running_labels ?? [],
+        reservations: reserved,
+        registry_available: live.available,
+        registry_note: live.available ? undefined : live.error,
+      }
+      if (args.action === 'status') {
+        return JSON.stringify(Object.assign(base, {
+          hint: free === 0
+            ? '名额已满：等现有智能体回报后再派（每次只派一个、按顺序推进是最稳的节奏）。'
+            : '还有 ' + free + ' 个名额。默认一个一个派；只有确实互不依赖的活才并行。',
+        }), null, 2)
+      }
+      if (args.action === 'acquire') {
+        if (free <= 0) {
+          return JSON.stringify(Object.assign(base, {
+            ok: false,
+            error: '并发已满（最多 ' + MAX_AGENTS + ' 个）：现在不能派新智能体。先等当前的在跑智能体回报，或先 release 掉已经结束的。',
+          }), null, 2)
+        }
+        const key = (typeof args.label === 'string' && args.label.trim() !== '' ? args.label.trim() : 'slot') + '#' + Date.now()
+        addReservation(owner, key)
+        return JSON.stringify(Object.assign(base, { slot: key, used: used + 1, free: Math.max(MAX_AGENTS - used - 1, 0) }, {
+          hint: '已占位（' + key + '）。**派完之后要记得**：子智能体结束会自动释放；若你派活失败（比如工具报错），手动 redteam_agent_slot action=release key=' + key + ' 把它放掉。',
+        }), null, 2)
+      }
+      const dropped = dropReservation(owner, typeof args.key === 'string' && args.key.trim() !== '' ? args.key.trim() : undefined)
+      return JSON.stringify(Object.assign(base, { ok: true, released: dropped, used: Math.max(used - (dropped ? 1 : 0), 0) }), null, 2)
     },
   }))
 
@@ -107,6 +526,8 @@ export function apply(ctx) {
       primary_name: { type: 'string', description: '主域名/主机名' },
       provenance: { type: 'string', required: true, enum: ['passive', 'active'], description: '本条发现的来源：被动或主动' },
       tool: { type: 'string', description: '数据源或工具名，例如 crt.sh / nmap / nuclei / curl' },
+      discovered_at: { type: 'string', description: '【可选】这条资产的发现时间（ISO，如 2026-09-17T09:30:00Z）。不填则按"第一次入库的时刻"自动记录；数据源给出历史首次出现时间时传进来更准。**重复采集不会覆盖它**。' },
+      first_seen: { type: 'string', description: '【可选】数据源/工具报告的首次出现时间（与发现时间分开记）' },
       names: {
         type: 'array',
         description: '该资产关联的域名/证书名',
@@ -163,10 +584,20 @@ export function apply(ctx) {
         ip: args.ip, state: args.state, primary_name: args.primary_name,
         provenance: args.provenance, tool: args.tool,
         names: args.names, ports: args.ports,
+        /* 发现时间：不传则由服务端按"第一次入库的时刻"自动记录；
+           数据源能给历史时间（FOFA 的 first_seen 等）就传进来，报告时间线更准 */
+        discovered_at: args.discovered_at,
+        first_seen: args.first_seen,
       }
       const result = store.importBundle(id, { scan: { tool: args.tool, argv: ['redteam_asset_add'] }, assets: [asset] })
       const written = store.listAssets(id, { ip: args.ip, limit: 1 }).items[0]
-      return JSON.stringify({ ok: true, engagement: id, counts: result.counts, asset: written ? compactAsset(written) : null }, null, 2)
+      return JSON.stringify({
+        ok: true, engagement: id, counts: result.counts,
+        asset: written ? compactAsset(written) : null,
+        discovered_at: written ? written.discovered_at : null,
+        hint: '本条资产的发现时间已记为 ' + (written && written.discovered_at ? written.discovered_at : '(未知)')
+          + '；重复采集只刷新 last_seen，不会改动发现时间。',
+      }, null, 2)
     },
   }))
 
@@ -340,6 +771,7 @@ export function apply(ctx) {
     description: '记录一条漏洞发现（漏洞检测角色）。带 cve 时按 (asset_id, cve, target) 幂等更新。severity：critical|high|medium|low|info；status：candidate（待验证）|confirmed（已验证）|false-positive|exploited|fixed。必须附证据（请求/响应片段、复现命令、证据文件路径）。',
     parameters: {
       engagement: { type: 'string' },
+      agent: AGENT_PARAM,
       asset_id: { type: 'number', description: '资产 id（来自 redteam_asset_query）' },
       cve: { type: 'string', description: 'CVE / CNVD 编号（无编号可省略）' },
       title: { type: 'string', required: true, description: '漏洞标题' },
@@ -355,7 +787,7 @@ export function apply(ctx) {
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
     async execute(args, exec) {
       const id = resolveEngagement(store, exec, args.engagement)
-      const result = store.addVuln(id, { ...args, engagement: undefined, found_by_agent: args.found_by_agent || 'vuln-scan' })
+      const result = store.addVuln(id, { ...args, engagement: undefined, agent: agentOf(args), found_by_agent: args.found_by_agent || args.agent || 'vuln-scan' })
       return JSON.stringify({ ok: true, engagement: id, ...result, stats: store.vulnStats(id) }, null, 2)
     },
   }))
@@ -409,6 +841,7 @@ export function apply(ctx) {
     description: '记录一条凭据（漏洞利用/内网渗透角色）。**必须把口令/密钥明文写进 secret_value**——面板要直接显示明文供随时复用；同时用 secret_ref 指向 runs/ 下的证据文件。注意：本库只在本机，禁止把库文件或导出内容提交到任何仓库。',
     parameters: {
       engagement: { type: 'string' },
+      agent: AGENT_PARAM,
       host: { type: 'string', required: true, description: '所属主机（IP 或域名）' },
       username: { type: 'string' },
       secret_type: { type: 'string', description: 'password | hash | key | token | connection-string，默认 password' },
@@ -424,7 +857,7 @@ export function apply(ctx) {
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
     async execute(args, exec) {
       const id = resolveEngagement(store, exec, args.engagement)
-      const result = store.addCredential(id, { ...args, engagement: undefined })
+      const result = store.addCredential(id, { ...args, engagement: undefined, agent: agentOf(args) })
       return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
     },
   }))
@@ -527,6 +960,7 @@ export function apply(ctx) {
     description: '登记一个已上线的 WebShell。**必须上传冰蝎马（behinder）或哥斯拉马（godzilla）的加密马**——用户在控制台要用对应客户端直连，一句话马/自研马/MemShell 用户连不上，不算可交付的入口。shell_type 只能填 godzilla | behinder；确实只能用其它形式时填 other 并在 note 里写清为什么。同一 url+pass_key 重复登记会合并刷新。登记后所有角色智能体都能复用它，不要重复打点。',
     parameters: {
       engagement: { type: 'string' },
+      agent: AGENT_PARAM,
       url: { type: 'string', required: true, description: 'WebShell 完整 URL' },
       shell_type: { type: 'string', description: 'godzilla（哥斯拉）| behinder（冰蝎）；其它形式才用 antsword/other 并说明原因' },
       pass_key: { type: 'string', description: '连接密码 / 密钥（冰蝎马写 pass，哥斯拉写 key）' },
@@ -539,7 +973,7 @@ export function apply(ctx) {
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
     async execute(args, exec) {
       const id = resolveEngagement(store, exec, args.engagement)
-      const result = store.addWebshell(id, { ...args, engagement: undefined, status: 'online' })
+      const result = store.addWebshell(id, { ...args, engagement: undefined, status: 'online', agent: agentOf(args) })
       return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
     },
   }))
@@ -583,6 +1017,7 @@ export function apply(ctx) {
     description: '登记一条内网隧道。**打进内网必须先用技能 suo5-tunnel 通过 WebShell/HTTP 建 socks5（kind=suo5）**；没有隧道就不要手搓内网探测脚本。listen 写本机可用地址（如 127.0.0.1:1080），reach 写它能到达的网段。登记后扫描器可直接 -socks5 <listen>。\n\n**红线：自己的 VPS / 自己配置的服务器不算隧道。** 只在你自己服务器上开的 socks5、frp 服务端、代理，没有碰到目标，**不算跨越靶标边界、不算边界突破或内网突破**（这类填 entry_kind=self-only，会被标成"不算突破"）。**必须说清目标侧的那一端**：\n· target-outbound — 目标主动连出到我方（**自己服务器收目标反弹 shell**、目标上跑 frp/Stowaway 客户端）；\n· target-http — 经目标 WebShell/HTTP 通道（suo5、Neo-ReGeorg、reGeorg）；\n· target-agent — 经目标已控进程/会话转发（SSH -R 由目标发起等）。',
     parameters: {
       engagement: { type: 'string' },
+      agent: AGENT_PARAM,
       kind: { type: 'string', required: true, description: 'suo5（首选，走 WebShell/HTTP）| socks5 | ssh-r | frp | chisel | other' },
       listen: { type: 'string', required: true, description: '本地监听地址 host:port' },
       entry: { type: 'string', description: '入口：WebShell URL / 跳板机 / 命令' },
@@ -598,7 +1033,7 @@ export function apply(ctx) {
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
     async execute(args, exec) {
       const id = resolveEngagement(store, exec, args.engagement)
-      const result = store.addTunnel(id, { ...args, engagement: undefined, status: 'active' })
+      const result = store.addTunnel(id, { ...args, engagement: undefined, status: 'active', agent: agentOf(args) })
       return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
     },
   }))
@@ -840,12 +1275,15 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'redteam_chain_add',
-    description: '记录一个攻击链步骤（攻击链页面与报告按 seq 排序展示）。stage：recon（信息收集）| vuln（漏洞发现）| exploit（利用）| access（获得权限）| pivot（内网突破）| data（敏感数据）| other。',
+    description: '记录一个攻击链步骤。**报告里「这一步怎么来的」完全靠这条记录**：账号密码怎么来的、冰蝎马怎么上的、隧道怎么搭的，都要在这里用 `tool`（实际命令原文）+ `detail`（为什么这么做、线索从哪来）+ `result`（实际回显/结果）写清楚。攻击链页面与报告按 seq 排序展示。',
     parameters: {
       engagement: { type: 'string' },
-      stage: { type: 'string', required: true, enum: ['recon', 'vuln', 'exploit', 'access', 'pivot', 'data', 'other'] },
-      title: { type: 'string', required: true, description: '一句话描述这一步做了什么' },
-      detail: { type: 'string', description: '细节：payload、凭据来源、命令、影响范围' },
+      agent: AGENT_PARAM,
+      stage: { type: 'string', required: true, enum: ['recon', 'vuln', 'exploit', 'access', 'pivot', 'data', 'other'], description: '动作类型（兼容字段）：recon 信息收集 | vuln 漏洞发现 | exploit 利用 | access 获得权限 | pivot 内网突破 | data 敏感数据 | other。**阶段归属用 stage_code**，这个字段只用于老数据兜底。' },
+      title: { type: 'string', required: true, description: '一句话描述这一步做了什么，例如「通过后台模板上传点上传冰蝎马」「用 suo5 建 socks5 隧道」' },
+      detail: { type: 'string', description: '为什么这么做、线索从哪来，例如「登录页泄露版本 Coremail XT 5.0 → 匹配 CVE-2023-xxxx → 后台模板管理可上传」' },
+      tool: { type: 'string', description: '【报告复现的关键】**实际执行的命令原文**，例如 `nuclei -t CVE-2021-xxxx.yaml -u http://x`、`suo5-linux-amd64 -t http://x/shell.jsp -l 1080`、`sqlmap -u "http://x?id=1" --dump`。不写这条，报告里这一步就没法复现。' },
+      result: { type: 'string', description: '【报告复现的关键】实际结果/回显摘要，例如 `uid=0(root) gid=0(root)`、「返回 200，含 1.2 万条用户数据」、「后台管理员 tomcat 登录成功」' },
       asset_id: { type: 'number' },
       vuln_id: { type: 'number' },
       access_id: { type: 'number' },
@@ -861,8 +1299,13 @@ export function apply(ctx) {
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
     async execute(args, exec) {
       const id = resolveEngagement(store, exec, args.engagement)
-      const result = store.addChainStep(id, { ...args, engagement: undefined })
-      return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
+      const result = store.addChainStep(id, { ...args, engagement: undefined, agent: agentOf(args), recorded_by: args.recorded_by || args.agent })
+      /* 步骤落库后提醒两件事：报告要用的 tool/result 有没有写、这一步的得分有没有记 */
+      const hints = []
+      if (!args.tool) hints.push('这一步没写 `tool`（实际命令）：报告里"怎么做的"会变成空白，建议补一条步骤把命令写上。')
+      if (!args.result) hints.push('这一步没写 `result`（实际回显/结果）：报告复现时会缺"打没打通"的证据。')
+      if (result && result.score_hint) hints.push(result.score_hint)
+      return JSON.stringify({ ok: true, engagement: id, ...result, hints: hints.length > 0 ? hints : undefined }, null, 2)
     },
   }))
 
@@ -1007,6 +1450,9 @@ export function apply(ctx) {
       cve: { type: 'string', description: 'CVE / CNVD 编号，例如 CVE-2023-21839' },
       component: { type: 'string', description: '组件/产品名，例如 Weblogic、Shiro、泛微 OA、Nacos' },
       kind: { type: 'string', description: 'poc | exp | script | template | payload' },
+      category: { type: 'string', description: '按**归类**筛（可多值，逗号分隔）：rce | deserialization | file-upload | sqli | unauthorized | auth-bypass | weak-password | ssrf | xxe | path-traversal | info-leak | privesc | tunnel | other' },
+      engagement: { type: 'string', description: '按**来源靶标**筛（靶标 id 或名称关键词）：只看"在某个单位上验证过的"经验' },
+      asset_target: { type: 'string', description: '按**发现资产**筛（IP / 域名 / URL 片段）' },
       language: { type: 'string', description: 'python | go | java | bash | http | nuclei | js | php' },
       source: { type: 'string', description: 'web（互联网）| self（手搓）| manual（人工）| nuclei-template' },
       verified: { type: 'boolean', description: 'true 只看实测验证过的（优先用这些）' },
@@ -1025,17 +1471,25 @@ export function apply(ctx) {
       const hit = items.length > 0 || (tpl.items || []).length > 0
       return JSON.stringify({
         ok: true,
-        knowledge_base: { total: stats.total, verified: stats.verified, reused: stats.reused },
+        knowledge_base: {
+          total: stats.total, verified: stats.verified, reused: stats.reused,
+          /* 归类概览：让智能体知道"哪类武器已经攒了多少"，缺哪类心里有数 */
+          by_category: (stats.byCategory || []).filter((c) => c.n > 0).map((c) => c.name + ' ' + c.n + '（已验证 ' + c.verified + '）'),
+          by_engagement: (stats.byEngagement || []).slice(0, 10).map((e) => e.engagement + ' ' + e.n),
+        },
         local_templates: { dir: tplStats.dir, total: tplStats.total, cve_templates: tplStats.cve, matched: (tpl.items || []).length },
         count: items.length,
         hint: hit
           ? '命中现成的：知识库条目用 redteam_poc_get 取全文；nuclei 模板直接用 `nuclei -t <模板相对路径>`。用完 redteam_poc_use 记一次复用。'
-          : '知识库与本机模板库都没有：去互联网搜索（web_search / GitHub / ExploitDB / 厂商公告）或自己手搓，验证有效后务必 redteam_poc_add 回填知识库。',
+          : '知识库与本机模板库都没有：去互联网搜索（web_search / GitHub / ExploitDB / 厂商公告）或自己手搓，验证有效后务必 redteam_poc_add 回填知识库（带 category + engagement + asset_target + verified_note）。',
         templates: (tpl.items || []).map((t) => ({ path: t.path, name: t.name, severity: t.severity, tags: t.tags })),
         items: items.map((x) => ({
-          id: x.id, code: x.code, title: x.title, kind: x.kind, cve: x.cve, component: x.component,
+          id: x.id, code: x.code, title: x.title, kind: x.kind, category: x.category, cve: x.cve, component: x.component,
           versions: x.versions, language: x.language, source: x.source, source_url: x.source_url,
           verified: x.verified === 1, verified_note: x.verified_note, hit_count: x.hit_count,
+          /* 来源溯源：哪条经验、哪个靶标、哪台资产、什么时候建的 */
+          engagement: x.engagement_name || x.engagement_id || null, asset_target: x.asset_target || null,
+          found_by_agent: x.found_by_agent || null, created_at: x.created_at,
           tags: x.tags, usage: x.usage, path: x.path, has_content: x.has_content === 1,
         })),
       }, null, 2)
@@ -1059,10 +1513,11 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'redteam_poc_add',
-    description: '把**通用可复用**的 POC/EXP 落进知识库（跨靶标共享）。从互联网拿到的、自己手搓的、或已经调通验证过的都往这里放——只收录真正有效的，并写清来源与验证证据。判断标准：**换个目标还能用**的进知识库；只对本次靶标有效的脚本走 redteam_attack_file_add（攻击文件页）。同名（同一 code）会合并刷新，可用于更新版本。',
+    description: '把**通用可复用**的 POC/EXP 落进知识库（跨靶标共享）。从互联网拿到的、自己手搓的、或已经调通验证过的都往这里放——只收录真正有效的，并写清来源与验证证据。判断标准：**换个目标还能用**的进知识库；只对本次靶标有效的脚本走 redteam_attack_file_add（攻击文件页）。同名（同一 code）会合并刷新，可用于更新版本。\n\n**回填三件套（缺了面板里就没有归类、追溯不到来源）**：① `category` 归类；② `engagement` + `asset_target` —— 这条知识是在哪个靶标、哪台资产上发现并验证的；③ `verified` + `verified_note` 验证证据。',
     parameters: {
       title: { type: 'string', required: true, description: '标题：组件 + 漏洞名/编号，例如「Weblogic T3 反序列化 CVE-2023-21839」' },
       kind: { type: 'string', description: 'poc（验证）| exp（利用）| script | template | payload' },
+      category: { type: 'string', description: '【归类，建议必填】rce 远程命令执行 | deserialization 反序列化 | file-upload 文件上传 getshell | sqli SQL 注入 | unauthorized 未授权访问 | auth-bypass 认证绕过/越权 | weak-password 弱口令 | ssrf | xxe | path-traversal 目录穿越/任意文件读 | info-leak 信息泄露 | privesc 提权/横向 | tunnel 隧道/代理 | other 其它' },
       cve: { type: 'string', description: 'CVE / CNVD 编号' },
       component: { type: 'string', description: '组件/产品名（便于按组件检索）' },
       versions: { type: 'string', description: '影响版本范围' },
@@ -1077,14 +1532,33 @@ export function apply(ctx) {
       filename: { type: 'string', description: '正文落盘文件名，默认按语言给（poc.py / poc.sh / poc.yaml…）' },
       verified: { type: 'boolean', description: '是否已实测验证（**只有在真实目标上验证过的才填 true**）' },
       verified_note: { type: 'string', description: '验证证据：在哪台目标、什么回显/结果、是否需要认证' },
+      engagement: { type: 'string', description: '【来源靶标】这条知识是在哪个靶标上发现/验证的（填靶标 id 或单位名称）' },
+      asset_target: { type: 'string', description: '【发现资产】具体是在哪台资产/哪个目标上验证成功的，例如 10.1.2.3:8080 或 http://oa.demo.com' },
+      found_by_agent: { type: 'string', description: '发现它的角色 code（recon / assess / vuln-scan / exploit / internal）' },
       tags: { type: 'string', description: '逗号分隔标签，例如「java,反序列化,rce」' },
       created_by: { type: 'string', description: '哪个角色/智能体沉淀的' },
     },
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
     async execute(args) {
-      const r = store.savePoc(args)
-      return JSON.stringify({ ok: true, created: r.created, code: r.poc.code, path: r.path,
-        verified: r.poc.verified === 1, hint: '已进知识库，后续任何靶标的智能体 redteam_poc_search 都能直接命中。' }, null, 2)
+      /* engagement 这个参数名在本工具里表示"来源靶标"，不是"作用在哪个靶标"，
+         所以不能走 resolveEngagement；只做名称补全，把 id 与中文名都记下来便于面板归类。 */
+      const payload = Object.assign({}, args)
+      if (typeof args.engagement === 'string' && args.engagement.trim() !== '') {
+        const wanted = args.engagement.trim()
+        const hit = store.listEngagements().find((e) => e.id === wanted || String(e.name) === wanted || String(e.name).includes(wanted))
+        payload.engagement_id = hit ? hit.id : wanted
+        payload.engagement_name = hit ? hit.name : wanted
+      }
+      const r = store.savePoc(payload)
+      const stats = store.pocStats()
+      return JSON.stringify({
+        ok: true, created: r.created, code: r.poc.code, path: r.path,
+        category: r.poc.category, engagement: r.poc.engagement_name || r.poc.engagement_id || null,
+        asset_target: r.poc.asset_target || null, created_at: r.poc.created_at,
+        verified: r.poc.verified === 1,
+        hint: '已进知识库（归类：' + (r.poc.category || 'other') + '，建立时间：' + r.poc.created_at + '），'
+          + '后续任何靶标的智能体 redteam_poc_search 都能直接命中；知识库共 ' + stats.total + ' 条。',
+      }, null, 2)
     },
   }))
 
@@ -1141,6 +1615,33 @@ export function apply(ctx) {
     async execute(args) {
       const r = store.markPocUsed(args.id !== undefined ? args.id : args.code, args.used_on)
       return JSON.stringify(r, null, 2)
+    },
+  }))
+
+  /* ================================================================== 资产发现时间线 */
+
+  ctx.tools.register(defineTool({
+    name: 'redteam_asset_timeline',
+    description: '资产「发现时间」视图：按天聚合"哪天收了多少资产"（区分内网/外网），并列出最近发现的资产。用于回答"这个资产是什么时候发现的"、检查信息收集有没有断层，也用于本轮收集的收口核对。',
+    parameters: {
+      engagement: { type: 'string' },
+      limit: { type: 'number', description: '最近资产条数，默认 50' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      const data = store.discoveryTimeline(id, { limit: args.limit })
+      return JSON.stringify({
+        ok: true, engagement: id,
+        span: data.span,
+        days: data.days,
+        recent: data.recent.map((a) => ({
+          id: a.id, ip: a.ip, scope: a.scope, state: a.state, name: a.primary_name,
+          discovered_at: a.discovered_at, last_seen: a.last_seen, open_ports: a.open_ports, priority: a.priority,
+        })),
+        hint: '发现时间 = 这条资产**第一次进入本库**的时刻；重复采集只刷新 last_seen。'
+          + '报告附录与资产测绘页都按它排序。',
+      }, null, 2)
     },
   }))
 }

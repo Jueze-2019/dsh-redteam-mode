@@ -361,8 +361,25 @@ window.__ModuleLoader__.load({
 .rt-rep-req{margin-top:7px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;overflow:hidden}
 .rt-rep-req-head{display:flex;align-items:center;gap:7px;padding:4px 8px;font-size:11.5px;font-weight:600;
   background:var(--dsw-alias-bg-layer-1);border-bottom:1px solid var(--dsw-alias-border-l1)}
-.rt-rep-http{margin:0;padding:8px 10px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.6;
-  white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto;background:var(--dsw-alias-bg-base)}
+.rt-rep-http{margin:0;padding:8px 10px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto;background:var(--dsw-alias-bg-base)}
+/* ── 报告里的「这一步怎么来的」：动作步骤 / 命令 / 凭据 / 隧道 ───────────── */
+.rt-rep-trace{margin-top:8px;border:1px solid var(--dsw-alias-border-l1);border-radius:7px;padding:8px 10px;
+  background:var(--dsw-alias-bg-base)}
+.rt-rep-trace-head{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+.rt-rep-trace-title{font-weight:600;font-size:12.5px}
+.rt-rep-trace-how{font-size:12px;color:var(--dsw-alias-label-secondary);margin-bottom:6px}
+.rt-rep-step{border-left:2px solid var(--dsw-alias-border-l1);padding:2px 0 6px 9px;margin-bottom:6px}
+.rt-rep-step-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.rt-rep-step-no{width:17px;height:17px;border-radius:50%;background:var(--dsw-alias-brand-primary);color:#fff;
+  font-size:10.5px;display:flex;align-items:center;justify-content:center;flex:none}
+.rt-rep-step-title{font-weight:600;font-size:12.5px}
+.rt-rep-step-detail{font-size:12px;color:var(--dsw-alias-label-secondary);margin-top:2px}
+.rt-rep-step-cmd{font-size:11.5px;margin-top:4px;display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap}
+.rt-rep-step-cmd .rt-mono{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);
+  border-radius:5px;padding:2px 6px;word-break:break-all}
+.rt-rep-step-result{font-size:11.5px;margin-top:3px;word-break:break-word}
+.rt-rep-src{margin-top:6px;padding-top:6px;border-top:1px dashed var(--dsw-alias-border-l1)}
+.rt-rep-src-title{font-weight:600;font-size:12px;margin-bottom:3px}
 /* ── 全链路攻击路径图 ─────────────────────────────────────────────── */
 .rt-ap{padding:10px 12px 18px;overflow:auto}
 .rt-ap-stage{margin-bottom:2px}
@@ -453,6 +470,18 @@ window.__ModuleLoader__.load({
 .rt-rep-body{padding-left:6px}
 /* ── 知识库（POC/EXP） ──────────────────────────────────────────── */
 .rt-kb-filter{display:flex;align-items:center;gap:7px;padding:8px 10px;border-bottom:1px solid var(--dsw-alias-border-l1)}
+/* 知识库归类总览：一行标签，点一下按该类筛选 */
+.rt-kb-cats{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;border-bottom:1px solid var(--dsw-alias-border-l1)}
+/* 知识库分组标题（按归类分组时每组一条） */
+.rt-kb-cat{display:flex;align-items:center;gap:7px;padding:7px 10px;background:var(--dsw-alias-bg-layer-2);
+  border-bottom:1px solid var(--dsw-alias-border-l1);position:sticky;top:0;z-index:1}
+.rt-kb-cat-name{font-weight:600;font-size:12.5px}
+/* 版本 / 更新弹窗 */
+.rt-modal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center}
+.rt-modal-box{width:min(560px,92vw);max-height:80vh;overflow:auto;background:var(--dsw-alias-bg-layer-1);
+  border:1px solid var(--dsw-alias-border-l1);border-radius:10px;padding:14px 16px;font-size:12.5px;line-height:1.7;
+  box-shadow:0 18px 48px rgba(0,0,0,.35);color:var(--dsw-alias-label-primary)}
+.rt-modal-box .rt-kv b{min-width:76px}
 .rt-kb-check{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--dsw-alias-label-secondary);white-space:nowrap;cursor:pointer}
 .rt-kb{border:1px solid var(--dsw-alias-border-l1);border-radius:7px;margin:0 0 8px;overflow:hidden;
   background:var(--dsw-alias-bg-layer-2)}
@@ -516,7 +545,27 @@ window.__ModuleLoader__.load({
       return ui
     }
 
+    /* 知识库归类（与 core.js 的 POC_CATEGORIES 一致；面板按它分组） */
+    const POC_CAT_NAME = {
+      rce: '远程命令执行', deserialization: '反序列化', 'file-upload': '文件上传 getshell',
+      sqli: 'SQL 注入', unauthorized: '未授权访问', 'auth-bypass': '认证绕过 / 越权',
+      'weak-password': '弱口令 / 爆破', ssrf: 'SSRF', xxe: 'XXE',
+      'path-traversal': '目录穿越 / 任意文件读', 'info-leak': '信息泄露',
+      privesc: '提权 / 横向', tunnel: '隧道 / 代理', other: '其它',
+    }
+    const POC_CAT_ORDER = Object.keys(POC_CAT_NAME)
+    /* 角色 code → 中文（报告/知识库都要标"谁发现的"） */
+    const ROLE_LABEL = {
+      plan: '主会话（指挥）', recon: '信息收集', assess: '资产梳理',
+      'vuln-scan': '漏洞发现', exploit: '漏洞利用', internal: '内网渗透',
+    }
+
     const fmt = (s) => (s ? String(s).replace('T', ' ').slice(0, 16) : '—')
+    /** 发现时间在列表里只留「月-日 时:分」：整行宽度紧张，完整时间进悬浮提示 */
+    const fmtShort = (s) => {
+      const t = String(s || '').replace('T', ' ')
+      return t.length >= 16 ? t.slice(5, 16) : (t || '—')
+    }
     const provLabel = (p) => (p === 'passive' ? '被动' : p === 'active' ? '主动' : '未知')
 
     function ProvTag(props) {
@@ -714,6 +763,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'rt-spacer' }),
         h('button', { className: 'rt-btn', title: '重新拉取快照与当前视图数据', onClick: () => { if (onRefresh) onRefresh() } }, '刷新'),
         h('button', { className: 'rt-btn' + (view === 'list' ? ' rt-btn-primary' : ''), onClick: () => setView('list') }, '列表'),
+        h('button', { className: 'rt-btn' + (view === 'timeline' ? ' rt-btn-primary' : ''), title: '按发现时间看资产（什么时候发现、哪天收了多少）', onClick: () => setView('timeline') }, '发现时间'),
         h('button', { className: 'rt-btn' + (view === 'domain' ? ' rt-btn-primary' : ''), onClick: () => setView('domain') }, '域名'),
         h('button', { className: 'rt-btn' + (view === 'web' ? ' rt-btn-primary' : ''), onClick: () => setView('web') }, 'Web'),
         h('button', { className: 'rt-btn' + (view === 'graph' ? ' rt-btn-primary' : ''), onClick: () => setView('graph') }, '图谱'))
@@ -742,6 +792,7 @@ window.__ModuleLoader__.load({
         },
           h('option', { value: 'priority' }, '排序：易打性优先'),
           h('option', { value: 'todo' }, '排序：待测优先'),
+          h('option', { value: 'discovered' }, '排序：最近发现优先'),
           h('option', { value: 'ports' }, '排序：端口多优先'),
           h('option', { value: 'ip' }, '排序：按 IP')))
 
@@ -760,7 +811,7 @@ window.__ModuleLoader__.load({
         rowNodes.push(h('div', {
           key: 'r' + it.id, className: 'rt-row', onClick: () => toggleRow(it.id),
         },
-          h('span', { className: 'rt-mono', style: { display: 'flex', alignItems: 'baseline', gap: 4 } },
+          h('span', { className: 'rt-mono', style: { display: 'flex', alignItems: 'baseline', gap: 4, flexWrap: 'wrap' } },
             h('span', {
               className: 'rt-scope rt-scope-' + (it.scope === 'internal' ? 'internal' : 'external'),
             }, it.scope === 'internal' ? '内' : '外'),
@@ -771,7 +822,13 @@ window.__ModuleLoader__.load({
                 background: it.state === 'live' ? '#10b981' : '#94a3b8',
               },
             }),
-            h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis' } }, it.ip)),
+            h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis' } }, it.ip),
+            /* 发现时间挂在 IP 下面一行：IP 列宽度有限，不另开列（列宽一改整表要跟着调） */
+            h('span', {
+              style: { fontSize: 10.5, color: 'var(--dsw-alias-label-secondary)', whiteSpace: 'nowrap' },
+              title: '发现时间：' + (it.discovered_at ? fmt(it.discovered_at) : '未记录')
+                + (it.last_seen ? '\n最近采集：' + fmt(it.last_seen) : ''),
+            }, it.discovered_at ? fmtShort(it.discovered_at) : '发现时间未知')),
           h('span', null, h(PriTag, { p: it.priority, title: it.potential || '' })),
           h('span', null, h(TestTag, { s: it.test_status }),
             it.blocked_count ? h('span', { className: 'rt-tag', style: { color: '#ef4444', borderColor: '#ef444455', marginLeft: 4 } }, '封' + it.blocked_count) : null),
@@ -828,7 +885,15 @@ window.__ModuleLoader__.load({
                 all ? '收起全部 ▲' : '展开全部（端口 · 指纹 · 采集溯源 · 测试记录）▼'),
               all ? h('div', null,
                 h('div', { className: 'rt-kv' }, h('b', null, '主机名'), h('span', null, (d.names || []).map((n) => n.name).join(', ') || '—')),
-                h('div', { className: 'rt-kv' }, h('b', null, 'C 段'), h('span', null, d.segment_cidr + ' · 首见 ' + fmt(d.first_seen) + ' · 末见 ' + fmt(d.last_seen))),
+                h('div', { className: 'rt-kv' }, h('b', null, '发现时间'),
+                  h('span', { title: '本条资产第一次进入资产库的时刻（重复采集只刷新"最近采集"）' }, fmt(d.discovered_at)),
+                  h('b', { style: { minWidth: 0, marginLeft: 8 } }, '最近采集'), h('span', null, fmt(d.last_seen)),
+                  h('b', { style: { minWidth: 0, marginLeft: 8 } }, '数据源首见'), h('span', null, fmt(d.first_seen))),
+                h('div', { className: 'rt-kv' }, h('b', null, 'C 段'), h('span', null, d.segment_cidr)),
+                h('div', { className: 'rt-kv' }, h('b', null, '易打性'), h('span', null,
+                  (d.priority || '未评估') + (d.potential ? ' · 预期：' + d.potential : '')
+                  + (d.assess_reason ? ' · 依据：' + d.assess_reason : '')
+                  + (d.assessed_at ? '（' + fmt(d.assessed_at) + '）' : ''))),
                 h('div', { className: 'rt-kv' }, h('b', null, '来源'), h('span', null,
                   '被动端口 ' + (d.passive || 0) + ' · 主动端口 ' + (d.active || 0))),
                 h('div', { style: { margin: '6px 0 3px', fontWeight: 600 } }, '开放端口 / 服务'),
@@ -904,6 +969,8 @@ window.__ModuleLoader__.load({
       if (view === 'domain') pane = domainPane
       else if (view === 'web') pane = webPane
       else if (view === 'graph') pane = graphPane
+      /* 发现时间视图自带滚动容器，直接放进 rt-main 的 flex 里 */
+      else if (view === 'timeline') pane = h(DiscoveryView, { engagement: eng, refreshKey: refreshKey })
 
       return h('div', { className: 'rt-split' }, side,
         h('div', { className: 'rt-main' }, toolbar,
@@ -913,6 +980,59 @@ window.__ModuleLoader__.load({
     }
 
     /* ---------------------------------------------------------- 图谱画布 */
+    /**
+     * 发现时间视图：一天一行（收了多少资产、内外网各多少），点某天看当天发现的资产。
+     * 「这条资产什么时候发现的」在列表里只有一个小字，这里给完整的时间线。
+     */
+    function DiscoveryView(props) {
+      const eng = props.engagement
+      const refreshKey = props.refreshKey || 0
+      const [data, setData] = React.useState(null)
+      const [err, setErr] = React.useState(null)
+      const [day, setDay] = React.useState('')
+      React.useEffect(() => {
+        if (!eng) return
+        setData(null)
+        api({ op: 'discoveryTimeline', engagement: eng, limit: 200 })
+          .then((r) => { if (!r || r.ok === false) setErr((r && r.error) || '加载失败'); else { setErr(null); setData(r) } },
+            (e) => setErr(String((e && e.message) || e)))
+      }, [eng, refreshKey])
+      if (err) return h('div', { className: 'rt-pane' }, h('div', { className: 'rt-err' }, err))
+      if (!data) return h('div', { className: 'rt-empty' }, '加载中…')
+      const recent = (data.recent || []).filter((a) => day === '' || String(a.discovered_at || '').slice(0, 10) === day)
+      return h('div', { className: 'rt-pane', style: { flex: 1, minHeight: 0 } },
+        h('div', { className: 'rt-card' },
+          h('h4', null, '资产发现时间线'),
+          h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)' } },
+            '共 ' + ((data.span && data.span.total) || 0) + ' 台 · 最早 '
+            + (data.span && data.span.first ? fmt(data.span.first) : '—')
+            + ' · 最近 ' + (data.span && data.span.last ? fmt(data.span.last) : '—')
+            + '（发现时间 = 第一次进入资产库的时刻；重复采集只刷新"最近采集"）')),
+        (data.days || []).length === 0 ? h('div', { className: 'rt-empty' }, '还没有资产。') : null,
+        h('div', { className: 'rt-card' },
+          h('h4', null, '按天统计', day ? h('span', { className: 'rt-tag', style: { marginLeft: 6, cursor: 'pointer' }, onClick: () => setDay('') }, '清除筛选：' + day) : null),
+          h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 8 } },
+            (data.days || []).map((d) => h('div', {
+              key: d.day, className: 'rt-seg' + (day === d.day ? ' on' : ''), style: { marginBottom: 0, cursor: 'pointer' },
+              onClick: () => setDay(day === d.day ? '' : d.day),
+              title: d.day + '：新增 ' + d.assets + ' 台（内网 ' + d.internal + ' / 外网 ' + d.external + '）',
+            },
+              h('div', { className: 'rt-seg-cidr' }, d.day),
+              h('div', { className: 'rt-seg-meta' }, d.assets + ' 台 · 内 ' + d.internal + ' / 外 ' + d.external))))),
+        h('div', { className: 'rt-card' },
+          h('h4', null, day ? day + ' 发现的资产（' + recent.length + '）' : '最近发现的资产（' + recent.length + '）'),
+          recent.length === 0 ? h('div', { className: 'rt-empty' }, '这一天没有新增资产。') : null,
+          recent.map((a) => h('div', { key: a.id, className: 'rt-kv' },
+            h('b', { className: 'rt-mono', style: { minWidth: 110 } },
+              h('span', { className: 'rt-scope rt-scope-' + (a.scope === 'internal' ? 'internal' : 'external'), style: { marginRight: 4 } },
+                a.scope === 'internal' ? '内' : '外'),
+              a.ip),
+            h('span', { style: { minWidth: 132, fontSize: 11.5, color: 'var(--dsw-alias-label-secondary)' } },
+              a.discovered_at ? fmt(a.discovered_at) : '时间未知'),
+            h('span', { style: { flex: 1 } }, (a.primary_name || '—') + (a.open_ports ? ' · ' + a.open_ports + ' 端口' : '')),
+            h(PriTag, { p: a.priority })))))
+    }
+
     function GraphCanvas(props) {
       const ref = React.useRef(null)
       React.useEffect(() => {
@@ -1820,6 +1940,74 @@ window.__ModuleLoader__.load({
           h('span', null, [x.vuln.cve, x.vuln.title].filter(Boolean).join(' '))) : null,
         x.evidence ? h('div', { className: 'rt-rep-meta' }, h('b', null, '结果 '),
           h('span', null, String(x.evidence).replace(/\n+/g, ' '))) : null,
+        x.recorded_at ? h('div', { className: 'rt-rep-meta' }, h('b', null, '取得时间 '),
+          h('span', null, fmt(x.recorded_at) + (x.recorded_by ? '（' + (ROLE_LABEL[x.recorded_by] || x.recorded_by) + '）' : ''))) : null,
+        /* ── 这一步怎么来的：动作步骤（含实际命令与回显）+ 凭据 + 隧道 + WebShell ─────
+           报告的交付价值全在这块：账号密码怎么来的、隧道怎么搭的，用户照着就能复现。 */
+        h('div', { className: 'rt-rep-trace' },
+          h('div', { className: 'rt-rep-trace-head' },
+            h('span', { className: 'rt-rep-trace-title' }, '这一步怎么来的'),
+            (x.steps || []).length ? h('span', { className: 'rt-tag' }, (x.steps || []).length + ' 个动作') : null,
+            x.incomplete ? h('span', { className: 'rt-tag rt-tag-warn' }, '复现链不完整') : h('span', { className: 'rt-tag rt-tag-live' }, '可复现')),
+          x.how ? h('div', { className: 'rt-rep-trace-how' }, x.how) : null,
+          (x.steps || []).length === 0
+            ? h('div', { className: 'rt-rep-missing' },
+                '⚠️ 没有关联的攻击步骤：说不清这一步是怎么做的。请用 redteam_chain_add 补上动作（title / detail / tool / result），记分时也可以带 point_code + evidence 一次完成。')
+            : (x.steps || []).map((s, si) => h('div', { key: 's' + s.id, className: 'rt-rep-step' },
+                h('div', { className: 'rt-rep-step-head' },
+                  h('span', { className: 'rt-rep-step-no' }, String(si + 1)),
+                  h('span', { className: 'rt-rep-step-title' }, s.title || '(未命名动作)'),
+                  s.agent ? h('span', { className: 'rt-tag' }, ROLE_LABEL[s.agent] || s.agent) : null,
+                  s.stage_code ? h('span', { className: 'rt-tag' }, s.stage_code) : null,
+                  s.inferred ? h('span', { className: 'rt-tag' }, '按同资产推断') : null,
+                  h('div', { className: 'rt-spacer' }),
+                  s.recorded_at ? h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)' } }, fmt(s.recorded_at)) : null),
+                s.detail ? h('div', { className: 'rt-rep-step-detail' }, s.detail) : null,
+                h('div', { className: 'rt-rep-step-cmd' },
+                  h('b', null, '执行 '),
+                  s.tool
+                    ? h('span', { className: 'rt-mono' }, s.tool)
+                    : h('span', { style: { color: 'var(--dsw-alias-state-warn-primary, #f59e0b)' } }, '未记录实际命令（redteam_chain_add 的 tool）')),
+                s.tool ? h('div', { style: { marginTop: 3 } },
+                  h('button', {
+                    className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
+                    onClick: () => copy(String(s.tool), '第 ' + (si + 1) + ' 步命令'),
+                  }, '复制命令')) : null,
+                s.result ? h('div', { className: 'rt-rep-step-result' }, h('b', null, '结果 '), String(s.result).replace(/\n+/g, ' ')) : null,
+                s.evidence_ref ? h('div', { className: 'rt-rep-step-result' }, h('b', null, '证据 '), h('span', { className: 'rt-mono' }, s.evidence_ref)) : null)),
+          /* 账号密码怎么来的：凭据的来源 + 取得方式 */
+          (x.credentials || []).length
+            ? h('div', { className: 'rt-rep-src' },
+                h('div', { className: 'rt-rep-src-title' }, '拿到的凭据（来源可追溯）'),
+                (x.credentials || []).map((c) => h('div', { key: 'c' + c.id, className: 'rt-kv' },
+                  h('b', { className: 'rt-mono', style: { minWidth: 120 } }, c.host || '—'),
+                  h('span', null, (c.username || '(无用户名)') + ' / ' + (c.secret_type || 'password')
+                    + (c.privilege ? ' · 权限 ' + c.privilege : '')
+                    + ' · 来源 ' + (c.source || '未标注')
+                    + (c.tool ? ' · 取得方式 ' + String(c.tool).replace(/\n+/g, ' ').slice(0, 160) : '')))))
+            : null,
+          /* 隧道怎么搭的 */
+          (x.tunnels || []).length
+            ? h('div', { className: 'rt-rep-src' },
+                h('div', { className: 'rt-rep-src-title' }, '用到的隧道 / 通道'),
+                (x.tunnels || []).map((t) => h('div', { key: 't' + t.id, className: 'rt-kv' },
+                  h('b', { className: 'rt-mono', style: { minWidth: 120 } }, (t.kind || 'socks5') + ' ' + (t.listen || '')),
+                  h('span', null, '入口 ' + (t.entry || '未登记')
+                    + (t.reach ? ' · 可达 ' + t.reach : '')
+                    + ' · 目标侧 ' + (t.entry_kind || '未声明')
+                    + (t.legit === false ? ' · ⚠️ 不算跨越靶标边界' : '')
+                    + (t.status ? ' · ' + t.status : '')
+                    + (t.command ? ' · 命令 ' + String(t.command).replace(/\n+/g, ' ').slice(0, 160) : '')))))
+            : null,
+          (x.webshells || []).length
+            ? h('div', { className: 'rt-rep-src' },
+                h('div', { className: 'rt-rep-src-title' }, '用到的 WebShell'),
+                (x.webshells || []).map((w) => h('div', { key: 'w' + w.id, className: 'rt-kv' },
+                  h('b', { className: 'rt-mono', style: { minWidth: 120 } }, w.shell_type || 'shell'),
+                  h('span', null, (w.url || '') + (w.pass_key ? ' · 口令/密钥 ' + w.pass_key : '')
+                    + (w.privilege ? ' · 权限 ' + w.privilege : '') + (w.status ? ' · ' + w.status : '')))))
+            : null,
+          (x.gaps || []).length ? h('div', { className: 'rt-rep-missing' }, '⚠️ 复现缺口：' + x.gaps.join('；')) : null),
         x.requests.length === 0
           ? h('div', { className: 'rt-rep-missing' }, '⚠️ 这一项没有原始请求记录，无法直接复现 —— 请用 redteam_http_evidence_add 补上')
           : x.requests.map((r, ri) => h('div', { key: 'q' + ri, className: 'rt-rep-req' },
@@ -1844,6 +2032,10 @@ window.__ModuleLoader__.load({
           summary ? h('span', { className: 'rt-tag' }, summary.count + ' 项得分') : null,
           summary ? h('span', { className: 'rt-tag' + (summary.missingRequests ? '' : ' rt-tag-live') },
             summary.withRequests + '/' + summary.count + ' 项带原始请求') : null,
+          summary ? h('span', {
+            className: 'rt-tag' + (summary.incomplete ? ' rt-tag-warn' : ' rt-tag-live'),
+            title: '复现链是否完整：有攻击步骤、写了实际命令、关联了漏洞/凭据/隧道',
+          }, '可复现 ' + (summary.count - (summary.incomplete || 0)) + '/' + summary.count) : null,
           h('div', { className: 'rt-spacer' }),
           h('button', { className: 'rt-btn', disabled: busy || !mdText, onClick: () => copy(mdText, '整份报告') }, '复制全文'),
           h('button', { className: 'rt-btn', disabled: busy || !mdText, onClick: () => download(mdText, (data && data.target) || eng) }, '下载 .md'),
@@ -1981,13 +2173,24 @@ window.__ModuleLoader__.load({
       const [msg, setMsg] = React.useState(null)
       const [q, setQ] = React.useState('')
       const [kind, setKind] = React.useState('')
+      const [category, setCategory] = React.useState('')
+      const [engagement, setEngagement] = React.useState('')
+      const [assetTarget, setAssetTarget] = React.useState('')
+      const [grouped, setGrouped] = React.useState(true)
       const [verifiedOnly, setVerifiedOnly] = React.useState(false)
       const [openId, setOpenId] = React.useState(null)
       const [detail, setDetail] = React.useState(null)
       const [detailBusy, setDetailBusy] = React.useState(false)
 
       const query = (over) => {
-        const params = Object.assign({ q: q.trim() || undefined, kind: kind || undefined, verified: verifiedOnly || undefined }, over || {})
+        const params = Object.assign({
+          q: q.trim() || undefined,
+          kind: kind || undefined,
+          category: category || undefined,
+          engagement: engagement || undefined,
+          asset_target: assetTarget.trim() || undefined,
+          verified: verifiedOnly || undefined,
+        }, over || {})
         setBusy(true); setMsg(null)
         api(Object.assign({ op: 'pocSearch' }, params)).then((r) => {
           setBusy(false)
@@ -1996,7 +2199,7 @@ window.__ModuleLoader__.load({
         }, (e) => { setBusy(false); setErr(String((e && e.message) || e)) })
       }
       /* 首次进入与刷新键变化时拉全量（检索是显式动作，避免边打字边打接口） */
-      React.useEffect(() => { query({ q: undefined, kind: undefined, verified: undefined }) }, [refreshKey])
+      React.useEffect(() => { query({ q: undefined, kind: undefined, category: undefined, engagement: undefined, asset_target: undefined, verified: undefined }) }, [refreshKey])
 
       const open = (id) => {
         if (openId === id) { setOpenId(null); setDetail(null); return }
@@ -2044,10 +2247,17 @@ window.__ModuleLoader__.load({
             h('div', { className: 'rt-spacer' }),
             h('span', { className: 'rt-tag' }, POC_SOURCE_LABEL[x.source] || x.source || '—'),
             x.hit_count ? h('span', { className: 'rt-tag' }, '复用 ' + x.hit_count) : null),
+          /* 来源行：归类 · 影响版本 · 建立时间 · 来源靶标 · 发现资产 —— 一条知识"什么时候、
+             在哪个单位的哪台资产上发现的"一眼可见 */
           h('div', { className: 'rt-kb-sub' },
-            [x.versions ? '影响版本 ' + x.versions : null,
+            [x.category ? '归类 ' + (POC_CAT_NAME[x.category] || x.category) : null,
+              x.versions ? '影响版本 ' + x.versions : null,
               x.language || null,
               x.tags || null,
+              '建立时间 ' + fmt(x.created_at),
+              (x.engagement_name || x.engagement_id) ? '来源靶标 ' + (x.engagement_name || x.engagement_id) : null,
+              x.asset_target ? '发现资产 ' + x.asset_target : null,
+              x.found_by_agent ? '发现角色 ' + (ROLE_LABEL[x.found_by_agent] || x.found_by_agent) : null,
               x.source_url ? '来源 ' + x.source_url : null].filter(Boolean).join(' · ')),
           isOpen
             ? h('div', { className: 'rt-kb-body' },
@@ -2075,13 +2285,42 @@ window.__ModuleLoader__.load({
           h('span', { className: 'rt-tag' }, stats.total + ' 条'),
           h('span', { className: 'rt-tag rt-tag-live' }, '已验证 ' + stats.verified),
           h('span', { className: 'rt-tag' }, '累计复用 ' + (stats.reused || 0)),
+          (stats.uncategorized || 0) > 0 && (stats.uncategorized || 0) !== stats.total
+            ? h('span', { className: 'rt-tag rt-tag-warn', title: '这些条目还没归类：智能体回填时用 redteam_poc_add 的 category 参数标一下' }, '未归类 ' + stats.uncategorized)
+            : null,
           tpl.total ? h('span', { className: 'rt-tag rt-tag-passive' }, '本机模板 ' + tpl.total) : null,
           h('div', { className: 'rt-spacer' }),
+          h('button', { className: 'rt-btn' + (grouped ? ' rt-btn-primary' : ''), title: '按归类分组显示 / 平铺显示', onClick: () => setGrouped(!grouped) }, grouped ? '按归类分组' : '平铺显示'),
           h('button', { className: 'rt-btn', disabled: busy, onClick: () => query() }, busy ? '检索中…' : '刷新')),
+        /* 归类总览：点一下就是按该类筛选，一眼看清"哪类武器攒了多少、哪类还是空的" */
+        h('div', { className: 'rt-kb-cats' },
+          (stats.byCategory || []).filter((c) => c.n > 0 || POC_CAT_ORDER.includes(c.code)).map((c) => h('span', {
+            key: c.code,
+            className: 'rt-concl-i' + (category === c.code ? ' on' : ''),
+            title: c.hint || ('筛选：' + (POC_CAT_NAME[c.code] || c.code)),
+            onClick: () => {
+              const next = category === c.code ? '' : c.code
+              setCategory(next)
+              query({ category: next || undefined })
+            },
+          },
+            h('b', null, String(c.n || 0)),
+            h('span', null, (POC_CAT_NAME[c.code] || c.code) + (c.verified ? '（已验证 ' + c.verified + '）' : ''))))),
         h('div', { className: 'rt-kb-filter' },
           h('input', {
-            className: 'rt-input', style: { flex: 1, minWidth: 160 }, placeholder: '搜 CVE / 组件 / 关键字（正文也会搜）',
+            className: 'rt-input', style: { flex: 1, minWidth: 140 }, placeholder: '搜 CVE / 组件 / 关键字（正文也会搜）',
             value: q, onChange: (e) => setQ(e.target.value),
+            onKeyDown: (e) => { if (e.key === 'Enter') query() },
+          }),
+          h('select', { className: 'rt-input', style: { maxWidth: 120 }, value: category, onChange: (e) => { setCategory(e.target.value); query({ category: e.target.value || undefined }) } },
+            h('option', { value: '' }, '全部归类'),
+            POC_CAT_ORDER.map((k) => h('option', { key: k, value: k }, POC_CAT_NAME[k]))),
+          h('select', { className: 'rt-input', style: { maxWidth: 120 }, value: engagement, onChange: (e) => { setEngagement(e.target.value); query({ engagement: e.target.value || undefined }) } },
+            h('option', { value: '' }, '全部来源靶标'),
+            (stats.byEngagement || []).map((e) => h('option', { key: e.engagement, value: e.engagement }, e.engagement + '（' + e.n + '）'))),
+          h('input', {
+            className: 'rt-input', style: { width: 120 }, placeholder: '发现资产筛选',
+            value: assetTarget, onChange: (e) => setAssetTarget(e.target.value),
             onKeyDown: (e) => { if (e.key === 'Enter') query() },
           }),
           h('select', { className: 'rt-input', style: { maxWidth: 110 }, value: kind, onChange: (e) => { setKind(e.target.value); query({ kind: e.target.value || undefined }) } },
@@ -2098,7 +2337,31 @@ window.__ModuleLoader__.load({
             ? '知识库接口由 host 侧提供，当前 dsh web 还是旧进程 —— 请重启 dsh web（dsh-restart）后刷新页面。'
             : err) : null,
         h('div', { className: 'rt-table' },
-          items.map(card),
+          (() => {
+            if (!grouped) return items.map(card)
+            /* 分组渲染：按内置归类顺序，未知归类挂到末尾的「其它」 */
+            const buckets = new Map()
+            for (const x of items) {
+              const code = POC_CAT_NAME[x.category] ? x.category : 'other'
+              if (!buckets.has(code)) buckets.set(code, [])
+              buckets.get(code).push(x)
+            }
+            const order = POC_CAT_ORDER.filter((c) => buckets.has(c))
+            for (const code of buckets.keys()) if (!order.includes(code)) order.push(code)
+            const out = []
+            for (const code of order) {
+              const list = buckets.get(code)
+              out.push(h('div', { key: 'g' + code, className: 'rt-kb-cat' },
+                h('span', { className: 'rt-kb-cat-name' }, POC_CAT_NAME[code] || code),
+                h('span', { className: 'rt-tag' }, list.length + ' 条'),
+                h('span', { className: 'rt-tag rt-tag-live' }, '已验证 ' + list.filter((x) => x.verified === 1).length),
+                h('span', { className: 'rt-spacer' }),
+                h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)' } },
+                  '最近建立 ' + fmt(list.map((x) => x.created_at).filter(Boolean).sort().pop()))))
+              for (const x of list) out.push(card(x))
+            }
+            return out
+          })(),
           tplItems.length
             ? h('div', { className: 'rt-kb-tpl' },
                 h('div', { className: 'rt-ap-sub' },
@@ -2739,6 +3002,194 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /**
+     * 智能体页签：并发名额（最多 3 个）+ 六个角色与它们的提示词。
+     * 主会话派活前先看这里的名额，用户也能一眼看到"现在还能拉起几个智能体"。
+     */
+    function AgentsTab(props) {
+      const eng = props.engagement
+      const refreshKey = props.refreshKey || 0
+      const [roles, setRoles] = React.useState(null)
+      const [err, setErr] = React.useState(null)
+      const [openRole, setOpenRole] = React.useState('plan')
+      const [concurrency, setConcurrency] = React.useState(null)
+      const [busy, setBusy] = React.useState(false)
+
+      const load = () => {
+        setBusy(true)
+        api({ op: eng ? 'prompts' : 'bootstrap', engagement: eng || undefined }).then((r) => {
+          setBusy(false)
+          if (!r || r.ok === false) { setErr((r && r.error) || '读取失败'); return }
+          setErr(null)
+          if (r.roles) setRoles(r.roles)
+        }, (e) => { setBusy(false); setErr(String((e && e.message) || e)) })
+        /* 并发名额按"当前跑着的子智能体"算；host 侧读 subagents 注册表 */
+        api({ op: 'agentsStatus' }).then((r) => {
+          if (r && r.ok !== false) setConcurrency(r)
+        }, () => {})
+      }
+      React.useEffect(load, [eng, refreshKey])
+
+      const list = roles || []
+      const current = list.find((x) => x.role === openRole) || list[0]
+      const used = concurrency ? concurrency.used : null
+      const max = concurrency ? concurrency.max : 3
+      return h('div', { className: 'rt-main' },
+        h('div', { className: 'rt-toolbar' },
+          h('span', { style: { fontWeight: 600 } }, '作战智能体'),
+          h('span', { className: 'rt-tag rt-tag-passive' }, '并发上限 ' + max),
+          used === null
+            ? h('span', { className: 'rt-tag' }, '占用未知')
+            : h('span', { className: 'rt-tag' + (used >= max ? ' rt-tag-warn' : ' rt-tag-live') }, '在跑 ' + used + ' / 剩余 ' + Math.max(max - used, 0)),
+          h('div', { className: 'rt-spacer' }),
+          h('button', { className: 'rt-btn', disabled: busy, onClick: load }, busy ? '读取中…' : '刷新')),
+        h('div', { className: 'rt-pane' },
+          err ? h('div', { className: 'rt-err' }, err) : null,
+          h('div', { className: 'rt-card' },
+            h('h4', null, '并发规则（硬约束）'),
+            h('div', { style: { fontSize: 12, lineHeight: 1.7 } },
+              '· 同一靶标**同时最多 ' + max + ' 个执行智能体**；主会话派活前用 `redteam_agent_slot` 占位，满了直接拒绝。',
+              h('br'),
+              '· **默认一个一个派、按顺序推进**；只有确实互不依赖的活才并行。',
+              h('br'),
+              '· 每个会话有**自己的靶标绑定**：多会话并行不会把报告写串（子智能体继承父会话的靶标）。')),
+          h('div', { className: 'rt-card' },
+            h('h4', null, '六个角色'),
+            h('div', { style: { fontSize: 12, lineHeight: 1.8 } },
+              '① 信息收集 `recon` —— 只收集资产，把单位资产收集完整（含边缘与未备案资产）', h('br'),
+              '② 资产梳理 `assess` —— 一条一条过，评易打性并全部落库', h('br'),
+              '③ 漏洞发现 `vuln-scan` —— 先查库去重 → Nday/1day 优先 → 接口未授权探测', h('br'),
+              '④ 漏洞利用 `exploit` —— 先拿服务器权限（冰蝎/哥斯拉马）+ 建 suo5 隧道，再打其它得分项', h('br'),
+              '⑤ 内网渗透 `internal` —— 走隧道，依次拉起 ①②③④ 做内网', h('br'),
+              '⑥ 主会话 `plan` —— 只做计划、派活、汇总、汇报，不动手')),
+          h('div', { className: 'rt-card' },
+            h('h4', null, '角色提示词（按靶标存，可在这里查看）'),
+            h('div', { style: { fontSize: 11.5, color: 'var(--dsw-alias-label-secondary)', marginBottom: 6 } },
+              '完整编辑在「智能体提示词」页签；这里是速览。'),
+            h('div', { style: { display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 } },
+              list.map((x) => h('button', {
+                key: x.role, className: 'rt-btn' + (current && current.role === x.role ? ' rt-btn-primary' : ''),
+                onClick: () => setOpenRole(x.role),
+              }, (ROLE_LABEL[x.role] || x.role) + (x.planner ? '（不派活）' : '')))),
+            current
+              ? h('pre', { className: 'rt-rep-http', style: { maxHeight: 340 } }, current.content || '（还没有正文）')
+              : h('div', { className: 'rt-empty' }, eng ? '加载中…' : '先选一个靶标'))))
+    }
+
+    /**
+     * 版本显示 + 自动更新按钮。
+     *
+     * 行为：挂载时静默查一次最新版本（npm registry），有新版本就把按钮点亮成
+     * 「有新版本 vX」；点击弹出确认框（当前版本 / 最新版本 / 安装位置 / 阻塞项），
+     * 确认后由 host 侧执行 安装 → 重启 dsh web（页面会断开，重启后刷新即可）。
+     */
+    function VersionBar(props) {
+      const [info, setInfo] = React.useState(null)
+      const [err, setErr] = React.useState(null)
+      const [busy, setBusy] = React.useState(false)
+      const [open, setOpen] = React.useState(false)
+      const [msg, setMsg] = React.useState(null)
+      const [countdown, setCountdown] = React.useState(0)
+
+      const check = (silent) => {
+        if (!silent) setBusy(true)
+        api({ op: 'updateCheck' }).then((r) => {
+          setBusy(false)
+          if (!r || r.ok === false) {
+            /* 开发态或查不到 registry：只显示当前版本，不报错打扰用户 */
+            if (!silent) setErr((r && r.error) || '检查更新失败')
+            api({ op: 'version' }).then((v) => { if (v && v.ok !== false) setInfo(v) }, () => {})
+            return
+          }
+          setErr(null)
+          setInfo(r)
+        }, (e) => {
+          setBusy(false)
+          if (!silent) setErr(String((e && e.message) || e))
+          api({ op: 'version' }).then((v) => { if (v && v.ok !== false) setInfo(v) }, () => {})
+        })
+      }
+      React.useEffect(() => { check(true) }, [])
+
+      const apply = () => {
+        setBusy(true)
+        setMsg(null)
+        api({ op: 'updateApply', target: (info && info.latest) || undefined }).then((r) => {
+          setBusy(false)
+          if (!r || r.ok === false) { setMsg({ err: (r && r.error) || '更新失败' }); return }
+          setMsg({ ok: '已安装 ' + (r.installed || '') + '，正在重启 dsh web…' })
+          /* 重启会断开这个页面：倒计时提示用户稍后刷新 */
+          setCountdown(6)
+          const t = setInterval(() => {
+            setCountdown((n) => {
+              if (n <= 1) { clearInterval(t); window.location.reload(); return 0 }
+              return n - 1
+            })
+          }, 1000)
+        }, (e) => { setBusy(false); setMsg({ err: String((e && e.message) || e) }) })
+      }
+
+      const current = info && info.current ? info.current : (info && info.plugin ? info.plugin.version : null)
+      const latest = info && info.latest ? info.latest : null
+      const hasNew = !!(info && info.updateAvailable)
+      const blockers = (info && info.blockers) || []
+      const notes = (info && info.notes) || []
+      const mode = info && info.install ? info.install.mode : null
+
+      return h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: 6 } },
+        h('span', {
+          className: 'rt-tag' + (hasNew ? ' rt-tag-warn' : ''),
+          title: ('当前版本 ' + (current || '未知') + (latest ? '\n最新版本 ' + latest : '')
+            + (mode === 'dev' ? '\n安装方式：开发态（源码软链）' : mode === 'package' ? '\n安装方式：包安装' : '')
+            + (info && info.check_error ? '\n检查失败：' + info.check_error : '')),
+        }, 'v' + (current || '?')),
+        hasNew
+          ? h('button', {
+              className: 'rt-btn rt-btn-primary', disabled: busy,
+              onClick: () => { setOpen(true); setMsg(null) },
+              title: '发现新版本 ' + latest + '：点击查看并一键更新（会重启 dsh web）',
+            }, busy ? '检查中…' : '有新版本 v' + latest)
+          : h('button', {
+              className: 'rt-btn', disabled: busy, onClick: () => check(false),
+              title: '重新检查 npm 上的最新版本',
+            }, busy ? '检查中…' : '检查更新'),
+        open
+          ? h('div', { className: 'rt-modal', onClick: () => setOpen(false) },
+              h('div', { className: 'rt-modal-box', onClick: (e) => e.stopPropagation() },
+                h('h4', { style: { marginTop: 0 } }, '更新 RedTeam 模式'),
+                h('div', { className: 'rt-kv' }, h('b', null, '当前版本'), h('span', null, current || '未知')),
+                h('div', { className: 'rt-kv' }, h('b', null, '最新版本'), h('span', null, latest || '未知')),
+                h('div', { className: 'rt-kv' }, h('b', null, '安装方式'),
+                  h('span', null, mode === 'dev' ? '开发态（源码软链）' : mode === 'package' ? '包安装（' + ((info.install && info.install.packageManager) || 'npm') + '）' : '未知')),
+                info && info.install && info.install.dir
+                  ? h('div', { className: 'rt-kv' }, h('b', null, '安装位置'), h('span', { className: 'rt-mono' }, info.install.dir))
+                  : null,
+                blockers.length
+                  ? h('div', { className: 'rt-hint' },
+                      h('div', { style: { fontWeight: 600, marginBottom: 4 } }, '现在不能更新：'),
+                      blockers.map((b, i) => h('div', { key: 'b' + i }, '· ' + b)))
+                  : null,
+                notes.length
+                  ? h('div', { className: 'rt-foot', style: { padding: '4px 0' } }, notes.map((n, i) => h('div', { key: 'n' + i }, n)))
+                  : null,
+                h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)', margin: '8px 0' } },
+                  '更新过程：安装新版本 → 自动重启 dsh web（当前页面会断开，约 5–10 秒后自动刷新）。'
+                  + '重启前会检查有没有智能体在跑，有就拦住不动。'),
+                msg ? h('div', { className: msg.err ? 'rt-err' : 'rt-foot' }, msg.err || msg.ok) : null,
+                countdown > 0
+                  ? h('div', { className: 'rt-foot' }, 'dsh web 正在重启，' + countdown + ' 秒后自动刷新页面…')
+                  : null,
+                h('div', { style: { display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 } },
+                  h('button', { className: 'rt-btn', onClick: () => setOpen(false) }, '关闭'),
+                  h('button', {
+                    className: 'rt-btn rt-btn-primary',
+                    disabled: busy || blockers.length > 0 || mode === 'dev',
+                    title: mode === 'dev' ? '开发态安装请用仓库流程升级' : blockers.length ? '先解决上面的阻塞项' : '安装并重启',
+                    onClick: apply,
+                  }, busy ? '更新中…' : '一键更新并重启'))))
+          : null)
+    }
+
     /* ---------------------------------------------------------- 常驻面板主体 */
     function Panel() {
       const st = useUI()
@@ -2815,7 +3266,8 @@ window.__ModuleLoader__.load({
 
       const stats = (snapshot && snapshot.stats) || {}
       const tabs = [
-        ['assets', '资产测绘'], ['testing', '当前测试'], ['sessions', '会话隧道'], ['findings', '漏洞战果'],
+        ['assets', '资产测绘'], ['testing', '当前测试'], ['agents', '智能体'], ['sessions', '会话隧道'],
+        ['findings', '漏洞战果'],
         ['chain', '攻击链'], ['scores', '得分目标'], ['report', '报告'],
         ['attackfiles', '攻击文件'], ['knowledge', '知识库'],
         ['prompts', '智能体提示词'], ['skills', '技能库'],
@@ -2861,6 +3313,7 @@ window.__ModuleLoader__.load({
                 creating ? '创建中…' : '创建靶标'))))
       } else if (st.tab === 'assets') body = h(AssetsTab, { engagement: eng, snapshot: snapshot, refreshKey: refreshKey, onRefresh: refreshAll, onData: () => loadSnapshot(eng) })
       else if (st.tab === 'testing') body = h(TestingTab, { engagement: eng, refreshKey: refreshKey })
+      else if (st.tab === 'agents') body = h(AgentsTab, { engagement: eng, refreshKey: refreshKey })
       else if (st.tab === 'sessions') body = h(SessionTab, { engagement: eng, refreshKey: refreshKey })
       else if (st.tab === 'findings') body = h(FindingsTab, { engagement: eng, refreshKey: refreshKey })
       else if (st.tab === 'chain') body = h(ChainTab, { engagement: eng, refreshKey: refreshKey })
@@ -2890,6 +3343,7 @@ window.__ModuleLoader__.load({
             },
           }, engagements.map((x) => h('option', { key: x.id, value: x.id }, x.name))),
           h('div', { className: 'rt-spacer' }),
+          h(VersionBar, null),
           full ? h('button', { className: 'rt-btn', title: '回到带侧栏的普通界面（或按 Esc）', onClick: exitFull }, '退出全面浏览') : null,
           h('button', { className: 'rt-btn', title: '刷新名册、快照与当前页面数据', onClick: refreshAll }, '刷新'),
           full ? null : h('button', { className: 'rt-btn', title: '在新浏览器窗口打开完整控制台', onClick: openFull }, '全面浏览'),

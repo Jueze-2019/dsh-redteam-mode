@@ -6,8 +6,8 @@
  * 规则：**是内置默认就跟着新版走，用户自己改过的永不覆盖。**
  * 判断依据是内容指纹（manifest 记下"上次写入默认时的指纹" + 历史默认指纹表）。
  *
- * 为什么要有这个测试：老靶标里的提示词是首次建库时播种的，之后再改默认值也不会生效，
- * 于是新加的纪律（只打得分面、冰蝎/哥斯拉马、suo5 隧道）在老靶标里等于没写。
+ * v0.9.0 起角色从 4 个变成 6 个（主会话 plan + 五个执行角色），并整体重写了正文；
+ * 这里同步覆盖"新角色自动补种"这条新行为。
  */
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -28,10 +28,14 @@ try {
   const manifestPath = store.promptManifestPathOf(id)
   const roles = Object.keys(ROLE_TITLES)
 
-  /* 1) 新靶标：四个角色都是当前内置默认 */
+  /* 1) 新靶标：六个角色都是当前内置默认 */
   const fresh = store.listPrompts(id)
-  ok(fresh.length === 4 && fresh.every((p) => p.content.trim() === DEFAULT_PROMPTS[p.role].trim()),
-    '新靶标播种的四个角色提示词 = 当前内置默认')
+  ok(fresh.length === 6 && fresh.every((p) => p.content.trim() === DEFAULT_PROMPTS[p.role].trim()),
+    '新靶标播种的六个角色提示词 = 当前内置默认')
+  ok(fresh.filter((p) => p.planner === true).length === 1 && fresh.find((p) => p.planner)?.role === 'plan',
+    '六个角色里只有一个主会话（plan），它不参与派活')
+  ok(roles.every((r) => typeof DEFAULT_PROMPTS[r] === 'string' && DEFAULT_PROMPTS[r].trim() !== ''),
+    '每个角色都有内置默认提示词（不会出现空角色）')
 
   /* 2) manifest 记录了"这是默认"，所以能被识别为可升级 */
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
@@ -57,28 +61,38 @@ try {
   const res = store.refreshDefaultPrompts(id)
   const recon = readFileSync(join(dir, 'recon.md'), 'utf8')
   ok(res.changed === 1 && recon.trim() === DEFAULT_PROMPTS.recon.trim(), '旧版默认被自动换成当前版本')
-  ok(existsSync(join(dir, 'recon.md')) && readFileSync(join(dir, 'recon.md'), 'utf8').includes('只收集'),
-    '升级后带上了新纪律（只收集能支撑得分的信息）')
+  ok(existsSync(join(dir, 'recon.md')) && readFileSync(join(dir, 'recon.md'), 'utf8').includes('收集完整'),
+    '升级后带上了新纪律（资产要收集完整）')
   ok(readFileSync(manifestPath, 'utf8').includes(hash(DEFAULT_PROMPTS.recon)), 'manifest 同步更新为新指纹')
   ok(res.kept.length === 0, '没有误判为用户自写')
+
+  /* 4b) 老靶标缺新角色文件（没有 assess / plan）：读取时按当前默认补种，不报错 */
+  const legacyDir = store.promptsDirOf(id)
+  rmSync(join(legacyDir, 'assess.md'), { force: true })
+  rmSync(join(legacyDir, 'plan.md'), { force: true })
+  const created = store.refreshDefaultPrompts(id)
+  ok(created.created === 2 && readFileSync(join(legacyDir, 'assess.md'), 'utf8').trim() === DEFAULT_PROMPTS.assess.trim(),
+    '缺失的新角色（资产梳理 / 主会话）按当前默认自动补种')
 
   /* 5) 无 manifest 的老靶标：历史默认指纹表兜底 */
   const old = new RedteamStore(join(root, 'legacy'))
   const { id: legId } = old.openEngagement('老靶标')
   const legDir = old.promptsDirOf(legId)
   rmSync(old.promptManifestPathOf(legId), { force: true })
-  /* 历史上的默认值之一（v0.1.0 的漏洞检测提示词开头），指纹在 LEGACY_PROMPT_HASHES 里 */
+  /* 历史上的默认值之一（v0.1.0 的漏洞检测提示词开头） */
   const legacyText = '# 漏洞检测智能体（Vulnerability）\n\n## 角色\n你是漏洞检测智能体。'
   writeFileSync(join(legDir, 'vuln-scan.md'), legacyText, 'utf8')
-  ok(Object.keys(LEGACY_PROMPT_HASHES).length === 4 && Object.values(LEGACY_PROMPT_HASHES).every((v) => v.length > 0),
-    '历史默认指纹表覆盖四个角色（老靶标兜底用）')
+  /* v0.9.0 整体重写提示词后，历史指纹表按设计清空：旧版本一律不再登记为"可自动升级"，
+     残留的旧提示词会被判为用户自写而保留（面板点「恢复默认」或脚本 --force 可换新版） */
+  ok(Object.keys(LEGACY_PROMPT_HASHES).length === 0,
+    '提示词整体重写后历史指纹表已清空（旧默认不再被当作可升级对象）')
   /* 注意：上面这段文本只是形似，不是真正的历史默认，因此不该被覆盖 */
   old.refreshDefaultPrompts(legId)
   ok(readFileSync(join(legDir, 'vuln-scan.md'), 'utf8').includes('你是漏洞检测智能体。') === true,
     '形似但指纹不符的内容不被动（避免误伤用户自写）')
   /* 6) 缺文件的角色不炸 */
   mkdirSync(legDir, { recursive: true })
-  ok(store.listPrompts(legId).length === 4, '角色文件缺失时读取不报错')
+  ok(store.listPrompts(legId).length === 6, '角色文件缺失时读取不报错')
 } finally {
   rmSync(root, { recursive: true, force: true })
 }

@@ -13,6 +13,7 @@
  */
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { readFileSync } from 'node:fs'
 import { RedteamStore } from './core.js'
 
 /** Cordis 插件名。 */
@@ -33,12 +34,42 @@ function resolveRoot(config) {
 }
 
 /**
+ * 本插件自己的包名与版本（界面「版本 + 自动更新」用）。
+ *
+ * 为什么两处都试：市场包 `dsh-redteam-mode` 的 package.json 与本文件同级
+ * （生成的 lib/）；把本包单独挂载时再往上一层。读不到就返回 null，
+ * 界面按"版本未知"显示，不影响任何功能。
+ */
+function readSelfPackage() {
+  for (const rel of ['../package.json', '../../package.json']) {
+    try {
+      const pkg = JSON.parse(readFileSync(new URL(rel, import.meta.url), 'utf8'))
+      if (pkg && typeof pkg.name === 'string' && typeof pkg.version === 'string') {
+        return {
+          name: pkg.name,
+          version: pkg.version,
+          description: typeof pkg.description === 'string' ? pkg.description : '',
+          homepage: typeof pkg.homepage === 'string' ? pkg.homepage : null,
+        }
+      }
+    } catch { /* 换下一个候选 */ }
+  }
+  return null
+}
+
+/**
  * @param ctx - 插件上下文。
  * @param config - `{ root?: string }`。
  */
 export function apply(ctx, config = {}) {
   const root = resolveRoot(config)
   const store = new RedteamStore(root)
+  /* 包身份挂在 store 上：界面桥接层（redteam-ui）的版本显示与更新逻辑都从这里读，
+     不用在生成物里硬编码版本号。 */
+  const self = readSelfPackage()
+  if (self !== null) {
+    try { store.plugin = Object.freeze(self) } catch { /* 忽略 */ }
+  }
 
   // 服务随 fiber 卸载而关闭：所有 SQLite 句柄在同一处释放。
   ctx.effect(() => () => store.close())

@@ -13,7 +13,9 @@
  * 跨源请求由 Origin/Host 校验挡住（同源 POST 才放行）。
  */
 import { fileURLToPath } from 'node:url'
-import { resolve } from 'node:path'
+import { resolve, join } from 'node:path'
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { spawn } from 'node:child_process'
 import { dispatch, dispatchAsync } from './store-core.js'
 
 /** 本包自带技能目录（随包分发；dev 安装的 UI 包没有 skills/，此时恒为 false）。 */
@@ -34,6 +36,212 @@ export const inject = ['redteam', 'webServer', 'skills', 'agentPresets']
 
 /** 请求体上限（资产导入可能较大）。 */
 const MAX_BODY_BYTES = 8 * 1024 * 1024
+
+/* ------------------------------------------------------------------ 版本与更新 */
+
+/** 运行 shell 命令，带超时；返回 `{ code, stdout, stderr, timedOut }`。 */
+function run(command, args, options = {}) {
+  return new Promise((resolvePromise) => {
+    let child
+    try {
+      /* ⚠️ 两个都踩过：
+         · env 必须显式传 process.env —— spawn 默认给的是空环境，空 PATH 下
+           npm/pnpm 会直接 `spawn npm ENOENT`（版本检查永远失败）；
+         · cwd 必须是**真实存在**的目录 —— 传一个不存在的路径同样是 ENOENT
+           （报错长得像"命令找不到"，很容易误判）。 */
+      const cwd = typeof options.cwd === 'string' && options.cwd !== '' && existsSync(options.cwd) ? options.cwd : undefined
+      child = spawn(command, args, {
+        cwd,
+        env: options.env || process.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+    } catch (error) {
+      resolvePromise({ code: -1, stdout: '', stderr: error && error.message ? error.message : String(error) })
+      return
+    }
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+    const done = (value) => { if (!settled) { settled = true; resolvePromise(value) } }
+    const timer = setTimeout(() => {
+      try { child.kill('SIGKILL') } catch { /* 忽略 */ }
+      done({ code: -1, stdout: stdout, stderr: stderr, timedOut: true })
+    }, Math.max(Number(options.timeoutMs) || 30000, 1000))
+    child.stdout.on('data', (c) => { stdout += c.toString('utf8') })
+    child.stderr.on('data', (c) => { stderr += c.toString('utf8') })
+    child.on('error', (error) => { clearTimeout(timer); done({ code: -1, stdout: stdout, stderr: String((error && error.message) || error) }) })
+    child.on('close', (code) => { clearTimeout(timer); done({ code: code === null ? -1 : code, stdout: stdout, stderr: stderr }) })
+  })
+}
+
+/** 本插件包身份（由 store 壳读取 package.json 后挂上；读不到则报"未知版本"）。 */
+function pluginIdentity(ctx) {
+  const store = ctx.redteam
+  const info = store && store.plugin ? store.plugin : null
+  return {
+    name: (info && info.name) || 'dsh-redteam-mode',
+    version: (info && info.version) || null,
+    description: (info && info.description) || '',
+    homepage: (info && info.homepage) || null,
+  }
+}
+
+/** profile 目录：DSH 的 `ctx.baseUrl` 就是它（loader.internal.import(name, profileDir) 的 base）。 */
+function profileDirOf(ctx) {
+  try {
+    if (typeof ctx.baseUrl === 'string' && ctx.baseUrl.length > 0) return ctx.baseUrl
+  } catch { /* 忽略 */ }
+  const home = process.env.DSH_HOME || join(process.env.HOME || '', '.dsh')
+  return join(home, 'profiles', 'web')
+}
+
+/** 读 profile 的 package.json（依赖声明 + dsh.profile.bundles）。 */
+function readProfilePackage(dir) {
+  try {
+    return JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+  } catch { return null }
+}
+
+/** 包管理器：profile 里有 pnpm-lock / pnpm-workspace 就用 pnpm，否则 npm。 */
+function packageManagerOf(dir) {
+  if (existsSync(join(dir, 'pnpm-lock.yaml')) || existsSync(join(dir, 'pnpm-workspace.yaml'))) return 'pnpm'
+  return 'npm'
+}
+
+/**
+ * 更新前置检查：装的是不是发布版（profile 里能不能解析到这个包名）、
+ * 有没有智能体正在跑（更新要重启 dsh web，会把它们打断）。
+ */
+async function updatePreflight(ctx) {
+  const dir = profileDirOf(ctx)
+  const pkg = pluginIdentity(ctx)
+  const profilePkg = readProfilePackage(dir)
+  const deps = (profilePkg && profilePkg.dependencies) || {}
+  const declared = typeof deps[pkg.name] === 'string' ? deps[pkg.name] : null
+  const installedDir = join(dir, 'node_modules', pkg.name)
+  const blockers = []
+  const notes = []
+
+  /* ① 开发态（源码软链）：profile 里没有这个包名 → 不能用包管理器更新 */
+  const devLinked = declared === null && !existsSync(join(installedDir, 'package.json'))
+  if (devLinked) {
+    blockers.push('当前是**开发态安装**（profile 依赖里没有 ' + pkg.name + '，是源码软链/手动挂载的），包管理器更新不适用。')
+    notes.push('开发态请用仓库流程升级：`git pull && node packages/redteam-bundle/tools/build.mjs`，再重启 dsh web。')
+  }
+
+  /* ② 有智能体在跑：重启会打断它们 */
+  let running = []
+  try {
+    const subagents = ctx.get('subagents')
+    const sessions = ctx.get('sessions')
+    if (subagents !== undefined && subagents !== null && sessions !== undefined && sessions !== null && typeof sessions.list === 'function') {
+      const roots = sessions.list().filter((s) => {
+        const header = s && s.header
+        return header && (header.parentSession === undefined || header.parentSession === null)
+      })
+      for (const root of roots) {
+        try {
+          const kids = await subagents.listChildren(root.id)
+          for (const k of Array.isArray(kids) ? kids : []) {
+            if (k && k.kind === 'child' && k.activity === 'running') running.push({ session: String(root.id), label: k.label || String(k.id) })
+          }
+        } catch { /* 单个会话读不到不影响其它 */ }
+      }
+    }
+  } catch { /* 注册表不可用就不挡（只是少了一层保护） */ }
+  if (running.length > 0) {
+    blockers.push('有 ' + running.length + ' 个智能体正在跑（' + running.map((r) => r.label).join('、') + '）：更新要重启 dsh web，会打断它们。请等它们结束。')
+  }
+  return { dir, declared, packageManager: packageManagerOf(dir), devLinked, running, blockers, notes }
+}
+
+/** 到 npm registry 查最新版本（走包管理器，避免自带网络栈）。 */
+async function checkLatest(ctx, dir, name) {
+  const pm = packageManagerOf(dir)
+  const args = pm === 'pnpm' ? ['view', name, 'version', '--json'] : ['view', name, 'version', '--json']
+  const r = await run(pm, args, { cwd: dir, timeoutMs: 60000 })
+  if (r.code !== 0) {
+    return { ok: false, error: '查询最新版本失败（' + pm + ' view）：' + String(r.stderr || r.stdout || '').trim().slice(0, 400) }
+  }
+  const raw = String(r.stdout || '').trim().replace(/^"|"$/g, '')
+  const latest = raw.split('\n').map((x) => x.trim().replace(/^"|"$/g, '')).filter(Boolean).pop() || null
+  return { ok: latest !== null, latest, registry: pm }
+}
+
+/** `a < b`（只比较数字段，够用；预发布后缀按"更旧"处理）。 */
+function versionLess(a, b) {
+  const parse = (v) => String(v || '').split('-')[0].split('.').map((x) => Number(x) || 0)
+  const [x, y] = [parse(a), parse(b)]
+  for (let i = 0; i < Math.max(x.length, y.length); i += 1) {
+    if ((x[i] || 0) < (y[i] || 0)) return true
+    if ((x[i] || 0) > (y[i] || 0)) return false
+  }
+  return false
+}
+
+/**
+ * 重启脚本：等旧进程退出 + 端口释放，再按同样的参数把 dsh web 拉起来。
+ * 写成独立 shell 脚本（不依赖 node 在 PATH 里），日志追加到 $DSH_HOME/redteam/update.log。
+ */
+function restartScript(pid, port, command, args, logPath) {
+  const quoted = args.map((a) => "'" + String(a).replace(/'/g, "'\\''") + "'").join(' ')
+  return [
+    '#!/bin/bash',
+    '# 由 RedTeam 控制台的「自动更新」生成：等旧 dsh web 退出后原样重启它。',
+    'set -u',
+    'OLD_PID=' + pid,
+    'PORT=' + port,
+    'LOG=' + JSON.stringify(logPath),
+    'echo "[$(date \'+%F %T\')] 等待旧进程 $OLD_PID 退出…" >> "$LOG"',
+    'for i in $(seq 1 60); do',
+    '  kill -0 "$OLD_PID" 2>/dev/null || break',
+    '  sleep 1',
+    'done',
+    'for i in $(seq 1 30); do',
+    '  ss -ltn 2>/dev/null | grep -q ":$PORT " || break',
+    '  sleep 1',
+    'done',
+    'echo "[$(date \'+%F %T\')] 启动：' + command + ' ' + quoted.replace(/"/g, '\\"') + '" >> "$LOG"',
+    'cd ' + JSON.stringify(process.cwd()) + ' >> "$LOG" 2>&1',
+    'nohup ' + command + ' ' + quoted + ' >> "$LOG" 2>&1 &',
+    'echo "[$(date \'+%F %T\')] 已拉起新进程 pid=$!" >> "$LOG"',
+    '',
+  ].join('\n')
+}
+
+/** 应用更新：装新版本 + 生成重启脚本 + 让当前进程退出。 */
+async function applyUpdate(ctx, dir, name, targetVersion) {
+  const pm = packageManagerOf(dir)
+  const spec = targetVersion ? name + '@' + targetVersion : name
+  const args = pm === 'pnpm' ? ['add', spec] : ['install', spec, '--save']
+  const r = await run(pm, args, { cwd: dir, timeoutMs: 300000 })
+  if (r.code !== 0) {
+    return { ok: false, error: '安装失败（' + pm + ' ' + args.join(' ') + '）：' + String(r.stderr || r.stdout || '').trim().slice(0, 1200) }
+  }
+  /* 重启：拿当前进程的启动命令原样再来一遍 */
+  const argv = process.argv.slice()
+  const command = argv[0]
+  const rest = argv.slice(1)
+  const port = (() => {
+    try { return String(ctx.webServer.port) } catch { return '3080' }
+  })()
+  const root = (() => {
+    try { return ctx.redteam.root } catch { return join(process.env.DSH_HOME || '.', 'redteam') }
+  })()
+  mkdirSync(root, { recursive: true })
+  const logPath = join(root, 'update.log')
+  const scriptPath = join(root, 'restart-dsh-web.sh')
+  writeFileSync(scriptPath, restartScript(process.pid, port, command, rest, logPath), { encoding: 'utf8', mode: 0o755 })
+  const child = spawn('/bin/bash', [scriptPath], { detached: true, stdio: 'ignore' })
+  child.unref()
+  /* 给浏览器留出收到响应的窗口，然后退出 —— 新进程由脚本按原命令行拉起 */
+  setTimeout(() => { process.exit(0) }, 1200).unref()
+  return {
+    ok: true, installed: spec, packageManager: pm,
+    restart: { script: scriptPath, log: logPath, port, command: [command].concat(rest).join(' '), pid: process.pid },
+  }
+}
+
 
 /** 读取完整请求体；超过上限即中断。 */
 function readBody(req) {
@@ -134,6 +342,100 @@ async function handleSkillOp(ctx, request) {
 }
 
 /**
+ * 智能体并发状态（「智能体」页签用）：直接读 subagents 注册表里"真正在跑"的子会话。
+ * 与工具层的 `redteam_agent_slot` 同一套口径，但这里只读不占位。
+ * @param ctx - 插件上下文。
+ * @param request - `{ op: 'agentsStatus' }`。
+ * @returns JSON 结果，或 undefined 表示不是这个 op。
+ */
+async function handleAgentsOp(ctx, request) {
+  if (request.op !== 'agentsStatus') return undefined
+  const max = (() => {
+    const raw = Number(process.env.REDTEAM_MAX_AGENTS)
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 3
+  })()
+  const subagents = ctx.get('subagents')
+  const sessions = ctx.get('sessions')
+  if (subagents === undefined || subagents === null || sessions === undefined || sessions === null || typeof sessions.list !== 'function') {
+    return { ok: false, error: 'subagents / sessions 注册表不可用：读不到并发占用。', max }
+  }
+  const children = []
+  try {
+    const roots = sessions.list().filter((s) => {
+      const header = s && s.header
+      return header && (header.parentSession === undefined || header.parentSession === null)
+    })
+    for (const root of roots) {
+      try {
+        const kids = await subagents.listChildren(root.id)
+        for (const k of Array.isArray(kids) ? kids : []) {
+          if (k && k.kind === 'child') children.push({ parent: String(root.id), label: k.label || String(k.id), activity: k.activity, mode: k.mode })
+        }
+      } catch { /* 单个会话读不到就跳过 */ }
+    }
+  } catch (error) {
+    return { ok: false, error: '列子会话失败：' + (error && error.message ? error.message : String(error)), max }
+  }
+  const running = children.filter((c) => c.activity === 'running')
+  return {
+    ok: true, max, used: running.length, free: Math.max(max - running.length, 0),
+    running: running.slice(0, 20), total_children: children.length,
+    note: '同一会话（靶标）同时最多 ' + max + ' 个执行智能体；默认顺序派活。',
+  }
+}
+
+/**
+ * 版本与更新类 op（面板右上角的「版本 + 自动更新」用）。
+ * 不碰资产库，直接操作 profile 与 npm/pnpm；全部在 host 侧执行。
+ * @param ctx - 插件上下文。
+ * @param request - `{ op: 'version' | 'updateCheck' | 'updateApply', target? }`。
+ * @returns JSON 结果，或 undefined 表示不是更新类 op。
+ */
+async function handleUpdateOp(ctx, request) {
+  if (!['version', 'updateCheck', 'updateApply'].includes(request.op)) return undefined
+  const pkg = pluginIdentity(ctx)
+  const pre = await updatePreflight(ctx)
+  if (request.op === 'version') {
+    const check = pre.devLinked ? null : await checkLatest(ctx, pre.dir, pkg.name)
+    return {
+      ok: true,
+      plugin: pkg,
+      install: {
+        mode: pre.devLinked ? 'dev' : 'package',
+        dir: pre.dir,
+        declared: pre.declared,
+        packageManager: pre.packageManager,
+      },
+      latest: check && check.ok ? check.latest : null,
+      updateAvailable: check && check.ok && pkg.version ? versionLess(pkg.version, check.latest) : false,
+      check_error: check && check.ok === false ? check.error : undefined,
+      blockers: pre.blockers,
+      notes: pre.notes,
+      running_agents: pre.running,
+    }
+  }
+  if (request.op === 'updateCheck') {
+    const check = await checkLatest(ctx, pre.dir, pkg.name)
+    if (check.ok !== true) return { ok: false, error: check.error, current: pkg.version, install: { mode: pre.devLinked ? 'dev' : 'package' } }
+    return {
+      ok: true, current: pkg.version, latest: check.latest,
+      updateAvailable: pkg.version ? versionLess(pkg.version, check.latest) : true,
+      install: { mode: pre.devLinked ? 'dev' : 'package', dir: pre.dir, packageManager: pre.packageManager },
+      blockers: pre.blockers, notes: pre.notes, running_agents: pre.running,
+    }
+  }
+  /* updateApply */
+  if (pre.blockers.length > 0) {
+    return { ok: false, error: '现在不能更新：' + pre.blockers.join(' '), blockers: pre.blockers, notes: pre.notes }
+  }
+  const result = await applyUpdate(ctx, pre.dir, pkg.name, typeof request.target === 'string' && request.target ? request.target : null)
+  if (result.ok !== true) return Object.assign({ current: pkg.version }, result)
+  return Object.assign({ current: pkg.version, latest: request.target || null }, result, {
+    note: '已安装，正在重启 dsh web（页面会在几秒内断开，重启完成后刷新即可看到新版本）。重启日志：' + result.restart.log,
+  })
+}
+
+/**
  * @param ctx - 插件上下文（已保证 redteam / webServer / skills / agentPresets 可用）。
  */
 export function apply(ctx) {
@@ -160,6 +462,16 @@ export function apply(ctx) {
       try {
         const raw = await readBody(req)
         const request = raw.trim() ? JSON.parse(raw) : {}
+        const agentsResult = await handleAgentsOp(ctx, request)
+        if (agentsResult !== undefined) {
+          sendJson(res, 200, agentsResult)
+          return
+        }
+        const updateResult = await handleUpdateOp(ctx, request)
+        if (updateResult !== undefined) {
+          sendJson(res, 200, updateResult)
+          return
+        }
         const skillResult = await handleSkillOp(ctx, request)
         /* dispatchAsync 只多处理 probeSessions（连通性探测需要真实发起连接） */
         sendJson(res, 200, skillResult === undefined ? await dispatchAsync(store, request) : skillResult)
