@@ -25,5 +25,10 @@ console loads, (c) the sidebar/console tabs render. The 0.9.0 build additionally
 zero-dependency regression suite (10 files, 297 assertions, including a client-bundle load check and a
 preset self-heal check). `prepublishOnly` runs `build --check` + the bundle contract test.
 
-I'll push the description fix to this branch now. Happy to change the category, the wording, or split
-anything out if you'd prefer it filed differently.
+Pushed as `123fab7b` (entry file only, no README edits) — and I synced the fork to `main` first, which
+also cleared the earlier `check` failure (it was the fork sitting behind `main`, not the entry).
+
+Both gates are green on the new head: `Submission gate` — *entries look good*, and `check` — success.
+
+Happy to change the category, shorten the description, or split anything out if you'd prefer it filed
+differently.
