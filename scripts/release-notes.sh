@@ -92,14 +92,19 @@ for tag in "${todo[@]}"; do
     echo "  ! $tag 没有 docs/releases/$tag.md，先用占位说明建 Release"
   fi
 
+  # 标题 = "vX.Y.Z " + 说明首行（去掉 markdown 记号），与历史 Release 风格一致
+  first_line="$(sed -n '1p' "$notes" | sed -E 's/^#+ +//; s/\*\*//g; s/[。.]$//' | cut -c1-90)"
+  title="$tag"
+  [ -n "$first_line" ] && [ "$first_line" != "$tag" ] && title="$tag $first_line"
+
   if printf '%s\n' "$HAVE" | grep -qx "$tag"; then
-    if gh release edit "$tag" --notes-file "$notes" >/dev/null 2>&1; then
-      echo "  ✓ $tag 说明已更新"
+    if gh release edit "$tag" --title "$title" --notes-file "$notes" >/dev/null 2>&1; then
+      echo "  ✓ $tag 标题与说明已更新"
     else
       echo "  ✗ $tag 更新失败"; failed+=("$tag")
     fi
   else
-    if gh release create "$tag" --title "$tag" --notes-file "$notes" >/dev/null 2>&1; then
+    if gh release create "$tag" --title "$title" --notes-file "$notes" >/dev/null 2>&1; then
       echo "  ✓ $tag Release 已创建"
     else
       echo "  ✗ $tag 创建失败（检查 tag 是否已推到远端、token 是否有 repo 权限）"; failed+=("$tag")
