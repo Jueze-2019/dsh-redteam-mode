@@ -29,7 +29,8 @@ import {
   buildHttpRequest, buildCurlCommand, parseCurl, commandKind, parseTarget, fillTemplate,
 } from './report-replay.js'
 import {
-  DDL, KNOWLEDGE_DDL, POC_CATEGORIES, pocCategoryName, guessPocCategory,
+  DDL, KNOWLEDGE_DDL, ASSET_FTS_DDL, POC_FTS_DDL, HAS_FTS5,
+  POC_CATEGORIES, pocCategoryName, guessPocCategory,
   migrate, migrateKnowledge,
 } from './schema.js'
 import {
@@ -49,7 +50,8 @@ import {
 export {
   ipToInt, cidrOf, isIpv6, expandIpv6, scopeOfIp, slugify, slugTarget, slugPoc,
   defaultPocFilename, nowIso,
-  DDL, KNOWLEDGE_DDL, POC_CATEGORIES, pocCategoryName, guessPocCategory,
+  DDL, KNOWLEDGE_DDL, ASSET_FTS_DDL, POC_FTS_DDL, HAS_FTS5,
+  POC_CATEGORIES, pocCategoryName, guessPocCategory,
   migrate, migrateKnowledge,
   WEBSHELL_TYPES, WEBSHELL_STATUSES, normalizeShellType, normalizeShellStatus, assertPathWithin,
   TUNNEL_ENTRY_KINDS, tunnelIsLegit, ACCOUNT_POINT_CODES, SERVICE_CAPPED_POINT_CODES,
@@ -874,7 +876,10 @@ export class RedteamStore {
       mkdirSync(this.dirOf(id), { recursive: true })
     }
     handle = new DatabaseSync(this.dbPathOf(id))
-    handle.exec(DDL)
+    /* FTS5 缺席的 Node 构建（如 22.14）上不能带上 fts5 建表语句：
+       一句 `USING fts5` 抛错会把整份 DDL 一起带崩，连普通表都建不出来。
+       降级后 asset 检索走 LIKE（见 listAssets 的 f.q 分支）。 */
+    handle.exec(HAS_FTS5 ? DDL + ASSET_FTS_DDL : DDL)
     migrate(handle)
     this.handles.set(id, handle)
     return handle
@@ -1205,8 +1210,36 @@ export class RedteamStore {
     if (f.q) {
       const terms = String(f.q).split(/\s+/).filter(Boolean)
       if (terms.length) {
-        where.push('a.id IN (SELECT CAST(asset_id AS INTEGER) FROM asset_fts WHERE asset_fts MATCH ?)')
-        args.push(terms.map((t) => `"${t.replace(/"/g, '""')}"*`).join(' AND '))
+        if (HAS_FTS5) {
+          /* 主域名（asset.primary_name）**没有**进 asset_fts 索引（FTS 表里只有
+             ip / names / banners / titles / fingerprints），只靠 MATCH 会搜不到主域名 ——
+             例如按 "portal.example.test" 查是 0 条。这里并入 LIKE 兜住它，
+             顺带覆盖 LIKE 能匹配而 FTS 词元切分匹配不到的情形。 */
+          where.push('(a.id IN (SELECT CAST(asset_id AS INTEGER) FROM asset_fts WHERE asset_fts MATCH ?)'
+            + ' OR a.primary_name LIKE ?)')
+          args.push(terms.map((t) => `"${t.replace(/"/g, '""')}"*`).join(' AND '), '%' + String(f.q) + '%')
+        } else {
+          /* 无 FTS5 的 Node 构建：退化成子串匹配。
+             语义比 FTS 弱（不做前缀/词干切分、LIKE 只对 ASCII 大小写不敏感），
+             但**检索不报错、内容找得到**，比"整个面板打不开"好得多。
+             检索面与 #reindex 喂给 asset_fts 的一致：
+             资产 IP / 主域名 + asset_name + port.banner/title/url + service + fingerprint。 */
+          const sub = [
+            'EXISTS(SELECT 1 FROM asset_name n WHERE n.asset_id = a.id AND n.name LIKE ?)',
+            'EXISTS(SELECT 1 FROM port p WHERE p.asset_id = a.id AND (p.banner LIKE ? OR p.title LIKE ? OR p.url LIKE ?))',
+            'EXISTS(SELECT 1 FROM service s JOIN port p2 ON p2.id = s.port_id WHERE p2.asset_id = a.id'
+              + ' AND (s.name LIKE ? OR s.product LIKE ? OR s.version LIKE ?))',
+            'EXISTS(SELECT 1 FROM fingerprint f WHERE f.asset_id = a.id'
+              + ' AND (f.vendor LIKE ? OR f.product LIKE ? OR f.version LIKE ? OR f.category LIKE ?))',
+          ]
+          const binds = (t) => ['%' + t + '%', '%' + t + '%', '%' + t + '%', '%' + t + '%',
+            '%' + t + '%', '%' + t + '%', '%' + t + '%',
+            '%' + t + '%', '%' + t + '%', '%' + t + '%', '%' + t + '%']
+          for (const t of terms) {
+            where.push('(a.ip LIKE ? OR a.primary_name LIKE ? OR ' + sub.join(' OR ') + ')')
+            args.push('%' + t + '%', '%' + t + '%', ...binds(t))
+          }
+        }
       }
     }
     const clause = where.length ? 'WHERE ' + where.join(' AND ') : ''
@@ -3683,13 +3716,15 @@ export class RedteamStore {
     mkdirSync(this.root, { recursive: true })
     mkdirSync(this.pocsDirOf(), { recursive: true })
     const handle = new DatabaseSync(this.knowledgePath())
-    handle.exec(KNOWLEDGE_DDL)
+    /* 同上：没有 FTS5 就不建 poc_fts，POC 检索退化成 LIKE（见 searchPocs） */
+    handle.exec(HAS_FTS5 ? KNOWLEDGE_DDL + POC_FTS_DDL : KNOWLEDGE_DDL)
     migrateKnowledge(handle)
     this.kbHandle = handle
     return handle
   }
 
   #reindexPoc(db, pocId) {
+    if (!HAS_FTS5) return   /* 无 FTS5 时不建索引表；POC 检索走 LIKE（见 searchPocs 的兜底） */
     db.prepare('DELETE FROM poc_fts WHERE poc_id = ?').run(String(pocId))
     const p = db.prepare('SELECT * FROM poc WHERE id = ?').get(pocId)
     if (!p) return
@@ -3909,7 +3944,7 @@ export class RedteamStore {
     const row = this.getPoc(key)
     if (row === undefined) return { ok: false, error: 'poc not found: ' + key }
     db.prepare('DELETE FROM poc WHERE id = ?').run(row.id)
-    db.prepare('DELETE FROM poc_fts WHERE poc_id = ?').run(String(row.id))
+    if (HAS_FTS5) db.prepare('DELETE FROM poc_fts WHERE poc_id = ?').run(String(row.id))
     /* 连落盘目录一起删（只在 pocs/ 内按 code 精确删除；删不掉不影响数据一致性） */
     let removedFiles = 0
     try {
@@ -4259,6 +4294,9 @@ export class RedteamStore {
   #reindex(db, assetId) {
     const a = db.prepare('SELECT * FROM asset WHERE id = ?').get(assetId)
     if (!a) return
+    /* 没有 FTS5 时不建索引表，这里直接跳过 —— 检索走 listAssets 的 LIKE 分支，
+       所以上面那几段取值也不用白跑。 */
+    if (!HAS_FTS5) return
     const names = db.prepare('SELECT name FROM asset_name WHERE asset_id = ?').all(assetId).map((r) => r.name).join(' ')
     const banners = db.prepare('SELECT banner FROM port WHERE asset_id = ? AND banner IS NOT NULL').all(assetId).map((r) => r.banner).join(' ')
     const titles = db.prepare('SELECT title FROM port WHERE asset_id = ? AND title IS NOT NULL').all(assetId).map((r) => r.title).join(' ')

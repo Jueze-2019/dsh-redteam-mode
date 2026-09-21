@@ -1,3 +1,5 @@
+import { DatabaseSync } from 'node:sqlite'
+
 /**
  * 事实库 schema 与增量迁移（零依赖）。
  *
@@ -9,6 +11,54 @@
  * 读不到表结构时必须按"没有这一列"处理（返回 false）—— 曾经写成"出错就当列已存在"，
  * 结果迁移被静默跳过，用户拿到的是"莫名其妙 no such column"而不是"迁移失败"。
  */
+
+/* ------------------------------------------------------------------ FTS5 能力检测 */
+
+/**
+ * 本机 `node:sqlite` 是否带 FTS5。
+ *
+ * **必须检测**：FTS5 是编译期选项，官方 Node 构建里并不一致 ——
+ * Node 22.14 的 `node:sqlite` 就没有（`no such module: fts5`），22.23 有。
+ * GitHub Actions 上用 setup-node 装的 22.14 因此整个 DDL 都建不起来，
+ * 8 个测试文件全红、本地却全绿（2026-09 真实踩坑）。
+ * 语义：只有 FTS5 缺席时才降级成 LIKE 检索 —— 装了 FTS5 的机器行为完全不变。
+ *
+ * `REDTEAM_NO_FTS5=1` 可强制走降级路径：CI 的 Node 一旦换了带 FTS5 的版本，
+ * 降级分支就再没人执行了，得留一个能主动触发它的开关（见 test/fts-fallback.test.mjs）。
+ */
+export const HAS_FTS5 = (() => {
+  if (process.env.REDTEAM_NO_FTS5 === '1') return false
+  try {
+    const probe = new DatabaseSync(':memory:')
+    try {
+      probe.exec('CREATE VIRTUAL TABLE __fts5_probe USING fts5(x)')
+      return true
+    } finally {
+      probe.close()
+    }
+  } catch {
+    return false
+  }
+})()
+
+/* ------------------------------------------------------------------ FTS 虚拟表 DDL */
+
+/**
+ * 两张全文检索虚拟表。**单独导出**，因为它们依赖 FTS5：
+ * FTS5 缺席的构建上建表会抛 `no such module: fts5`，把整份 DDL 一起带崩。
+ * 调用方按 `HAS_FTS5` 决定是否拼进 DDL（见 core.js 的 db() / kb()）。
+ */
+export const ASSET_FTS_DDL = `
+CREATE VIRTUAL TABLE IF NOT EXISTS asset_fts USING fts5(
+  asset_id UNINDEXED, ip, names, banners, titles, fingerprints
+);
+`
+
+export const POC_FTS_DDL = `
+CREATE VIRTUAL TABLE IF NOT EXISTS poc_fts USING fts5(
+  poc_id UNINDEXED, title, cve, component, versions, tags, description, content
+);
+`
 
 /* ------------------------------------------------------------------ 靶标库 schema */
 
@@ -234,9 +284,6 @@ CREATE TABLE IF NOT EXISTS attack_step (
   recorded_by TEXT, recorded_at TEXT
 );
 
-CREATE VIRTUAL TABLE IF NOT EXISTS asset_fts USING fts5(
-  asset_id UNINDEXED, ip, names, banners, titles, fingerprints
-);
 
 CREATE INDEX IF NOT EXISTS ix_asset_segment ON asset(segment_cidr);
 CREATE INDEX IF NOT EXISTS ix_asset_ip_int ON asset(ip_int);
@@ -333,9 +380,6 @@ CREATE INDEX IF NOT EXISTS ix_poc_kind ON poc(kind, verified);
 /* 注意：归类 / 来源靶标两个索引**不能写在这里** —— 老 knowledge.db 的 poc 表还没有
    这两列，CREATE INDEX 会在 exec(DDL) 阶段直接抛
    "no such column: category"，连补列的迁移都跑不到。它们在 migrateKnowledge() 补完列之后再建。 */
-CREATE VIRTUAL TABLE IF NOT EXISTS poc_fts USING fts5(
-  poc_id UNINDEXED, title, cve, component, versions, tags, description, content
-);
 `
 
 /* ------------------------------------------------------------------ 知识库归类 */

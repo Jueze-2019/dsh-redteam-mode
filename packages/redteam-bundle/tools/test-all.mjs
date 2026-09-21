@@ -43,7 +43,15 @@ for (const { pkg, path } of files) {
   /* 只认最后一行"通过 N/M"，红的时候把 ✗ 行也带出来，便于直接定位 */
   const passLine = (out.match(/^通过 \d+\/\d+$/m) || ['（没有输出通过行）'])[0]
   const fails = (out.match(/^\s*✗ .*$/gm) || []).slice(0, 5)
-  summary.push({ label, code, passLine, fails })
+  /* 测试文件是直接抛异常死的（没跑到打印"通过"）时，✗ 行根本不存在 ——
+     上面那两种情况都拿不到线索。这里必须把 stdout+stderr 的尾部带出来，
+     否则 CI 上只会看到"没有输出通过行"，无从下手（2026-09 真踩过：
+     GitHub Actions 上 8 个文件红、本地全绿，日志里却一个字都没有）。 */
+  let tail = []
+  if (code !== 0 && fails.length === 0) {
+    tail = out.split('\n').map((l) => l.replace(/\x1b\[[0-9;]*m/g, '').trimEnd()).filter(Boolean).slice(-14)
+  }
+  summary.push({ label, code, passLine, fails, tail })
   if (code !== 0) failed += 1
 }
 
@@ -51,6 +59,7 @@ const width = Math.max(...summary.map((x) => x.label.length), 10)
 for (const x of summary) {
   console.log((x.code === 0 ? '  ✓ ' : '  ✗ ') + x.label.padEnd(width + 2) + x.passLine)
   for (const f of x.fails) console.log('        ' + f.trim())
+  for (const line of x.tail) console.log('        | ' + line)
 }
 console.log('')
 if (failed > 0) {
