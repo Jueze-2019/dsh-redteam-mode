@@ -31,7 +31,24 @@ bash "$DSH_HOME/redteam/setup.sh"           # 装齐工具 + 引导填 FOFA_KEY 
 > 请跑在**专供演练的 Kali 虚拟机**里，不要跑在日常办公机/宿主机上。
 
 <details>
-<summary>从源码装（开发者）</summary>
+<summary>从源码装 / 手动升级到指定版本（开发者）</summary>
+
+**直接从 Release 安装某个版本**（不依赖 npm，也不需要下载解压）：
+
+```sh
+dsh plugin --profile web add \
+  https://github.com/Jueze-2019/dsh-redteam-mode/releases/download/v0.11.4/dsh-redteam-mode-0.11.4.tgz
+# 装完重启一次 dsh web
+```
+
+**下载 tarball 再装**（适合离线机器，附件同在同一下载页）：
+
+```sh
+curl -LO https://github.com/Jueze-2019/dsh-redteam-mode/releases/download/v0.11.4/dsh-redteam-mode-0.11.4.tgz
+dsh plugin --profile web add ./dsh-redteam-mode-0.11.4.tgz
+```
+
+**从源码装**：
 
 ```bash
 PROFILE=~/.dsh/profiles/web

@@ -171,6 +171,18 @@ git add -A && git commit -m "data: update dsh-redteam-mode entry for vX.Y.Z" && 
 - [ ] **GitHub Release 已建**：`bash scripts/release-notes.sh vX.Y.Z`
       （说明写在 `docs/releases/vX.Y.Z.md`；**只推 tag 不建 Release 的话 Releases 页面不会更新**，
       v0.9.0/0.9.1/0.9.2 就这样漏过一次 —— `bash scripts/release-notes.sh --check` 可以查出哪些 tag 还没有 Release）
+- [ ] **把 tarball 作为 Release 附件上传**（npm 发不出去时的唯一手动升级路径，v0.11.4 起）：
+
+      ```sh
+      npm pack --pack-destination /tmp                    # 生成 dsh-redteam-mode-X.Y.Z.tgz
+      sha256sum /tmp/dsh-redteam-mode-X.Y.Z.tgz > /tmp/dsh-redteam-mode-X.Y.Z.tgz.sha256
+      gh release upload vX.Y.Z /tmp/dsh-redteam-mode-X.Y.Z.tgz /tmp/dsh-redteam-mode-X.Y.Z.tgz.sha256
+      ```
+
+      用户即可直接从 Release 安装：`dsh plugin --profile web add <附件 URL>`（已实测可用；
+      注意 `gh release upload` 必须在仓库目录里跑）。
+      为什么需要它：pnpm 12 已不支持 git 依赖，GitHub 的源码包也装不了（monorepo 根目录没有
+      `package.json`，报 `Could not determine the package name`）—— tarball 是唯一可行的手动路径。
 - [ ] **市场条目里的数字与文案已同步到本版**（角色数 / 工具数 / 技能数 / 关键能力）
 - [ ] PR 评论里说明"上一版描述哪里过时、现在是什么"，方便维护者复核
 - [ ] **发布说明按下面的写法规则过一遍**
