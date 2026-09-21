@@ -76,6 +76,42 @@ dsh plugin --profile web add ./dsh-redteam-mode-<版本>.tgz
 > npm **没有**网页上传 tarball 的入口（`/package/new`、`/publish` 都是 404/403）——
 > 发布只能走 CLI，别再去网页找上传按钮。
 
+### ⚠️ 开 2FA 会触发 72 小时只读冻结（发布必被 403）
+
+启用或修改 2FA、使用恢复码、修改邮箱这类**敏感账号变更**，会被 npm 放进**只读状态 72 小时**
+（[npm 的预防性账号保护](https://github.blog/changelog/2026-09-09-npm-extends-recovery-code-security-holds-to-all-accounts/)）。
+期间发布、管理 token、改包可见性等操作全部被拦，报错是：
+
+```
+npm notice Your account has been temporarily suspended due to a recent security-sensitive action.
+npm error code E403 ... 403 Forbidden - PUT https://registry.npmjs.org/<pkg> - [object Object]
+```
+
+**不需要申诉、不需要任何确认**，满 72 小时自动恢复；期间安装/下载、看设置都正常，包对使用者始终可用。
+紧急情况才走 <https://www.npmjs.com/support>。
+
+> 所以**要开 2FA 就早点开**，别卡在发版当天。这次 v0.11.3 就是开完 2FA 立刻发布，撞上冻结。
+
+### npm 的 2FA 只支持 WebAuthn 安全密钥（没有验证器 App）
+
+npm 的 2FA 没有 TOTP（6 位验证码）、没有短信，**只有 WebAuthn 安全密钥**
+（[官方文档](https://docs.npmjs.com/about-two-factor-authentication/)）。选项里写的
+"physical security key over USB or NFC, fingerprint reader, facial recognition, or password/PIN"
+指的是**同一套 WebAuthn**：既包括 YubiKey 这类硬件密钥，也包括**设备自带的指纹 / Windows Hello /
+Face ID / Touch ID**（即"平台认证器"）。
+
+判定某台机器能不能用来开 2FA，在浏览器里跑一句就知道：
+
+```js
+await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()   // false = 这台机器没有平台认证器
+```
+
+本机 Kali 是 QEMU 虚拟机：该值为 `false`，且无指纹硬件、无蓝牙（Chrome 的"用手机做安全密钥"
+走蓝牙，用不上）——**所以在这台 VM 里开不了 2FA**，需要在有生物识别的宿主机上开，或插一个硬件密钥。
+
+**开了之后不必每次按密钥**：配好受信发布（`.github/workflows/publish.yml`）后，
+发版由 CI 用 OIDC 完成，既不用碰密钥、也不用长期 token。
+
 **每次 `npm publish` 之后必须验证**（返回成功不算数）：
 
 ```sh

@@ -1,0 +1,95 @@
+name: Publish to npm
+
+# 受信发布（Trusted Publishing / OIDC）：由 GitHub Actions 直接向 npm 发布，
+# 不需要任何长期 token，也不需要人工按安全密钥。
+#
+# 为什么用这个：npm 的 2FA 只支持 WebAuthn 安全密钥，而 CI 里没法"按一下密钥"。
+# 受信发布正是 npm 为这种场景提供的方案，同时也是双用途内容政策认可的
+# 「强制 2FA 的发布方式」。
+#
+# 启用前提（两处，都要做）：
+#   1) npmjs.com → 本包 → Settings → Trusted Publisher 绑定：
+#        Publisher: GitHub Actions
+#        Repository: Jueze-2019/dsh-redteam-mode
+#        Workflow filename: publish.yml        ← 必须与本文件名完全一致
+#        Environment: （留空）
+#   2) 本仓库 → Settings → Secrets and variables → Actions → Variables 新建：
+#        NPM_TRUSTED_PUBLISHING_ENABLED = true
+#      （没设这个变量时 workflow 会跳过发布，避免绑定还没配好就推 tag 导致失败）
+#
+# 发布方式：推一个与 package.json 版本一致的 tag，例如
+#   git tag v0.11.3 && git push origin v0.11.3
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write        # OIDC 换取 npm 的短期发布凭据，必须有
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/redteam-bundle
+    steps:
+      - uses: actions/checkout@v4
+
+      # 受信发布要求 npm CLI >= 11.5.1、Node >= 22.14
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: 检查绑定开关
+        id: gate
+        run: |
+          if [ "${{ vars.NPM_TRUSTED_PUBLISHING_ENABLED }}" != "true" ]; then
+            echo "跳过：仓库变量 NPM_TRUSTED_PUBLISHING_ENABLED 未设为 true（受信发布还没配好）"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 版本号与 tag 必须一致，否则会出现"tag 是 v0.11.3、发出去的是别的版本"
+      - name: 校验 tag 与 package.json 版本一致
+        if: steps.gate.outputs.enabled == 'true' && startsWith(github.ref, 'refs/tags/')
+        run: |
+          pkg="$(node -p "require('./package.json').version")"
+          tag="${GITHUB_REF_NAME#v}"
+          echo "tag=$tag package.json=$pkg"
+          [ "$tag" = "$pkg" ] || { echo "::error::tag ($tag) 与 package.json ($pkg) 不一致"; exit 1; }
+
+      # 构建自检 + 全量回归（零依赖，不需要 npm install）
+      - name: 构建自检与全量测试
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          node tools/build.mjs --check
+          node tools/test-all.mjs
+
+      - name: 发布到 npm（OIDC，无需 token）
+        if: steps.gate.outputs.enabled == 'true'
+        run: npm publish --access public
+
+      - name: 发布后校验 registry
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          pkg="$(node -p "require('./package.json').version")"
+          echo "本地版本: $pkg"
+          sleep 30
+          curl -s "https://registry.npmjs.org/dsh-redteam-mode?t=$(date +%s)" \
+            | node -e "
+              let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{
+                const d=JSON.parse(s);
+                const want=process.argv[1];
+                const ok=Object.prototype.hasOwnProperty.call(d.versions||{}, want);
+                console.log('registry 上的版本:', Object.keys(d.versions||{}).slice(-4).join(', '));
+                console.log('latest:', (d['dist-tags']||{}).latest);
+                if(!ok){ console.error('::error::registry 上还没有 '+want+'（可能仍在扫描，稍后自行确认）'); process.exit(1); }
+                console.log('✓ '+want+' 已可安装');
+              });
+            " "$pkg"
