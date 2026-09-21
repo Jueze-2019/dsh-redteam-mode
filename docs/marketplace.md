@@ -35,6 +35,37 @@ npm pack                        # 产出 dsh-redteam-mode-<版本>.tgz
 dsh plugin --profile web add ./dsh-redteam-mode-<版本>.tgz
 ```
 
+### ⚠️ npm 现在会拦"绕过 2FA 的 token"：发布可能变成"暂存"
+
+2026-09 起 npm 限制**绕过 2FA 的 granular access token**：这类 token 调的 `npm publish`
+不再直接上线，而是变成**暂存（staged）**，要维护者用 2FA 批准。踩坑现象很好认：
+
+- 命令**返回成功**（`+ dsh-redteam-mode@x.y.z`），但 `npm view <包> version` 仍是旧版本；
+- registry 里查不到该版本、`npm install <包>@x.y.z` 报 `ETARGET`；
+- 重发同一个版本会被拒：`409 Cannot publish over previously staged version`；
+- `npx npm@12 stage list` 也看不到条目（granular token 无权列出/批准暂存），
+  即**这个版本号已经被占掉且拿不回来** —— 只能顺延版本号。
+
+正确做法（任选其一）：
+
+1. **带一次性验证码发布**（换一个不绕过 2FA 的 token）：
+   `npm publish --access public --otp=<6 位验证码>`；
+2. **受信发布**（推荐长期方案）：npm 包设置 → Trusted Publisher 绑定本仓库 GitHub Actions，
+   之后由 CI 用 OIDC 发布，不再依赖长期 token；
+3. **网页发布**：`npm pack` 出 tarball，在 npm 网站手动上传。
+
+> 另注：这类 token 之后**不能 `npm unpublish`**（403 `Granular access tokens that bypass
+> two-factor authentication may not perform this action`）——误发的版本只能去网站删；
+> 但 `npm dist-tag add` 仍可用，所以误发版本若抢占了 `latest`，可以先把 `latest` 指回稳定版：
+> `npm dist-tag add dsh-redteam-mode@<上一个稳定版> latest`。
+
+**每次 `npm publish` 之后必须验证**（返回成功不算数）：
+
+```sh
+curl -s https://registry.npmjs.org/dsh-redteam-mode | grep -o '"latest":"[^"]*"'   # 应显示新版本
+npm view dsh-redteam-mode version
+```
+
 ### 2) 往 awesome-dsh-plugin 提 PR
 
 市场里的插件列表**不是** npm 搜索，而是精选列表仓库生成的一份目录：
