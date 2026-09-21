@@ -92,13 +92,10 @@ for tag in "${todo[@]}"; do
     echo "  ! $tag 没有 docs/releases/$tag.md，先用占位说明建 Release"
   fi
 
-  # 标题 = "vX.Y.Z " + 说明首行（去掉 markdown 记号），与历史 Release 风格一致。
-  # 说明首行常常本身就写成 "# vX.Y.Z — …"：先把开头的版本号剥掉，
-  # 否则会拼出 "v0.11.0 v0.11.0 — …" 这种重复的标题（v0.11.0 踩过）。
-  first_line="$(sed -n '1p' "$notes" | sed -E 's/^#+ +//; s/\*\*//g; s/[。.]$//' \
-    | sed -E "s/^${tag}[[:space:]]*[—–:-]*[[:space:]]*//" | cut -c1-90)"
+  # 标题**只写版本号**（vX.Y.Z）。改动的正文留在 Release 说明里，
+  # 不要拼进标题 —— 标题长了在 Releases 列表 / tag 列表里都会被截断，很难扫。
+  # （v0.1.0~v0.11.0 那批曾把说明首行拼进标题，2026-09 统一改回纯版本号。）
   title="$tag"
-  [ -n "$first_line" ] && [ "$first_line" != "$tag" ] && title="$tag $first_line"
 
   if printf '%s\n' "$HAVE" | grep -qx "$tag"; then
     if gh release edit "$tag" --title "$title" --notes-file "$notes" >/dev/null 2>&1; then
