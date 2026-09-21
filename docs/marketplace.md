@@ -35,29 +35,46 @@ npm pack                        # 产出 dsh-redteam-mode-<版本>.tgz
 dsh plugin --profile web add ./dsh-redteam-mode-<版本>.tgz
 ```
 
-### ⚠️ npm 现在会拦"绕过 2FA 的 token"：发布可能变成"暂存"
+### ⚠️ 真正的拦路虎是「双用途内容政策」，不只是 2FA
 
-2026-09 起 npm 限制**绕过 2FA 的 granular access token**：这类 token 调的 `npm publish`
-不再直接上线，而是变成**暂存（staged）**，要维护者用 2FA 批准。踩坑现象很好认：
+两次踩坑（2026-09）合起来才看清全貌，顺序很重要：
 
-- 命令**返回成功**（`+ dsh-redteam-mode@x.y.z`），但 `npm view <包> version` 仍是旧版本；
-- registry 里查不到该版本、`npm install <包>@x.y.z` 报 `ETARGET`；
-- 重发同一个版本会被拒：`409 Cannot publish over previously staged version`；
-- `npx npm@12 stage list` 也看不到条目（granular token 无权列出/批准暂存），
-  即**这个版本号已经被占掉且拿不回来** —— 只能顺延版本号。
+**第一层：发布期恶意代码扫描。** npm 2026-07 起在每个包**发布时**自动扫描，扫完才可安装
+（通常 5 分钟，峰值 15 分钟以上）。npm 网站 → Settings → Packages 里，版本状态会显示
+`Validating`（校验中），此时 `npm unpublish` 与 `npm deprecate` 都不可用，只有 `dist-tag` 能用。
+**`Validating` 卡十几分钟不散，不是网络问题，是被扣下人工复核了。**
 
-正确做法（任选其一）：
+**第二层：双用途（dual-use）内容申报。** 本包编排扫描器、会话工具与反弹 Shell 技能，
+正落在政策定义的 dual-use 范围里。政策要求**两件事，缺一不可**：
 
-1. **带一次性验证码发布**（换一个不绕过 2FA 的 token）：
-   `npm publish --access public --otp=<6 位验证码>`；
-2. **受信发布**（推荐长期方案）：npm 包设置 → Trusted Publisher 绑定本仓库 GitHub Actions，
-   之后由 CI 用 OIDC 发布，不再依赖长期 token；
-3. **网页发布**：`npm pack` 出 tarball，在 npm 网站手动上传。
+1. `package.json` 里声明：`"contentPolicy": { "class": "dual-use" }`
+2. 包根放一个 `DISCLOSURE` 文件（自由文本，说明双用途能力与合法用途；已加进 `files`）
 
-> 另注：这类 token 之后**不能 `npm unpublish`**（403 `Granular access tokens that bypass
-> two-factor authentication may not perform this action`）——误发的版本只能去网站删；
-> 但 `npm dist-tag add` 仍可用，所以误发版本若抢占了 `latest`，可以先把 `latest` 指回稳定版：
-> `npm dist-tag add dsh-redteam-mode@<上一个稳定版> latest`。
+未申报的包会被扣住不放行 —— 这正是 `0.11.0` / `0.11.1` / `0.11.2` 卡在 `Validating` 的原因。
+
+**第三层：双用途包必须用强制 2FA 的方式发布。** 政策原文：声明了 dual-use 的包，
+必须走受信发布（OIDC）、带验证码的交互式会话、或暂存后批准；**用绕过 2FA 的 token 直接发是不允许的**
+（发到暂存则允许）。所以最终只有两条路：
+
+| 方案 | 前提 | 命令 |
+| --- | --- | --- |
+| 受信发布（推荐长期） | 账号开 2FA + npm 包设置里绑定本仓库 GitHub Actions | CI 里 `npm publish`，走 OIDC，无需长期 token |
+| 暂存后批准 | 账号开 2FA | `npx npm@12 stage publish` → `npx npm@12 stage approve <stage-id>` |
+
+> **本账号目前 `npmjs.com → Profile` 里是 `Enable 2FA`（等于没开）**——
+> 没有 2FA 就既批准不了暂存、也过不了双用途的强制 2FA 要求，这是当前唯一的卡点。
+
+### 顺带记录：绕过 2FA 的 token 还有两个副作用
+
+- 这类 token 调的 `npm publish` 可能被降级为**暂存**，命令照样打印 `+ pkg@x.y.z`；
+  重发同版本报 `409 Cannot publish over previously staged version`；
+- **不能 `npm unpublish`**（403 `Granular access tokens that bypass two-factor
+  authentication may not perform this action`）——误发的版本只能去网站删（网站要 2FA）；
+  但 `npm dist-tag add` 仍可用，误发版本若抢占了 `latest`，先把 `latest` 指回稳定版：
+  `npm dist-tag add dsh-redteam-mode@<上一个稳定版> latest`。
+
+> npm **没有**网页上传 tarball 的入口（`/package/new`、`/publish` 都是 404/403）——
+> 发布只能走 CLI，别再去网页找上传按钮。
 
 **每次 `npm publish` 之后必须验证**（返回成功不算数）：
 
