@@ -1,6 +1,6 @@
 {
   "name": "dsh-redteam-store",
-  "version": "0.11.3",
+  "version": "0.11.4",
   "private": true,
   "description": "RedTeam 资产库：靶标工作区 + SQLite 事实库（segment/asset/port/service/fingerprint/observation/edge/vuln）+ FTS5 全文索引",
   "type": "module",
