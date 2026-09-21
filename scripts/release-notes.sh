@@ -92,8 +92,11 @@ for tag in "${todo[@]}"; do
     echo "  ! $tag 没有 docs/releases/$tag.md，先用占位说明建 Release"
   fi
 
-  # 标题 = "vX.Y.Z " + 说明首行（去掉 markdown 记号），与历史 Release 风格一致
-  first_line="$(sed -n '1p' "$notes" | sed -E 's/^#+ +//; s/\*\*//g; s/[。.]$//' | cut -c1-90)"
+  # 标题 = "vX.Y.Z " + 说明首行（去掉 markdown 记号），与历史 Release 风格一致。
+  # 说明首行常常本身就写成 "# vX.Y.Z — …"：先把开头的版本号剥掉，
+  # 否则会拼出 "v0.11.0 v0.11.0 — …" 这种重复的标题（v0.11.0 踩过）。
+  first_line="$(sed -n '1p' "$notes" | sed -E 's/^#+ +//; s/\*\*//g; s/[。.]$//' \
+    | sed -E "s/^${tag}[[:space:]]*[—–:-]*[[:space:]]*//" | cut -c1-90)"
   title="$tag"
   [ -n "$first_line" ] && [ "$first_line" != "$tag" ] && title="$tag $first_line"
 

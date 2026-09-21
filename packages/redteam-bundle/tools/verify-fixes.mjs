@@ -162,7 +162,7 @@ try {
   const pkgJson = JSON.parse(readFileSync(join(repo, 'packages/redteam-bundle/package.json'), 'utf8'))
   ok(existsSync(join(repo, 'packages/redteam-bundle/tools/test-all.mjs')), 'test-all.mjs 存在')
   ok(/test-all\.mjs/.test(pkgJson.scripts.prepublishOnly), 'prepublishOnly 会跑全量测试（不再只跑 bundle.test）')
-  ok(pkgJson.version === '0.11.0', '包版本与代码注释里的 v0.11.x 对齐（实际 ' + pkgJson.version + '）')
+  ok(/^0\.11\./.test(pkgJson.version), '包版本与代码注释里的 v0.11.x 对齐（实际 ' + pkgJson.version + '）')
   ok(DEFAULT_SCORE_POINTS.length === 25, '得分点 25 条（18 权限 + 4 边界 + 3 加成）')
   ok(new Set(DEFAULT_SCORE_POINTS.map((p) => p.rule)).size === 25, 'rule 编号唯一（不再出现重复的 19 与空号）')
 } finally {
