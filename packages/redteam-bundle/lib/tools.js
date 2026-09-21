@@ -259,6 +259,39 @@ const AGENT_PARAM = {
     + '。报告里会按它标注"这一步是谁做的"，不填按主会话记账。',
 }
 
+/**
+ * 把 store 层抛出的异常统一收敛成结构化的失败返回。
+ *
+ * 为什么需要：同一类错误（对象不存在 / 参数非法）此前有两种形态 ——
+ * 有的工具 `return { ok:false, error }`，有的直接抛。模型拿到前者能换参数重试，
+ * 拿到后者往往直接放弃这一次调用，行为不可预测。统一成前者，且**不吞原始信息**。
+ * @param tool - defineTool 的返回值。
+ * @returns 包了一层 try/catch 的同一个工具定义。
+ */
+function withStructuredErrors(tool) {
+  const inner = tool.execute
+  if (typeof inner !== 'function') return tool
+  return Object.assign({}, tool, {
+    async execute(args, exec) {
+      try {
+        return await inner(args, exec)
+      } catch (error) {
+        const message = error && error.message ? error.message : String(error)
+        /* 参数类错误（非法值/缺必填）与"找不到对象"分开提示，模型据此决定重试还是放弃 */
+        const kind = /非法|invalid|required|不能为空|not found|不存在/i.test(message) ? 'bad_input' : 'failed'
+        return JSON.stringify({
+          ok: false,
+          error: message,
+          error_kind: kind,
+          hint: kind === 'bad_input'
+            ? '这是参数或对象标识的问题：核对参数名与取值（可用对应的 *_list / *_query 工具先看实际 id），修正后重试。'
+            : '工具执行失败，错误原文见 error 字段；不要静默跳过，先向用户或指挥者说明卡点。',
+        }, null, 2)
+      }
+    },
+  })
+}
+
 export function apply(ctx) {
   const store = ctx.redteam
 
@@ -280,7 +313,7 @@ export function apply(ctx) {
     })
   } catch { /* 事件不可用时只影响自动释放，手动 release 仍然可用 */ }
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_engagement_open',
     description: '打开或创建一次攻防演练靶标（按单位名称），并把**当前会话**绑定到该靶标（子智能体会自动继承）。后续所有资产工具默认作用于它。若靶标已存在则复用其资产库。写入的是本会话的绑定，不会改动其它会话正在用的靶标。',
     parameters: {
@@ -307,9 +340,9 @@ export function apply(ctx) {
           + (view.is_subagent ? ' 注意：本会话是子智能体，通常不需要再 open，直接继承父会话靶标即可。' : ''),
       }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_session_bind',
     description: '把一个**已经存在**的靶标绑定到当前会话（多会话并行时用：每个会话绑自己的靶标，互不串写）。可用靶标 id 或单位名称，省略则列出可绑定的靶标。',
     parameters: {
@@ -340,9 +373,9 @@ export function apply(ctx) {
         note: '本会话已绑定到「' + hit.name + '」；后续工具与报告都只作用于它。',
       }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_session_info',
     description: '查看**当前会话绑定的是哪个靶标**（会话 id、父会话、根会话、绑定链）。多会话同时开工时，先跑它确认自己没串到别人的靶标上。',
     parameters: {},
@@ -356,9 +389,9 @@ export function apply(ctx) {
         note: '绑定是进程内状态：dsh 重启后各会话需要重新绑定一次（redteam_engagement_open / redteam_session_bind）。',
       }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_preflight',
     description: '【开工前必须跑一次】平台技能与资源自检：逐个检查红队技能的必需环境变量（如 FOFA 测绘的 FOFA_KEY）、本机工具与二进制（suo5 / fscan / gogo / frp / 冰蝎 / 哥斯拉 / nmap / nuclei…）、外部基础设施（反弹 Shell 用的 VPS）。返回 available/broken 清单与每个坏掉的技能"缺什么、怎么补"。**缺 key / 缺 VPS 时直接向用户要，或改用替代方案，不要假装能跑。**',
     parameters: {
@@ -381,15 +414,48 @@ export function apply(ctx) {
       }
       const only = splitList(args.include)
       const wanted = summaries.filter((s) => only.length === 0 || only.includes(s.name))
+      /* 环境变量的真实来源有两处：进程环境 + $DSH_HOME/.env（dsh web 启动时加载的那份）。
+         只看 process.env 会误判——用户明明把 FOFA_KEY 写进了 .env，面板却报"缺 key"。
+         这里合并成一份：进程环境优先，.env 兜底（不覆盖已存在的值）。 */
+      const envFile = expandSkillPath('$DSH_HOME/.env')
+      const effectiveEnv = { ...process.env }
+      let envFileKeys = []
+      try {
+        if (existsSync(envFile)) {
+          const { readFileSync } = await import('node:fs')
+          for (const line of readFileSync(envFile, 'utf8').split('\n')) {
+            const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line)
+            if (m === null) continue
+            const key = m[1]
+            const value = m[2].trim().replace(/^["']|["']$/g, '')
+            if (value === '') continue
+            envFileKeys.push(key)
+            if (effectiveEnv[key] === undefined || effectiveEnv[key] === '') effectiveEnv[key] = value
+          }
+        }
+      } catch { /* .env 读不到不影响主流程 */ }
+      /* 同名技能可能存在于多个技能根：判定时带上"其它根"，才能识别被随包占位符盖住的误报 */
+      const rootsWith = new Map()
+      for (const x of summaries) {
+        const dir = x.resourceBase && x.resourceBase.kind === 'directory' ? x.resourceBase.path : null
+        if (dir === null) continue
+        if (!rootsWith.has(x.name)) rootsWith.set(x.name, [])
+        if (!rootsWith.get(x.name).includes(dir)) rootsWith.get(x.name).push(dir)
+      }
+      /* checked = **全量**结论（每个技能都判一次）：ok / onboarding.complete 必须基于它，
+         否则带上 include 调用时，一台技能大面积坏掉的机器也会被判成"环境就绪"。
+         wanted 只用于后面的展示过滤，不再决定判定范围。 */
       const checked = []
-      for (const summary of wanted) {
+      for (const summary of summaries) {
         let def
         try { def = await skills.get(summary.name) } catch { def = undefined }
         const path = def && typeof def.path === 'string'
           ? def.path
           : (summary.resourceBase && summary.resourceBase.kind === 'directory' ? summary.resourceBase.path : null)
-        /* 判定逻辑（环境变量 / 本机路径 / 占位符）全部来自共享模块，与面板显示的是同一份结论 */
-        const verdict = checkSkill({ name: summary.name, content: def && def.content, path }, { env: process.env })
+        const root = summary.resourceBase && summary.resourceBase.kind === 'directory' ? summary.resourceBase.path : null
+        /* 判定逻辑（环境变量 / 本机路径 / 占位符 / 同名技能被盖住）全部来自共享模块，与面板显示的是同一份结论 */
+        const verdict = checkSkill({ name: summary.name, content: def && def.content, path, root },
+          { env: effectiveEnv, sameNameIn: rootsWith.get(summary.name) || [] })
         checked.push(Object.assign({}, verdict, {
           title: summary.description,
           path,
@@ -403,8 +469,13 @@ export function apply(ctx) {
               : n)),
         }))
       }
-      const broken = checked.filter((s) => s.status === 'broken')
-      const available = checked.filter((s) => s.status === 'available')
+      /* 全量结论（判定用） */
+      const allBroken = checked.filter((s) => s.status === 'broken')
+      const allAvailable = checked.filter((s) => s.status === 'available')
+      /* 展示子集（include 过滤后；不影响上面的判定） */
+      const shown = (x) => only.length === 0 || only.includes(x.name)
+      const broken = allBroken.filter(shown)
+      const available = allAvailable.filter(shown)
       /* 工具箱现状：让用户一眼看到"本机到底有什么" */
       const toolkit = expandSkillPath('$DSH_HOME/redteam/toolkit')
       let toolkitEntries = []
@@ -414,9 +485,81 @@ export function apply(ctx) {
           toolkitEntries = readdirSync(toolkit).slice(0, 60)
         }
       } catch { /* 忽略 */ }
+
+      /* ── 首次使用引导状态 ──────────────────────────────────────────────
+         判定"环境是否配齐"有三个客观依据，缺任一条就算没配齐：
+           ① 完成标记 $DSH_HOME/redteam/.setup-complete（setup.sh 写的）
+           ② FOFA_KEY 有值（测绘能力）
+           ③ VPS 私钥存在（反弹 Shell 落地能力）
+         再加一条动态条件：技能体检里出现的缺口。
+         目标是让指挥智能体**在用户第一次进来时就主动把话说完、一次要齐**，
+         而不是等真正动手时才发现缺 key 缺 VPS。 */
+      const redteamDir = expandSkillPath('$DSH_HOME/redteam')
+      const markerFile = redteamDir + '/.setup-complete'
+      const setupScript = redteamDir + '/setup.sh'
+      const hasMarker = existsSync(markerFile)
+      let fofaKey = effectiveEnv.FOFA_KEY || ''
+      const vpsKey = effectiveEnv.REDTEAM_VPS_KEY || (toolkit + '/vps/id_rsa')
+      const vpsHost = effectiveEnv.REDTEAM_VPS_HOST || ''   /* 不写死真实主机：公开包里不能夹带 */
+      const hasVps = existsSync(vpsKey)
+      const needsUser = Array.from(new Set(broken.flatMap((s) => s.needs_user)))
+      const missing = []
+      if (fofaKey === '') missing.push('FOFA_KEY（资产测绘：没有就只能用 crt.sh + 子域枚举，边缘/未备案资产会大量漏掉）')
+      if (!hasVps) missing.push('VPS 登录方式（反弹 Shell 落地与载荷投递：没有就拿不到服务器权限、进不了内网）—— 私钥放到 ' + vpsKey + '，并设 REDTEAM_VPS_HOST=用户@主机（可用 bash ' + redteamDir + '/setup.sh 引导）')
+      /* 掩码显示已配置的 key，避免把密钥写进会话记录 */
+      const fofaShown = fofaKey.length > 8 ? fofaKey.slice(0, 4) + '…' + fofaKey.slice(-4) : '(已配置)'
+      /* 运行环境提醒：让智能体在首次预检时就能提醒用户"该在 Kali 虚拟机里跑"。
+         是提示不是门槛 —— 用户确认在宿主机上也照常放行（不阻断开工）。 */
+      const runtimeHint = '本模式必须在**专供演练的 Kali 虚拟机**里运行，不要跑在日常办公电脑/宿主机上'
+        + '（本机落 VPS 私钥与 WebShell 马，扫描流量也从常用出口 IP 出去；演练完虚拟机可直接丢弃）。'
+        + '首次开工时提醒用户一次即可。'
+      const onboarding = {
+        /* 用**全量** broken 判定：带 include 调用时不能因为"我只看了这个技能"
+           就宣布环境已就绪（那正是引导闭环要防的"假装能跑"）。 */
+        complete: hasMarker && missing.length === 0 && allBroken.length === 0,
+        runtime_hint: runtimeHint,
+        first_run: !hasMarker,
+        marker: { path: markerFile, exists: hasMarker },
+        setup_script: { path: setupScript, exists: existsSync(setupScript) },
+        configured: {
+          fofa_key: fofaKey === '' ? 'missing' : 'configured(' + fofaShown + ')',
+          vps_key: hasVps ? 'configured(' + vpsKey + ')' : 'missing',
+          vps_host: vpsHost,
+          env_file: { path: envFile, exists: existsSync(envFile), keys: envFileKeys },
+        },
+        missing,
+      }
+      let next
+      if (!hasMarker && !existsSync(setupScript)) {
+        next = '首次使用但没找到安装脚本 ' + setupScript + '：正常安装（市场包）会由插件启动时自动落一份；'
+          + '若确实缺失，让用户从仓库取 `scripts/redteam-setup.sh` 放到该路径并 `chmod +x`，'
+          + '或直接按技能 `redteam-setup` 手动逐项配置（装工具 → 配 FOFA_KEY 与 VPS）。'
+          + '补不齐时给替代方案：FOFA 不可用 → crt.sh / 被动 DNS / subfinder；没有 VPS → 先做不需要落地的成果。'
+      } else if (!hasMarker) {
+        next = '**首次使用**：先加载技能 `redteam-setup`，然后执行 `bash ' + setupScript + ' --check` 拿体检结论，'
+          + '再把 onboarding.missing 的每一项**一次性列给用户**（要什么、为什么、给到哪），等补齐后跑 `bash ' + setupScript + ' --yes` 装齐，'
+          + '最后重新跑本自检确认 onboarding.complete=true 再开工。'
+          + '用户就是不给时按替代方案降级并说明限制：FOFA 不可用 → crt.sh / 被动 DNS / subfinder（资产收集不完整）；'
+          + '没有 VPS → 只做不需要落地的成果（账号、数据、未授权），放弃 boundary/internal/core-system 类得分点。'
+      } else if (missing.length > 0) {
+        next = '环境标记存在但有缺口：把 onboarding.missing 一次性列给用户（或跑 `bash ' + setupScript + '` 引导补配）；'
+          + '用户明确接受降级时，按技能 redteam-setup 的降级口径说明限制后再开工：'
+          + 'FOFA 不可用 → crt.sh / 被动 DNS / subfinder；没有 VPS → 先做不需要落地的成果。'
+      } else if (allBroken.length > 0) {
+        next = '把 broken 里 needs_user 的每一项**一次性列给用户**（要什么、为什么、给到哪），补齐后再开工；'
+          + '补不齐就对用户说明哪部分能力降级、并给替代方案（例如 FOFA 不可用 → crt.sh / 被动 DNS / subfinder；没有 VPS → 先做不需要落地的成果）。'
+      } else {
+        next = '全部可用，可以开工。'
+      }
+
       const summary = summarizeSkills(checked)
       return JSON.stringify({
-        ok: broken.length === 0,
+        /* ok 同样按全量判定；include 只影响下面 broken/available 两个展示列表 */
+        ok: allBroken.length === 0 && missing.length === 0,
+        /* include 里写了不存在的技能名：明确报出来，避免"查了个空气还 ok=true" */
+        include: only.length > 0 ? { requested: only, unknown: unknownIncludes } : undefined,
+        all_checked: { total: checked.length, broken: allBroken.length, available: allAvailable.length },
+        onboarding,
         summary,
         checked: checked.length,
         available: available.map((s) => s.name),
@@ -424,14 +567,12 @@ export function apply(ctx) {
         unknown: checked.filter((s) => s.status === 'unknown').map((s) => s.name),
         toolkit: { dir: toolkit, exists: existsSync(toolkit), entries: toolkitEntries },
         skills_root_hint: '技能来自 DSH 原生注册表：本插件自带 + $DSH_HOME/skills + 项目根 + 各插件注册的根。',
-        next: broken.length === 0
-          ? '全部可用，可以开工。'
-          : '把 broken 里 needs_user 的每一项**一次性列给用户**（要什么、为什么、给到哪），补齐后再开工；补不齐就对用户说明哪部分能力降级、并给替代方案（例如 FOFA 不可用 → crt.sh / 被动 DNS / subfinder；没有 VPS → 先做不需要落地的成果）。',
+        next,
       }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_agent_slot',
     description: '【主会话派活前后用】执行智能体的并发闸门：同一靶标**最多同时 3 个**在跑（可用 REDTEAM_MAX_AGENTS 配置）。action=status 看还剩几个名额与谁在跑；action=acquire 占一个名额（满了会直接拒绝，**不要重试硬塞**）；action=release 释放（子智能体结束时服务端也会自动释放）。',
     parameters: {
@@ -483,9 +624,9 @@ export function apply(ctx) {
       const dropped = dropReservation(owner, typeof args.key === 'string' && args.key.trim() !== '' ? args.key.trim() : undefined)
       return JSON.stringify(Object.assign(base, { ok: true, released: dropped, used: Math.max(used - (dropped ? 1 : 0), 0) }), null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_asset_add',
     description: '把一个资产及其端口/服务/指纹写入资产库（幂等 upsert）。每条发现必须标注 provenance：被动收集填 passive，主动探测填 active，并填写 tool（数据源或工具名）。',
     parameters: {
@@ -568,9 +709,9 @@ export function apply(ctx) {
           + '；重复采集只刷新 last_seen，不会改动发现时间。',
       }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_asset_link',
     description: '在资产库中写入一条关系边（图谱与后续横向分析共用）。relation 例如 resolves / exposes / contains / trusts / shares_cert。',
     parameters: {
@@ -594,9 +735,9 @@ export function apply(ctx) {
       })
       return JSON.stringify({ ok: true, edges: result.counts.edges }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_asset_query',
     description: '检索资产库。支持按 C 段、端口、服务、指纹、来源、内外网维度（scope）、排序（sort）、关键词（全文，覆盖 IP/域名/banner/服务/指纹）过滤。返回紧凑结果，含每个资产的开放端口与指纹及内外网归属。',
     parameters: {
@@ -626,9 +767,9 @@ export function apply(ctx) {
         items: result.items.map(compactAsset),
       }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_asset_get',
     description: '取单个资产的完整详情：全部端口与服务、指纹、采集溯源时间线、关系边。用于深入分析某个目标。',
     parameters: {
@@ -642,9 +783,9 @@ export function apply(ctx) {
       if (asset === undefined) return JSON.stringify({ ok: false, error: 'asset not found' })
       return JSON.stringify({ ok: true, asset }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_asset_stats',
     description: '资产测绘概览：C 段数、资产数（存活）、开放端口、服务、指纹、被动/主动溯源条数，以及各 C 段的明细。',
     parameters: { engagement: { type: 'string' } },
@@ -653,9 +794,9 @@ export function apply(ctx) {
       const id = resolveEngagement(store, exec, args.engagement)
       return JSON.stringify({ ok: true, engagement: id, stats: store.stats(id), segments: store.listSegments(id) }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_asset_graph',
     description: '导出资产图谱（C 段 → 资产 → 开放端口，含域名解析边），用于拓扑推理与横向移动路径规划。节点数超过上限时按 C 段缩小范围。',
     parameters: {
@@ -677,14 +818,17 @@ export function apply(ctx) {
       }
       return JSON.stringify({ ok: true, engagement: id, nodes: graph.nodes, edges: graph.edges }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_role_prompt',
     description: '取出某个红队角色（信息收集/漏洞检测/漏洞利用/内网渗透）当前生效的系统提示词。委派子智能体时，把该提示词作为角色约束放进任务描述。',
     parameters: {
       engagement: { type: 'string' },
-      role: { type: 'string', required: true, enum: ['recon', 'vuln-scan', 'exploit', 'internal'] },
+      role: { type: 'string', required: true, /* 角色白名单**从 ROLE_ORDER 派生**：写死 4 个值曾漏掉 assess，
+          而预设明确要求主会话用本工具取资产梳理角色的提示词 —— 结果 enum 直接拒绝，
+          资产梳理子智能体永远拿不到角色约束。派生后新增角色不会再漏。 */
+      enum: ROLE_ORDER },
     },
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
     async execute(args, exec) {
@@ -696,9 +840,9 @@ export function apply(ctx) {
         updated_at: found.updated_at, prompt: found.content,
       }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_roles',
     description: '列出红队角色及其职责标题（信息收集 / 漏洞检测 / 漏洞利用 / 内网渗透）。',
     parameters: {},
@@ -709,9 +853,9 @@ export function apply(ctx) {
         roles: Object.entries(ROLE_TITLES).map(([role, title]) => ({ role, title })),
       }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_asset_test',
     description: '记录对某个资产的测试情况：本次做了什么测试（`test`，追加式）、还剩什么攻击面（`surface`，覆盖式）、当前测试状态、是否被 WAF 封禁。**每个资产开始测之前先调一次（status=testing），测完/放弃再调一次**——资产测绘页面据此显示「未测试 / 测试中 / 已测试 / 被封禁 / 已放弃 / 无攻击面」。排除结论、登录失败原因、重测理由都写在 `test` 里。',
     parameters: {
@@ -731,11 +875,11 @@ export function apply(ctx) {
       const result = store.updateAssetTest(id, { ...args, engagement: undefined })
       return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
     },
-  }))
+  })))
 
   /* ================================================================== 漏洞检测 */
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_vuln_add',
     description: '记录一条漏洞发现（漏洞检测角色）。带 cve 时按 (asset_id, cve, target) 幂等更新。severity：critical|high|medium|low|info；status：candidate（待验证）|confirmed（已验证）|false-positive|exploited|fixed。必须附证据（请求/响应片段、复现命令、证据文件路径）。',
     parameters: {
@@ -759,9 +903,9 @@ export function apply(ctx) {
       const result = store.addVuln(id, { ...args, engagement: undefined, agent: agentOf(args), found_by_agent: args.found_by_agent || args.agent || 'vuln-scan' })
       return JSON.stringify({ ok: true, engagement: id, ...result, stats: store.vulnStats(id) }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_vuln_query',
     description: '检索漏洞库：按严重级、状态、CVE、资产、C 段或关键词过滤。用于挑选待利用目标或核对误报。',
     parameters: {
@@ -780,9 +924,9 @@ export function apply(ctx) {
       const result = store.listVulns(id, { ...args, engagement: undefined, limit: Math.min(Number(args.limit) || 50, 200) })
       return JSON.stringify({ ok: true, engagement: id, total: result.total, items: result.items, stats: store.vulnStats(id) }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_vuln_update',
     description: '更新漏洞状态/严重级/证据（例如验证后置为 confirmed、利用成功后置为 exploited、误报置为 false-positive）。',
     parameters: {
@@ -801,11 +945,11 @@ export function apply(ctx) {
       const result = store.updateVuln(id, args.id, { status: args.status, severity: args.severity, evidence: args.evidence, confidence: args.confidence, gained: args.gained, title: args.title })
       return JSON.stringify({ ok: result.updated, engagement: id, ...result, stats: store.vulnStats(id) }, null, 2)
     },
-  }))
+  })))
 
   /* ================================================================== 漏洞利用 / 内网渗透 */
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_credential_add',
     description: '记录一条凭据（漏洞利用/内网渗透角色）。**必须把口令/密钥明文写进 secret_value**——面板要直接显示明文供随时复用；同时用 secret_ref 指向 runs/ 下的证据文件。注意：本库只在本机，禁止把库文件或导出内容提交到任何仓库。',
     parameters: {
@@ -829,9 +973,9 @@ export function apply(ctx) {
       const result = store.addCredential(id, { ...args, engagement: undefined, agent: agentOf(args) })
       return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_credential_list',
     description: '列出已收集的凭据（含明文 secret_value），用于凭据复用与横向移动。',
     parameters: {
@@ -844,9 +988,9 @@ export function apply(ctx) {
       const id = resolveEngagement(store, exec, args.engagement)
       return JSON.stringify({ ok: true, engagement: id, items: store.listCredentials(id, { host: args.host, username: args.username }) }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_access_add',
     description: '记录一次成功获得的访问会话（横向移动起点）。method 例如 vnc/rdp/ssh/web-shell/webshell/db；privilege 例如 admin/user/system。',
     parameters: {
@@ -866,9 +1010,9 @@ export function apply(ctx) {
       const result = store.addAccess(id, { ...args, engagement: undefined })
       return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_access_list',
     description: '列出已获得的访问会话。',
     parameters: {
@@ -880,14 +1024,17 @@ export function apply(ctx) {
       const id = resolveEngagement(store, exec, args.engagement)
       return JSON.stringify({ ok: true, engagement: id, items: store.listAccess(id, { host: args.host }) }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_role_prompt_reset',
     description: '把角色系统提示词恢复为内置默认（新版模板）。老靶标想用上最新版角色提示词时用它；省略 role 则四个角色全部重置。',
     parameters: {
       engagement: { type: 'string' },
-      role: { type: 'string', enum: ['recon', 'vuln-scan', 'exploit', 'internal'] },
+      role: { type: 'string', /* 角色白名单**从 ROLE_ORDER 派生**：写死 4 个值曾漏掉 assess，
+          而预设明确要求主会话用本工具取资产梳理角色的提示词 —— 结果 enum 直接拒绝，
+          资产梳理子智能体永远拿不到角色约束。派生后新增角色不会再漏。 */
+      enum: ROLE_ORDER },
     },
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
     async execute(args, exec) {
@@ -895,11 +1042,11 @@ export function apply(ctx) {
       const result = store.resetPrompts(id, args.role)
       return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
     },
-  }))
+  })))
 
   /* ---------- WebShell 与内网隧道：打的过程中随时复用，避免"打到后面忘了还有入口" ---------- */
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_sessions',
     description: '【每次决策前后都要看】一屏总览当前所有可复用入口：已上线的 WebShell、可用的内网隧道（含监听地址与可达网段）、凭据、访问会话，并给出在线/离线统计。打内网前先看这里，不要重复造轮子，也不要忘记已有的隧道。',
     parameters: { engagement: { type: 'string' } },
@@ -922,9 +1069,9 @@ export function apply(ctx) {
           + ' 注意 legit=false（entry_kind=self-only，只在自己的 VPS/自建服务器上）**不算跨越靶标边界、不算突破**；legit=null 表示未声明 entry_kind，用 redteam_tunnel_update 补上目标侧那一端。',
       }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_webshell_add',
     description: '登记一个已上线的 WebShell。**必须上传冰蝎马（behinder）或哥斯拉马（godzilla）的加密马**——用户在控制台要用对应客户端直连，一句话马/自研马/MemShell 用户连不上，不算可交付的入口。shell_type 只能填 godzilla | behinder；确实只能用其它形式时填 other 并在 note 里写清为什么。同一 url+pass_key 重复登记会合并刷新。登记后所有角色智能体都能复用它，不要重复打点。',
     parameters: {
@@ -945,9 +1092,9 @@ export function apply(ctx) {
       const result = store.addWebshell(id, { ...args, engagement: undefined, status: 'online', agent: agentOf(args) })
       return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_webshell_list',
     description: '列出已登记的 WebShell（含在线状态与最后检查时间）。',
     parameters: {
@@ -960,9 +1107,9 @@ export function apply(ctx) {
       const id = resolveEngagement(store, exec, args.engagement)
       return JSON.stringify({ ok: true, engagement: id, items: store.listWebshells(id, args) }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_webshell_update',
     description: '更新 WebShell 状态（被删/掉线/权限变化）或补充说明。',
     parameters: {
@@ -979,9 +1126,9 @@ export function apply(ctx) {
       const result = store.updateWebshell(eng, args.id, args)
       return JSON.stringify({ ok: true, engagement: eng, ...result }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_tunnel_add',
     description: '登记一条内网隧道。**打进内网必须先用技能 suo5-tunnel 通过 WebShell/HTTP 建 socks5（kind=suo5）**；没有隧道就不要手搓内网探测脚本。listen 写本机可用地址（如 127.0.0.1:1080），reach 写它能到达的网段。登记后扫描器可直接 -socks5 <listen>。\n\n**红线：自己的 VPS / 自己配置的服务器不算隧道。** 只在你自己服务器上开的 socks5、frp 服务端、代理，没有碰到目标，**不算跨越靶标边界、不算边界突破或内网突破**（这类填 entry_kind=self-only，会被标成"不算突破"）。**必须说清目标侧的那一端**：\n· target-outbound — 目标主动连出到我方（**自己服务器收目标反弹 shell**、目标上跑 frp/Stowaway 客户端）；\n· target-http — 经目标 WebShell/HTTP 通道（suo5、Neo-ReGeorg、reGeorg）；\n· target-agent — 经目标已控进程/会话转发（SSH -R 由目标发起等）。',
     parameters: {
@@ -1005,9 +1152,9 @@ export function apply(ctx) {
       const result = store.addTunnel(id, { ...args, engagement: undefined, status: 'active', agent: agentOf(args) })
       return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_tunnel_list',
     description: '列出已登记的内网隧道（含状态、监听地址、可达网段、entry_kind 与 legit 判定）。**legit=false 表示只在自己 VPS/自建服务器上开的通道，不算跨越靶标边界、不算突破**；legit=null 表示未声明 entry_kind。',
     parameters: {
@@ -1019,9 +1166,9 @@ export function apply(ctx) {
       const id = resolveEngagement(store, exec, args.engagement)
       return JSON.stringify({ ok: true, engagement: id, items: store.listTunnels(id, args) }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_tunnel_update',
     description: '更新隧道状态（关闭/失效/更换监听地址）或补 entry_kind 判定。用完隧道务必标为 down 并说明，避免后续误用。**老记录没声明入口归属的（legit=null，界面显示"待确认"），用 entry_kind 补上目标侧那一端**，补完才算突破凭证。',
     parameters: {
@@ -1041,9 +1188,9 @@ export function apply(ctx) {
       const result = store.updateTunnel(eng, args.id, args)
       return JSON.stringify({ ok: true, engagement: eng, ...result }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_session_check',
     description: '实测所有 WebShell 与隧道的连通性（由 host 侧真实发起 HTTP / TCP 连接），并把在线/离线状态回写数据库。开工前和长时间任务后各跑一次。',
     parameters: {
@@ -1062,9 +1209,9 @@ export function apply(ctx) {
         webshells: result.webshells, tunnels: result.tunnels,
       }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_attack_path',
     description: '导出攻击图谱：资产拓扑 + 漏洞节点 + 已控制资产（meta.owned）。用于横向移动路径规划与战果汇报。节点过多时用 cidr 缩小范围。',
     parameters: {
@@ -1090,11 +1237,11 @@ export function apply(ctx) {
         nodes: graph.nodes, edges: graph.edges,
       }, null, 2)
     },
-  }))
+  })))
 
   /* ================================================================== 域名 / Web 资产 */
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_web_list',
     description: '列出 Web 资产（含可直接访问的 URL 与页面标题）。做 Web 渗透前先看这里，优先从接口入手。',
     parameters: {
@@ -1116,9 +1263,9 @@ export function apply(ctx) {
         })),
       }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_domain_index',
     description: '按域名维度聚合资产：每个域名关联了哪些 IP/资产。用于梳理主域名、子域与 C 段的关系。',
     parameters: { engagement: { type: 'string' } },
@@ -1127,11 +1274,11 @@ export function apply(ctx) {
       const id = resolveEngagement(store, exec, args.engagement)
       return JSON.stringify({ ok: true, engagement: id, items: store.domainIndex(id) }, null, 2)
     },
-  }))
+  })))
 
   /* ================================================================== 得分目标 */
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_score_list',
     description: '查看得分目标面板：所有得分点（名称/分类/分值/是否已拿下/命中证据）与总分进度。**每次规划下一步之前先看这里**，按分值高低决定先打什么。',
     parameters: { engagement: { type: 'string' } },
@@ -1139,30 +1286,66 @@ export function apply(ctx) {
     async execute(args, exec) {
       const id = resolveEngagement(store, exec, args.engagement)
       const result = store.listScorePoints(id, {})
+      /* 按合并版的 8 个类别分组返回：智能体一眼看到"哪些类别还没打、每项上限用了多少" */
+      const groups = (result.ruleGroups || []).map((g) => ({
+        category: g.name,
+        items: g.tiers.length,
+        points: g.points,
+        cap_sum: g.capSum,
+      }))
       return JSON.stringify({
         ok: true, engagement: id, summary: result.summary,
+        groups,
         items: result.items.map((p) => ({
           id: p.id, code: p.code, name: p.name, category: p.category, points: p.points,
+          /* 合并版的档位说明（一条含多档时，记分要用 points 参数指定本档分值） */
+          tier: p.tier, cap: p.cap, cap_used: p.cap_used, dedup_scope: p.dedup_scope,
+          scope_label: p.scope_label,
           enabled: p.enabled, achieved: p.hits.length > 0, hits: p.hits.length,
+          counted: p.counted, earned: p.earned,
+          /* 该条因计分口径 / 已达上限而不计分的条数（把它当停止信号，别在同一条上刷） */
+          capped: p.capped,
+          /* 两个字段各司其职：service_summary 是"这条为什么有命中不计分"的整段说明；
+             capped_reason 留给**逐条命中**的具体原因（在 hits[] 里），不要拿摘要冒充它。 */
+          capped_summary: p.service_summary,
           evidence: p.hits.map((h) => (h.target ? h.target + '：' : '') + h.evidence).slice(0, 3),
         })),
       }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_score_hit',
-    description: '记录一次得分（同类得分**不设数量上限**，每个真实命中都按分值累加：命中次数 × 分值）。**证据只写结果**：目标资产 + 拿到了什么（账号/密码/权限/数据量），不要写取得过程与路径——过程由攻击得分链路负责。能指向"用哪个漏洞拿到的"时请带上 vuln_id，报告会自动附上该漏洞的原始请求。\n\n**红线一：账号类得分必须先实测能登录。** 拿到账号/口令后要用浏览器（browser-automation / kimi-webbridge）或等价会话实测登录成功、能交互访问页面，才记 web-account-* 这类分——**只有凭据不算拿到账号**；登不进去的写进 redteam_asset_test 的 `test` 参数（追加式记录），不要用不存在的字段名。\n\n**红线二：自己注册的账号不算得分权限。** 通过注册接口自助注册、自己新建的用户/角色/后台账号、自己给自己开的权限，都**不是**"拿到账号权限"——演练得分针对的是**拿到别人已有的**账号与权限（弱口令、凭据泄露、SQL 注入拖出的账号、越权/提权到已有账号、默认口令、复用已有凭据）。这类自建账号用 self_created=true 记录（留过程），**不计分、不计数、不进报告**。',
+    description: '记录一次得分。得分规则已按《突破入侵类得分规则（合并版）》重构为 **22 项**（一、获取权限 18 项 + 二、突破网络边界 4 项），'
+      + '另有 8 条通用规则 G1–G8 横切全部条目。**记分前先用 `redteam_score_list` 读实际 code 与该条的上限/口径**，不要凭记忆写。\n\n'
+      + '**证据只写结果**：目标资产 + 拿到了什么（账号/密码/权限/数据量），不要写取得过程与路径——过程由攻击得分链路的步骤负责。'
+      + '能指向"用哪个漏洞拿到的"时带上 vuln_id，报告会自动附上该漏洞的原始请求。\n\n'
+      + '**多档条目用 `points` 指定本档分值**：《合并版》把同一项的多个档位并成一条（如「服务器主机权限」普通 10 / 管理员 50、'
+      + '「域名控制权限」一级 50 / 二级 20、「网络设备权限」普通 100 / 管理员 200）。记分时把 `points` 填成本次实际档位的分值；'
+      + '不填就用该条的主档默认值。**同一系统只按最高权限计一次**（G1）——先记了普通档、后来提权到管理员档，'
+      + '再记一条管理员档（points 填高档值），系统会自动顶掉普通档那条。\n\n'
+      + '**红线一：账号类得分必须先实测能登录。** 拿到账号/口令后要用浏览器（browser-automation / kimi-webbridge）或等价会话'
+      + '实测登录成功、能交互访问页面，才记账号权限分——**只有凭据不算拿到账号**；登不进去的写进 redteam_asset_test 的 `test` 参数。\n\n'
+      + '**红线二：自己注册的账号不算得分权限。** 自助注册、自己新建的用户/角色/后台账号、自己给自己开的权限都不算——'
+      + '演练得分针对**拿到别人已有的**账号与权限。这类用 self_created=true 记录（留过程），不计分、不计数、不进报告。\n\n'
+      + '**红线三：注意该条的计分口径（G1/G3）。** 每条得分点自带口径：'
+      + '`同一系统只算最高权限一次`／`同一服务只算最高一条`／`整个目标只算一次`（突破网络边界）／`按台·卡·个累加`（终端、云节点、算力卡）。'
+      + '且每条有自己的**上限**（如服务器主机 600 分、Web 应用 2000 分、集权系统 4000 分），到上限后同条不再累计（G3）——'
+      + '返回里会用 warning 告诉你"已达上限/已被顶掉"，把它当**停止信号**，换别的条目或别的资产推进，不要在同一条上刷。\n\n'
+      + '**数据成果单独计分（G2）**：邮件数据、业务数据、数据资产等按重要程度另行记录，不与权限分混算；'
+      + 'evidence 必须写出**实际数据量**（如「导出 1,320,000 条用户数据」）。',
     parameters: {
       engagement: { type: 'string' },
-      code: { type: 'string', description: '得分点 code（或 point_id / point_name 任选其一）' },
+      code: { type: 'string', description: '得分点 code（或 point_id / point_name 任选其一）；先用 redteam_score_list 核对实际 code' },
       point_id: { type: 'number' },
       point_name: { type: 'string' },
-      target: { type: 'string', description: '目标资产：URL / ip:port / 主机名' },
+      points: { type: 'number', description: '【多档条目必填】本次命中按哪一档计分（如服务器主机权限：普通权限填 10、管理员填 50；域名控制：一级 50、二级 20）。不填则用该条主档默认值。' },
+      target: { type: 'string', description: '目标资产：URL / ip:port / 主机名（**带上端口**，服务/系统口径按它判定）' },
       asset_id: { type: 'number', description: '目标资产在库里的 id' },
+      port: { type: 'number', description: '【建议填】这条得分落在哪个端口（口径判定按「资产 + 端口」；target 里已带端口时可不填）' },
       vuln_id: { type: 'number', description: '【建议填】用哪个漏洞拿到的分（报告据此附原始请求）' },
       step_id: { type: 'number', description: '对应的攻击链步骤 id（可选）' },
-      evidence: { type: 'string', required: true, description: '【必填】结果：拿到的东西，例如「后台管理员 tomcat/Tomcat@2024（已实测浏览器可登录）」「数据库账号 root/xxx」「导出 1.2 万条用户数据」' },
+      evidence: { type: 'string', required: true, description: '【必填】结果：拿到的东西，例如「后台管理员 tomcat/Tomcat@2024（已实测浏览器可登录）」「数据库账号 root/xxx」「导出 132 万条用户数据」。多档条目请写明档位（如"管理员权限"）。' },
       self_created: { type: 'boolean', description: '【重要】这个账号/权限是不是**自己注册、自己创建**的？是则填 true —— 只作过程记录，不计分、不进报告。拿到别人已有的账号/权限不要填（默认 false）。' },
       note: { type: 'string' },
       recorded_by: { type: 'string' },
@@ -1173,9 +1356,9 @@ export function apply(ctx) {
       const result = store.addScoreHit(id, { ...args, engagement: undefined })
       return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_score_point_save',
     description: '新增或修改得分点（分值/名称/分类/说明/启用）。用户也会在界面上编辑；智能体只在必要时用（例如发现规则里还有未被记录的得分项）。带 id 为修改，不带 id 为新增。',
     parameters: {
@@ -1194,9 +1377,9 @@ export function apply(ctx) {
       const result = store.saveScorePoint(id, { ...args, engagement: undefined })
       return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_asset_assess',
     description: '给资产做「易打性评估」：预期能拿下哪些成果（账号权限/RCE/服务器权限/数据库权限/敏感数据/边界突破）、优先级多高、判断理由。信息收集收口时对每个资产调用一次，供指挥者按性价比排序。',
     parameters: {
@@ -1214,11 +1397,11 @@ export function apply(ctx) {
       const result = store.assessAsset(id, { ...args, engagement: undefined })
       return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
     },
-  }))
+  })))
 
   /* ================================================================== 证据 / 攻击链 / 报告 */
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_http_evidence_add',
     description: '保存一条 HTTP 证据：原始请求与响应。报告会把它渲染成可粘贴进 Burp Suite / Yakit 的原始报文，因此 request 必须是完整可重放的原始请求（含请求行、Host 等头部、必要时 body）。',
     parameters: {
@@ -1240,9 +1423,9 @@ export function apply(ctx) {
       const result = store.addHttpEvidence(id, { ...args, engagement: undefined })
       return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_chain_add',
     description: '记录一个攻击链步骤。**报告里「这一步怎么来的」完全靠这条记录**：账号密码怎么来的、冰蝎马怎么上的、隧道怎么搭的，都要在这里用 `tool`（实际命令原文）+ `detail`（为什么这么做、线索从哪来）+ `result`（实际回显/结果）写清楚。攻击链页面与报告按 seq 排序展示。',
     parameters: {
@@ -1276,9 +1459,9 @@ export function apply(ctx) {
       if (result && result.score_hint) hints.push(result.score_hint)
       return JSON.stringify({ ok: true, engagement: id, ...result, hints: hints.length > 0 ? hints : undefined }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_chain',
     description: '读取完整攻击链（按步骤顺序），用于汇报与检查链路是否闭合（入口 → 权限 → 内网突破）。',
     parameters: { engagement: { type: 'string' } },
@@ -1287,9 +1470,9 @@ export function apply(ctx) {
       const id = resolveEngagement(store, exec, args.engagement)
       return JSON.stringify({ ok: true, engagement: id, items: store.listChain(id) }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_attack_file_add',
     description: '保存一个**实际生效**的攻击文件（脚本/POC/EXP/字典）到目标文件夹，供复用与交付。目录结构：attack-files/<IP|URL主机|C段>/<文件名>。evidence 必填且必须写清验证效果（例如"回显 uid=0"、"未授权返回 200 并含数据"）——**没打通的、只是尝试过的脚本不要放进来**。',
     parameters: {
@@ -1311,9 +1494,9 @@ export function apply(ctx) {
       const result = store.addAttackFile(id, { ...args, engagement: undefined })
       return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_attack_file_list',
     description: '列出已保存的攻击文件（按目标文件夹分组）。开始打某个目标前先看这里，避免重复造轮子。',
     parameters: {
@@ -1326,9 +1509,9 @@ export function apply(ctx) {
       if (args.target) return JSON.stringify({ ok: true, engagement: id, items: store.listAttackFiles(id, { target: args.target }) }, null, 2)
       return JSON.stringify({ ok: true, engagement: id, folders: store.attackFileTree(id) }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_report_targets',
     description: '【已弃用，改用 redteam_score_report】按目标查看成果报告（每个 IP / URL / C 段一份）：成果漏洞（含可粘贴进 Burp/Yakit 的原始请求）、已获权限、凭据、攻击文件、攻击链。用于按目标汇报或检查某个目标还缺什么。',
     parameters: {
@@ -1345,9 +1528,9 @@ export function apply(ctx) {
         targets: picked.map((t) => ({ key: t.key, label: t.label, segment: t.segment, stats: t.stats })),
       }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_attack_chain',
     description: '攻击链：按攻击面位置串起来的五个阶段 —— ① 信息收集（互联网侧）→ ② 互联网资产权限 → ③ 边界突破（搭隧道）→ ④ 内网资产权限 → ⑤ 靶标权限。返回每阶段的阶段目标、**实际拿到多少分与累计分**、涉及资产、以及边界突破阶段的真实隧道。开工时看它明确"现在在第几阶段、下一步该打哪一阶段"，汇报时按阶段给结论。',
     parameters: { engagement: { type: 'string' } },
@@ -1357,23 +1540,26 @@ export function apply(ctx) {
       const chain = store.scoreChain(id)
       return JSON.stringify({
         ok: true, engagement: id,
-        totals: { points: chain.summary.points, totalPoints: chain.summary.totalPoints, hits: chain.summary.hits },
+        totals: { points: chain.summary.points, totalPoints: chain.summary.totalPoints, hits: chain.summary.hits,
+          /* 按服务封顶（同资产同端口只算一次）而没计分的条数：账号类/数据库权限 */
+          serviceCappedHits: chain.summary.serviceCappedHits || 0 },
         stages: (chain.stages || []).map((st) => ({
           code: st.code, name: st.name, goal: st.goal,
           points: st.points, cumulative: st.cumulative, counted: st.counted, hits: st.hits,
           steps: st.steps, tools: st.tools,
           methods: (st.sections || []).map((x) => x.label + '：' + (x.items || []).join('、')),
-          scored: st.items.map((x) => ({ point: x.point_name, points: x.points, counted: x.counted, target: x.target })),
+          scored: st.items.map((x) => ({ point: x.point_name, points: x.points, counted: x.counted, target: x.target,
+            service: x.service || null, capped: x.capped === true, capped_reason: x.capped_reason || null })),
           assets: (st.assets || []).map((a) => a.ip + (a.scope === 'internal' ? '(内网)' : '(外网)') + ' 贡献' + a.points + '分'),
           tunnels: (st.tunnels || []).map((t) => t.kind + ' ' + t.listen + ' [' + t.status + '] 可达 ' + (t.reach || '—')),
         })),
-        hint: '得分阶段是自动推导的（core-system→靶标、boundary→边界突破，其余按资产内外网归属）；写攻击链步骤时带 stage_code（只接受 recon/internet/boundary/internal/target）步骤计数才会落到正确阶段，写别的值会被忽略。',
+        hint: '得分阶段是自动推导的（core-system→靶标、boundary→边界突破，其余按资产内外网归属）；写攻击链步骤时带 stage_code（只接受 recon/internet/boundary/internal/target）步骤计数才会落到正确阶段，写别的值会被忽略。账号权限与数据库权限按「同资产同端口」封顶：一个服务拿到最高权限即拿满，同服务重复命中标 capped=true 且不计分。',
       }, null, 2)
     },
-  }))
+  })))
 
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_score_report',
     description: '攻击得分链路复现报告：只收录"拿到了分"的成果（没得分的漏洞不进报告），每一项都尽量附上可直接粘贴进 Yakit Repeater 复现的原始请求。需要交付报告时用这个，而不是 redteam_report。',
     parameters: {
@@ -1392,9 +1578,9 @@ export function apply(ctx) {
       }
       return JSON.stringify({ ok: true, engagement: id, summary: r.summary, markdown: r.markdown }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_report',
     description: '【已弃用，改用 redteam_score_report】生成成果报告（Markdown）：只收录**已验证/已利用且中危以上**的成果漏洞（每条附可粘贴进 Burp/Yakit 的原始请求）、攻击链、已获权限与凭据、修复建议。信息收集的资产清单、待验证/误报、低危与信息级水洞都不会出现在报告里。想让发现进报告：先 redteam_vuln_update 置为 confirmed（验证通过）或 exploited（利用成功），再 redteam_http_evidence_add 补原始请求。',
     parameters: { engagement: { type: 'string' } },
@@ -1404,14 +1590,14 @@ export function apply(ctx) {
       const result = store.report(id)
       return JSON.stringify({ ok: true, engagement: id, generated_at: result.generated_at, stats: result.stats, markdown: result.markdown }, null, 2)
     },
-  }))
+  })))
 
   /* ── 知识库（POC/EXP）：全局共享，跨靶标复用 ───────────────────────────────
      为什么单列一组工具：通用 POC/EXP 是一次性投入、长期复用的资产。打 Nday/1day
      之前先查这里，能省掉整轮"去互联网找 + 手搓 + 调试"的时间；验证有效的通用
      POC/EXP 必须回填，后面的靶标和智能体直接就能用。 */
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_poc_search',
     description: '【打 Nday/1day 前的第一步】先查"现成的"两层：① **知识库**（本机沉淀的通用 POC/EXP，跨靶标共享，按"已验证 → 复用次数"排序）② **本机 nuclei 模板库**（上万条模板，CVE/组件名直接命中）。命中就取用：知识库用 redteam_poc_get 拿全文，模板直接 `nuclei -t <相对路径>`。**不要重复去互联网找或重新手搓**。两层都没有，再去互联网搜索或自己手搓，验证有效后用 redteam_poc_add 回填知识库。',
     parameters: {
@@ -1433,10 +1619,12 @@ export function apply(ctx) {
       const items = store.searchPocs(args)
       const stats = store.pocStats()
       const q = args.q || args.cve || args.component || ''
+      /* templateStats() / nucleiTemplatesDir() 都要扫模板目录：**一次调用只算一次**。
+         原来这一小段里 templateStats() 被连着算了三遍（13k 模板的目录每次都要走一遍）。 */
+      const tplStats = store.templateStats()
       const tpl = q
         ? store.searchTemplates(q, Math.min(Number(args.templateLimit) || 20, 100))
-        : { dir: store.nucleiTemplatesDir() || null, total: store.templateStats().total, items: [] }
-      const tplStats = store.templateStats()
+        : { dir: tplStats.dir || store.nucleiTemplatesDir() || null, total: tplStats.total, items: [] }
       const hit = items.length > 0 || (tpl.items || []).length > 0
       return JSON.stringify({
         ok: true,
@@ -1463,9 +1651,9 @@ export function apply(ctx) {
         })),
       }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_poc_get',
     description: '取一条知识库 POC/EXP 的**完整内容**（正文 + 用法 + 验证记录 + 落盘路径），可直接照用或改造成目标专用脚本。不传 id 时可用 code（redteam_poc_search 返回里的 code 字段）。',
     parameters: {
@@ -1478,9 +1666,9 @@ export function apply(ctx) {
       if (row === undefined) return JSON.stringify({ ok: false, error: '知识库没有这一条（先用 redteam_poc_search 检索）' }, null, 2)
       return JSON.stringify({ ok: true, ...row }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_poc_add',
     description: '把**通用可复用**的 POC/EXP 落进知识库（跨靶标共享）。从互联网拿到的、自己手搓的、或已经调通验证过的都往这里放——只收录真正有效的，并写清来源与验证证据。判断标准：**换个目标还能用**的进知识库；只对本次靶标有效的脚本走 redteam_attack_file_add（攻击文件页）。同名（同一 code）会合并刷新，可用于更新版本。\n\n**回填三件套（缺了面板里就没有归类、追溯不到来源）**：① `category` 归类；② `engagement` + `asset_target` —— 这条知识是在哪个靶标、哪台资产上发现并验证的；③ `verified` + `verified_note` 验证证据。',
     parameters: {
@@ -1529,9 +1717,9 @@ export function apply(ctx) {
           + '后续任何靶标的智能体 redteam_poc_search 都能直接命中；知识库共 ' + stats.total + ' 条。',
       }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_poc_list',
     description: '列出知识库里的 POC/EXP（可按 kind/source/component/verified 过滤，不带条件就是全部）。用于盘点"我们手上已经有哪些现成武器"，避免重复搜集。',
     parameters: {
@@ -1547,9 +1735,9 @@ export function apply(ctx) {
         items: items.map((x) => ({ id: x.id, code: x.code, title: x.title, kind: x.kind, cve: x.cve, component: x.component,
           language: x.language, source: x.source, verified: x.verified === 1, hit_count: x.hit_count, tags: x.tags })) }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_poc_update',
     description: '更新知识库条目：补验证结论（verified + verified_note）、修正影响版本、补用法或正文、改标签。**在真实目标上验证通过后，一定要回来把 verified 置 true 并写清证据**——后续智能体会优先用已验证的。',
     parameters: {
@@ -1570,9 +1758,9 @@ export function apply(ctx) {
       const row = store.updatePoc(args.id !== undefined ? args.id : args.code, patch)
       return JSON.stringify({ ok: true, id: row.id, code: row.code, verified: row.verified === 1, verified_note: row.verified_note, updated_at: row.updated_at }, null, 2)
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_poc_use',
     description: '记一次知识库 POC/EXP 的复用（用在哪个靶标/目标）。复用次数高的条目会排前面，方便后来者优先选经过实战的武器。',
     parameters: {
@@ -1585,11 +1773,11 @@ export function apply(ctx) {
       const r = store.markPocUsed(args.id !== undefined ? args.id : args.code, args.used_on)
       return JSON.stringify(r, null, 2)
     },
-  }))
+  })))
 
   /* ================================================================== 资产发现时间线 */
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_asset_timeline',
     description: '资产「发现时间」视图：按天聚合"哪天收了多少资产"（区分内网/外网），并列出最近发现的资产。用于回答"这个资产是什么时候发现的"、检查信息收集有没有断层，也用于本轮收集的收口核对。',
     parameters: {
@@ -1612,5 +1800,5 @@ export function apply(ctx) {
           + '报告附录与资产测绘页都按它排序。',
       }, null, 2)
     },
-  }))
+  })))
 }

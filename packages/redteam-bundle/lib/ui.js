@@ -183,30 +183,89 @@ function versionLess(a, b) {
 
 /**
  * 重启脚本：等旧进程退出 + 端口释放，再按同样的参数把 dsh web 拉起来。
- * 写成独立 shell 脚本（不依赖 node 在 PATH 里），日志追加到 $DSH_HOME/redteam/update.log。
+ *
+ * 生成的是一个**自包含的 node 脚本**（不是 shell 脚本），它做三件事：
+ *   ① 等旧 pid 退出（最多 60 秒）；
+ *   ② 等端口不再被监听（最多 30 秒，用 net 探测，不依赖 ss/lsof）；
+ *   ③ spawn(command, ARGS_ARRAY) 以 argv 数组拉起新进程。
+ *
+ * 为什么不用 shell：原实现把命令与参数拼成 shell 串，需要一套手写引号转义
+ * （单引号里套单引号、双引号再转义），任何一处漏掉就是命令注入 ——
+ * 而这段脚本正是"由程序生成、以用户身份执行"的，最不该有注入面。
+ * argv 数组交给 spawn 之后 shell 完全不参与，转义问题从根上消失。
+ *
+ * @param pid - 当前进程 pid（等它退出）。
+ * @param port - dsh web 端口（等它释放）。
+ * @param command - 可执行文件（通常是 process.argv[0]）。
+ * @param args - 参数数组（process.argv.slice(1)）。
+ * @param logPath - 日志文件路径（追加写）。
+ * @param cwd - 新进程的工作目录。
+ * @returns 脚本正文。
  */
-function restartScript(pid, port, command, args, logPath) {
-  const quoted = args.map((a) => "'" + String(a).replace(/'/g, "'\\''") + "'").join(' ')
+function restartScript(pid, port, command, args, logPath, cwd) {
+  const payload = {
+    oldPid: Number(pid),
+    port: Number(port) || 0,
+    command: String(command),
+    args: args.map((a) => String(a)),
+    log: String(logPath),
+    cwd: String(cwd),
+  }
   return [
-    '#!/bin/bash',
-    '# 由 RedTeam 控制台的「自动更新」生成：等旧 dsh web 退出后原样重启它。',
-    'set -u',
-    'OLD_PID=' + pid,
-    'PORT=' + port,
-    'LOG=' + JSON.stringify(logPath),
-    'echo "[$(date \'+%F %T\')] 等待旧进程 $OLD_PID 退出…" >> "$LOG"',
-    'for i in $(seq 1 60); do',
-    '  kill -0 "$OLD_PID" 2>/dev/null || break',
-    '  sleep 1',
-    'done',
-    'for i in $(seq 1 30); do',
-    '  ss -ltn 2>/dev/null | grep -q ":$PORT " || break',
-    '  sleep 1',
-    'done',
-    'echo "[$(date \'+%F %T\')] 启动：' + command + ' ' + quoted.replace(/"/g, '\\"') + '" >> "$LOG"',
-    'cd ' + JSON.stringify(process.cwd()) + ' >> "$LOG" 2>&1',
-    'nohup ' + command + ' ' + quoted + ' >> "$LOG" 2>&1 &',
-    'echo "[$(date \'+%F %T\')] 已拉起新进程 pid=$!" >> "$LOG"',
+    '#!/usr/bin/env node',
+    '/* 由 RedTeam 控制台的「自动更新」生成：等旧 dsh web 退出后，按原 argv 把它重新拉起。',
+    '   参数以数组形式传给 spawn —— shell 不参与，因此不存在引号转义与命令注入问题。 */',
+    "'use strict'",
+    'const { spawn } = require("node:child_process")',
+    'const { appendFileSync, mkdirSync } = require("node:fs")',
+    'const { connect } = require("node:net")',
+    'const { dirname } = require("node:path")',
+    'const CFG = ' + JSON.stringify(payload, null, 2),
+    '',
+    'const log = (msg) => {',
+    '  const line = "[" + new Date().toISOString() + "] " + msg + "\\n"',
+    '  try { mkdirSync(dirname(CFG.log), { recursive: true }); appendFileSync(CFG.log, line) } catch (e) { /* 日志写不进去不该影响重启 */ }',
+    '}',
+    '',
+    'const sleep = (ms) => new Promise((r) => setTimeout(r, ms))',
+    '',
+    '/** 旧进程还在吗（kill -0 的等价物）。 */',
+    'const alive = (pid) => { try { process.kill(pid, 0); return true } catch (e) { return false } }',
+    '',
+    '/** 端口还有人在听吗（不依赖 ss/lsof）。 */',
+    'const portBusy = (port) => new Promise((resolve) => {',
+    '  if (!port) { resolve(false); return }',
+    '  const sock = connect({ host: "127.0.0.1", port: port })',
+    '  let done = false',
+    '  const finish = (busy) => { if (!done) { done = true; try { sock.destroy() } catch (e) {} resolve(busy) } }',
+    '  sock.setTimeout(800)',
+    '  sock.on("connect", () => finish(true))',
+    '  sock.on("timeout", () => finish(false))',
+    '  sock.on("error", () => finish(false))',
+    '})',
+    '',
+    'async function main() {',
+    '  log("等待旧进程 pid=" + CFG.oldPid + " 退出…")',
+    '  for (let i = 0; i < 60; i += 1) {',
+    '    if (!alive(CFG.oldPid)) break',
+    '    await sleep(1000)',
+    '  }',
+    '  for (let i = 0; i < 30; i += 1) {',
+    '    if (!(await portBusy(CFG.port))) break',
+    '    await sleep(1000)',
+    '  }',
+    '  log("启动：" + CFG.command + " " + CFG.args.join(" "))',
+    '  const child = spawn(CFG.command, CFG.args, {',
+    '    cwd: CFG.cwd,',
+    '    detached: true,',
+    '    stdio: ["ignore", "ignore", "ignore"],',
+    '    env: process.env,',
+    '  })',
+    '  child.unref()',
+    '  log("已拉起新进程 pid=" + child.pid)',
+    '}',
+    '',
+    'main().catch((error) => { log("重启失败：" + (error && error.message ? error.message : String(error))) })',
     '',
   ].join('\n')
 }
@@ -233,8 +292,8 @@ async function applyUpdate(ctx, dir, name, targetVersion) {
   mkdirSync(root, { recursive: true })
   const logPath = join(root, 'update.log')
   const scriptPath = join(root, 'restart-dsh-web.sh')
-  writeFileSync(scriptPath, restartScript(process.pid, port, command, rest, logPath), { encoding: 'utf8', mode: 0o755 })
-  const child = spawn('/bin/bash', [scriptPath], { detached: true, stdio: 'ignore' })
+  writeFileSync(scriptPath, restartScript(process.pid, port, command, rest, logPath, process.cwd()), { encoding: 'utf8', mode: 0o755 })
+  const child = spawn(process.execPath, [scriptPath], { detached: true, stdio: 'ignore' })
   child.unref()
   /* 给浏览器留出收到响应的窗口，然后退出 —— 新进程由脚本按原命令行拉起 */
   setTimeout(() => { process.exit(0) }, 1200).unref()
@@ -293,6 +352,16 @@ async function skillAvailabilityOf(ctx, list, scope, force) {
     && skillAvailabilityCache.size === list.length) {
     return { at: skillAvailabilityCache.at, cached: true, byName: skillAvailabilityCache.byName }
   }
+  /* 同名技能可能存在于多个技能根：注册表按根顺序择优，排在后面的会被盖住。
+     判定时把"其它也注册了同名技能的根"一起带上，才能识别
+     "你配置好的那份被随包占位符版本盖住"这种误报。 */
+  const rootsWith = new Map()
+  for (const x of list) {
+    const dir = x.resourceBase && x.resourceBase.kind === 'directory' ? x.resourceBase.path : null
+    if (dir === null) continue
+    if (!rootsWith.has(x.name)) rootsWith.set(x.name, [])
+    if (!rootsWith.get(x.name).includes(dir)) rootsWith.get(x.name).push(dir)
+  }
   const byName = new Map()
   for (const summary of list) {
     let def
@@ -300,7 +369,9 @@ async function skillAvailabilityOf(ctx, list, scope, force) {
     const path = def && typeof def.path === 'string'
       ? def.path
       : (summary.resourceBase && summary.resourceBase.kind === 'directory' ? summary.resourceBase.path : null)
-    const verdict = checkSkill({ name: summary.name, content: def && def.content, path }, { env: process.env })
+    const root = summary.resourceBase && summary.resourceBase.kind === 'directory' ? summary.resourceBase.path : null
+    const verdict = checkSkill({ name: summary.name, content: def && def.content, path, root },
+      { env: process.env, sameNameIn: rootsWith.get(summary.name) || [] })
     byName.set(summary.name, verdict)
   }
   skillAvailabilityCache = { at: now, size: list.length, byName }
@@ -461,6 +532,9 @@ async function handleUpdateOp(ctx, request) {
       },
       latest: check && check.ok ? check.latest : null,
       updateAvailable: check && check.ok && pkg.version ? versionLess(pkg.version, check.latest) : false,
+      /* 本地版本比 registry 还新：本机跑的是尚未发布的开发版本。
+         不区分这一种，"检查更新"会一直显示"已是最新"，把"这个版本根本没发出去"藏起来。 */
+      localAhead: check && check.ok && pkg.version ? versionLess(check.latest, pkg.version) : false,
       check_error: check && check.ok === false ? check.error : undefined,
       blockers: pre.blockers,
       notes: pre.notes,
@@ -470,18 +544,36 @@ async function handleUpdateOp(ctx, request) {
   if (request.op === 'updateCheck') {
     const check = await checkLatest(ctx, pre.dir, pkg.name)
     if (check.ok !== true) return { ok: false, error: check.error, current: pkg.version, install: { mode: pre.devLinked ? 'dev' : 'package' } }
+    const localAhead = pkg.version ? versionLess(check.latest, pkg.version) : false
     return {
       ok: true, current: pkg.version, latest: check.latest,
       updateAvailable: pkg.version ? versionLess(pkg.version, check.latest) : true,
+      localAhead,
       install: { mode: pre.devLinked ? 'dev' : 'package', dir: pre.dir, packageManager: pre.packageManager },
-      blockers: pre.blockers, notes: pre.notes, running_agents: pre.running,
+      blockers: pre.blockers,
+      notes: pre.notes.concat(localAhead
+        ? ['本机版本（' + pkg.version + '）比 npm 上的最新版（' + check.latest + '）还新：'
+           + '当前跑的是尚未发布的开发版本，包管理器更新不适用（要回退版本请显式指定）。']
+        : []),
+      running_agents: pre.running,
     }
   }
   /* updateApply */
   if (pre.blockers.length > 0) {
     return { ok: false, error: '现在不能更新：' + pre.blockers.join(' '), blockers: pre.blockers, notes: pre.notes }
   }
-  const result = await applyUpdate(ctx, pre.dir, pkg.name, typeof request.target === 'string' && request.target ? request.target : null)
+  /* target 会被原样拼进 `npm install <target>`：不校验就等于把"装任意包并重启进程"
+     暴露给浏览器侧输入。只接受纯 semver（可带 v 前缀），其余一律拒绝并说清原因。 */
+  const rawTarget = typeof request.target === 'string' ? request.target.trim() : ''
+  if (rawTarget !== '' && !/^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(rawTarget)) {
+    return {
+      ok: false,
+      current: pkg.version,
+      error: 'updateApply 的 target 必须是纯版本号（如 0.11.0），收到 ' + JSON.stringify(rawTarget)
+        + '。不接受包名、路径、URL 或 npm 参数 —— 它会原样传给包管理器，等于允许远程指定安装内容。',
+    }
+  }
+  const result = await applyUpdate(ctx, pre.dir, pkg.name, rawTarget || null)
   if (result.ok !== true) return Object.assign({ current: pkg.version }, result)
   return Object.assign({ current: pkg.version, latest: request.target || null }, result, {
     note: '已安装，正在重启 dsh web（页面会在几秒内断开，重启完成后刷新即可看到新版本）。重启日志：' + result.restart.log,
@@ -502,13 +594,25 @@ export function apply(ctx) {
         sendJson(res, 405, { ok: false, error: 'POST only' })
         return
       }
+      /* 来源校验：**默认拒绝**。
+         曾经的写法只在 origin 与 host 都是字符串时才比对，两个头缺任意一个就整段跳过 ——
+         "校验被跳过"等同于"没有校验"，一个不发送 Origin 的请求就能打到所有 op
+         （包括读明文凭据与 updateApply 这条会装包并重启进程的路径）。
+         现在：有 Origin → 必须与 Host 同源；没有 Origin → 只允许来自回环地址的请求。 */
       const origin = req.headers.origin
       const host = req.headers.host
-      if (typeof origin === 'string' && typeof host === 'string') {
+      if (typeof origin === 'string' && origin !== '') {
         let originHost = null
         try { originHost = new URL(origin).host } catch { originHost = null }
-        if (originHost !== host) {
+        if (originHost === null || originHost !== host) {
           sendJson(res, 403, { ok: false, error: 'cross-origin request rejected' })
+          return
+        }
+      } else {
+        const remote = req.socket && req.socket.remoteAddress ? String(req.socket.remoteAddress) : ''
+        const loopback = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1'
+        if (!loopback) {
+          sendJson(res, 403, { ok: false, error: 'request without Origin is only accepted from loopback' })
           return
         }
       }

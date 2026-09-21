@@ -15,7 +15,7 @@
  *
  * 不判定：语义正确性、权限、目标可达性 —— 那些只有真打一次才知道。
  */
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 
@@ -55,11 +55,25 @@ export function referencedPathsOf(content) {
   return Array.from(out)
 }
 
+/** 从某个技能根里读同名技能的正文（读不到返回 null）。 */
+export function readSkillFromRoot(root, name) {
+  if (typeof root !== 'string' || root === '') return null
+  for (const dir of [root, resolve(root, String(name || ''))]) {
+    for (const file of [resolve(dir, String(name || '') + '.md'), resolve(dir, 'SKILL.md')]) {
+      try { if (existsSync(file)) return { path: file, content: readFileSync(file, 'utf8') } } catch { /* 继续试下一个 */ }
+    }
+  }
+  return null
+}
+
 /**
  * 检查一个技能的可用性。
- * @param skill - `{ name, description?, content?, path? }`（content 是技能正文）。
- * @param options - `{ env?: NodeJS.ProcessEnv, extraNeeds?: string[] }`。
- * @returns `{ name, status: 'available'|'broken'|'unknown', problems, needs_user, checked }`
+ *
+ * @param skill - `{ name, description?, content?, path?, root? }`（content 是技能正文，root 是它来自哪个技能根）。
+ * @param options - `{ env?: NodeJS.ProcessEnv, sameNameIn?: string[] }`。
+ *   `sameNameIn` 是**其它也注册了同名技能**的根目录：同名技能会按根顺序择优，被排在后面的那份
+ *   会被"盖住"。这里用它兜底识别"实际加载的是随包占位符版本、而你自己的已配置版本排在后面"的情况。
+ * @returns `{ name, status: 'available'|'broken'|'unknown', problems, needs_user, checked, shadowed_by? }`
  *   status='unknown' 表示"正文读不到，判不了"（例如只有元数据、正文加载失败的远端技能）。
  */
 export function checkSkill(skill, options = {}) {
@@ -67,6 +81,7 @@ export function checkSkill(skill, options = {}) {
   const name = skill && skill.name ? String(skill.name) : '(未命名)'
   const content = skill && typeof skill.content === 'string' ? skill.content : ''
   const file = skill && typeof skill.path === 'string' ? skill.path : null
+  const root = skill && typeof skill.root === 'string' ? skill.root : null
   const problems = []
   const needsUser = []
 
@@ -83,7 +98,7 @@ export function checkSkill(skill, options = {}) {
 
   const envNames = requiredEnvOf(content)
   const missingEnv = envNames.filter((n) => !env[n])
-  for (const n of missingEnv) problems.push('缺环境变量 ' + n + '（export ' + n + '=… 后重启 dsh web）')
+  for (const n of missingEnv) problems.push('缺环境变量 ' + n + '（export ' + n + '=…、或写进 `$DSH_HOME/.env` 后重启 dsh web）')
 
   const paths = referencedPathsOf(content)
   const missingPaths = paths.filter((p) => !existsSync(expandSkillPath(p, env)))
@@ -92,21 +107,46 @@ export function checkSkill(skill, options = {}) {
       + (missingPaths.length > 6 ? ' 等 ' + missingPaths.length + ' 处' : ''))
   }
 
-  /* 外部基础设施占位符：技能里出现 `<你的VPS_IP>` 这类说明还没配 */
+  /* 外部基础设施占位符：技能里出现 `<你的VPS_IP>` 这类说明还没配。
+     但**已经配好的部署不该被误报**：只要 REDTEAM_VPS_HOST 有值，
+     技能正文里的占位符就只是文档写法（实际命令会用配置值替换），不再算缺口。
+     判定顺序必须是"先看配置、再看占位符"，否则配好 VPS 的机器上
+     这几个技能会永远显示 broken（模板占位符与真实配置混在一起）。 */
+  const vpsConfigured = typeof env.REDTEAM_VPS_HOST === 'string' && env.REDTEAM_VPS_HOST.trim() !== ''
   const placeholders = []
-  if (content.includes('<你的VPS_IP>') || content.includes('<VPS_IP>')) placeholders.push('VPS 地址')
-  if (content.includes('<你的VPS_主机名>') || content.includes('<VPS 主机名>')) placeholders.push('VPS 主机名')
+  if (!vpsConfigured) {
+    if (content.includes('<你的VPS_IP>') || content.includes('<VPS_IP>')) placeholders.push('VPS 地址')
+    if (content.includes('<你的VPS_主机名>') || content.includes('<VPS 主机名>')) placeholders.push('VPS 主机名')
+  }
   for (const p of placeholders) {
     problems.push(p + '还是占位符（技能里写的是占位符，说明本机/本环境还没配）')
     needsUser.push(p)
   }
   for (const n of missingEnv) needsUser.push('环境变量 ' + n)
 
+  /* 兜底：同名技能在别的根里有一份"问题更少"的版本（通常是用户自己配过的那份，
+     但被排在前面的随包占位符版本盖住了）。这时如实说明，而不是让用户以为环境没配。 */
+  let shadowed = null
+  for (const other of Array.isArray(options.sameNameIn) ? options.sameNameIn : []) {
+    if (other === root) continue
+    const alt = readSkillFromRoot(other, name)
+    if (alt === null || alt.content === content) continue
+    const verdict = checkSkill({ name, content: alt.content, path: alt.path }, { env })
+    if (verdict.status === 'available' || verdict.problems.length < problems.length) {
+      shadowed = { root: other, path: alt.path, status: verdict.status }
+      problems.push('注意：`' + other + '` 里还有一份同名技能（' + verdict.status + '），'
+        + '但按技能根顺序当前加载的是这一份（上面这些缺口来自这一份）；'
+        + '要让已配置的那份生效，需把它排到技能根顺序的前面')
+      break
+    }
+  }
+
   return {
     name,
     status: problems.length === 0 ? 'available' : 'broken',
     problems,
     needs_user: Array.from(new Set(needsUser)),
+    ...(shadowed === null ? {} : { shadowed_by: shadowed.root, shadowed_path: shadowed.path }),
     checked: { file, env: envNames, missing_env: missingEnv, paths, missing_paths: missingPaths },
   }
 }

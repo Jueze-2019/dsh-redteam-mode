@@ -32,9 +32,12 @@ pocs/
 *.crt
 *.p12
 secrets/
-secret*
-token*
-credential*
+# 下面三条只锚定仓库根：不锚定的话 `credential*` 会连
+# packages/redteam-bundle/skills/credential-attack.md（随包分发的技能）一起吞掉，
+# 让"文档说有、仓库里没有"的缺口出现在干净检出上。
+/secret*
+/token*
+/credential*
 
 # ── 编辑器 / 系统 ───────────────────────────────────────────────────────────
 .DS_Store
@@ -49,3 +52,17 @@ Thumbs.db
 
 # 就地重构/升级时留的备份
 *.bak-*
+
+# ── 演练现场产物（在仓库根生成的，一律不入库）─────────────────────────────
+# 2026-09 巡检发现：根目录这几个文件是实战现场产物，绝不能进公开仓库。
+#   · runs_cgroup_targets.tsv —— 某靶标全部资产 IP/域名/端口清单（185 行真实数据）
+#   · ligolo-ng.yaml          —— 隧道配置，含 web.secret 与用户 argon2 口令哈希
+#   · screenshots/            —— 目标页面留证截图
+#   · reach_*.py              —— 走 SOCKS 隧道的连通性探测脚本（靶标可达性）
+#   · .sock.lock              —— 本机隧道运行时锁文件
+# 备份位置：$DSH_HOME/redteam/local-backup-<日期>/
+/runs_*.tsv
+/ligolo-ng.yaml
+/screenshots/
+/reach_*.py
+/.sock.lock

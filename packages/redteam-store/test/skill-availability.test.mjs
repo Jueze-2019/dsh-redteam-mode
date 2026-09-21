@@ -62,7 +62,12 @@ const missingPath = checkSkill({
 ok(missingPath.status === 'broken' && missingPath.checked.missing_paths.length === 1,
   '正文引用的本机路径不存在 → broken')
 
-const placeholder = checkSkill({ name: 'vps', content: 'ssh root@<你的VPS_IP> -p 9000\n' }, { env: process.env })
+/* 用**干净的 env**：占位符判定依赖 REDTEAM_VPS_HOST 是否已配，
+   直接传 process.env 会让本机已配 VPS 的开发机把这条断言测成假阴性。 */
+const placeholder = checkSkill({ name: 'vps', content: 'ssh root@<你的VPS_IP> -p 9000\n' }, { env: {} })
+ok(checkSkill({ name: 'vps', content: 'ssh root@<你的VPS_IP> -p 9000\n' },
+  { env: { REDTEAM_VPS_HOST: '1.2.3.4' } }).status === 'available',
+  '已配置 REDTEAM_VPS_HOST 时，正文里的占位符不再算缺口（技能即可用）')
 ok(placeholder.status === 'broken' && placeholder.needs_user.includes('VPS 地址'),
   '基础设施还是占位符 → broken，并标出"要 VPS 地址"')
 
@@ -75,6 +80,38 @@ ok(noContent.status === 'unknown' && /正文读不到/.test(noContent.problems[0
   '正文读不到 → unknown（不武断说它坏了，也不假装可用）')
 const missingFile = checkSkill({ name: 'x', path: join(root, 'nope.md'), content: '# x\n' })
 ok(missingFile.status === 'broken' && /技能文件不存在/.test(missingFile.problems.join('')), '技能文件不存在 → broken')
+
+/* 同名技能被"随包占位符版本"盖住：真实事故 —— 用户自己那份配好了 VPS，但包内那份
+   （含 <你的VPS_IP>）排在技能根前面，面板于是报"VPS 地址还是占位符"，看着像环境没配。 */
+console.log('— 同名技能被前面的技能根盖住（误报兜底）')
+{
+  const mineRoot = join(root, 'skills-mine')
+  const bundleRoot = join(root, 'skills-bundled')
+  mkdirSync(mineRoot, { recursive: true })
+  mkdirSync(bundleRoot, { recursive: true })
+  writeFileSync(join(mineRoot, 'vps-demo.md'), '# vps-demo\nssh root@10.9.9.9 -p 9000\n', 'utf8')
+  const shadowed = checkSkill(
+    { name: 'vps-demo', content: 'ssh root@<你的VPS_IP> -p 9000\n', root: bundleRoot },
+    { env: process.env, sameNameIn: [bundleRoot, mineRoot] },
+  )
+  ok(shadowed.status === 'broken' && shadowed.shadowed_by === mineRoot,
+    '真实加载的是占位符版本 → 仍然 broken，但指出"另一份可用、被盖住了"')
+  ok(shadowed.problems.some((p) => /还有一份同名技能/.test(p)), 'problem 里写明是哪份、以及怎么让它生效')
+
+  /* 反过来：当前这份本来就是好的，就不该报"被盖住"，也不该多出任何问题 */
+  const fine = checkSkill(
+    { name: 'vps-demo', content: 'ssh root@10.9.9.9 -p 9000\n', root: mineRoot },
+    { env: process.env, sameNameIn: [bundleRoot, mineRoot] },
+  )
+  ok(fine.status === 'available' && fine.shadowed_by === undefined, '当前这份可用时不产生多余告警')
+
+  /* 同名但两份一样（都缺 key）：不该因为"别处也有"就改变结论 */
+  const sameEnv = checkSkill(
+    { name: 'vps-demo', content: 'KEY = os.environ["RT_FAKE_KEY2"]', root: mineRoot },
+    { env: process.env, sameNameIn: [mineRoot] },
+  )
+  ok(sameEnv.status === 'broken' && sameEnv.shadowed_by === undefined, '同一份根不参与"被盖住"判定（跳过自己）')
+}
 const summary = summarizeSkills([good, missingEnv, missingPath, noContent])
 ok(summary.total === 4 && summary.available === 1 && summary.broken === 2 && summary.unknown === 1,
   `汇总正确：${JSON.stringify(summary)}`)

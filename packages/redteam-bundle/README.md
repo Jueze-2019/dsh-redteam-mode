@@ -12,7 +12,7 @@ dsh plugin --profile web add dsh-redteam-mode
 
 装完重启一次 `dsh web`，然后在**设置 → 插件市场**里就能看到它（也可以直接在上面搜
 `redteam`）。首次启动会把自带的 `红队模式` 预设装到 `$DSH_HOME/.agent-presets/redteam/`，
-并注册 13 个原生技能——不需要手动拷任何文件。
+并注册 23 个原生技能——不需要手动拷任何文件。
 
 使用：新建会话 → 选预设 **红队模式** → 直接发靶标单位名称。
 
@@ -36,11 +36,11 @@ node node_modules/dsh-redteam-mode/lib/migrate-legacy-rows.mjs                  
 | 四个角色 | 信息收集 / 漏洞检测 / 漏洞利用 / 内网渗透，主会话只做调度与指挥 |
 | 资产测绘 | C 段按内外网分组、端口/服务/指纹/域名/Web 标题、易打性评估、测试状态 |
 | 攻击链 | 五阶段（信息收集 → 互联网资产权限 → 边界突破 → 内网资产权限 → 靶标权限），带累计得分 |
-| 得分目标 | 得分点可编辑、不设数量上限（命中即累加）、自建账号不计分、命中记录一行一条 |
+| 得分目标 | 得分点可编辑、命中记录一行一条；自建账号不计分；**账号权限与数据库权限按「同一资产 + 同一端口」封顶**（拿到最高权限账号即该服务拿满，同服务再刷账号标「服务已拿满 · 不计分」），其余得分点仍不设数量上限 |
 | 会话隧道 | WebShell 与隧道状态、连通性实测、**是否跨越靶标边界**的判定 |
-| 报告 | 按攻击链顺序、按阶段可折叠，每条得分附可直接粘进 Yakit 的原始请求 |
+| 报告 | 按攻击链顺序、按阶段可折叠，每条得分附可直接粘进 Yakit 的原始请求；自建账号与同服务重复命中整条剔除（抬头给出剔除条数） |
 | POC 知识库 | 全局共享（跨靶标）：先查库再联网/手搓，验证有效的回填；同时检索本机 nuclei 模板库 |
-| 技能 | 13 个原生技能随包分发（FOFA 测绘、fscan/gogo 内网、suo5 隧道、冰蝎/哥斯拉马、VPS 反弹…） |
+| 技能 | 23 个原生技能随包分发（FOFA 测绘、fscan/gogo 内网、suo5 隧道、冰蝎/哥斯拉马、VPS 反弹…） |
 
 ## 数据放在哪
 
@@ -56,7 +56,7 @@ node node_modules/dsh-redteam-mode/lib/migrate-legacy-rows.mjs                  
 redteam_engagement_open     绑定本次演练靶标
 redteam_asset_add           落库一个资产（端口带 service/product/version/url/title）
 redteam_vuln_add            落库一个漏洞（带 severity/status/gained）
-redteam_score_hit           记一次得分（同类不设上限；自建账号传 self_created=true 不计分）
+redteam_score_hit           记一次得分（自建账号传 self_created=true 不计分；账号/数据库权限同资产同端口只算一次，被顶掉的重复命中回 warning）
 redteam_chain_add           写攻击链步骤（带 point_code 时同时记分）
 redteam_score_report        生成「攻击得分链路复现报告」
 redteam_sessions            一屏看 WebShell / 隧道 / 凭据 / 会话

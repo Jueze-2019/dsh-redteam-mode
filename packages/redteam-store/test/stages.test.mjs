@@ -28,8 +28,8 @@ try {
 
   /* 造数据：一条 ⑤ 靶标得分（core-system → 自动归到 target） */
   const db = store.db(id)
-  const point = db.prepare("SELECT id FROM score_point WHERE code = 'core-system'").get()
-  ok(point !== undefined, '默认得分点里有 core-system')
+  const point = db.prepare("SELECT id FROM score_point WHERE code = 'central-system'").get()
+  ok(point !== undefined, '默认得分点里有 central-admin（集权系统，规则 7）')
   db.prepare(`INSERT INTO score_hit(point_id, target, evidence, recorded_by, recorded_at)
     VALUES(?,?,?,?,?)`).run(point.id, 'https://target.example', '靶标平台 管理员 admin/Admin@123', 'test', new Date().toISOString())
 

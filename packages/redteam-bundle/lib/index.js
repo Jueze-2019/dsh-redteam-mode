@@ -13,7 +13,7 @@
  *   2. 已经存在同名预设时**不动它**（用户自己的改动优先），只提示。
  *   3. 把包内路径挂到 ctx 上，方便排障与其它行复用。
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -32,6 +32,53 @@ export function packagePaths() {
     presets: join(root, 'presets'),
     presetDir: join(root, 'presets', 'redteam'),
     skills: join(root, 'skills'),
+    setupScript: join(root, 'scripts', 'redteam-setup.sh'),
+  }
+}
+
+/** 环境数据目录（与 store/tools 用的同一份约定）。 */
+export function redteamDataDir() {
+  const home = process.env.DSH_HOME || join(homedir(), '.dsh')
+  return join(home, 'redteam')
+}
+
+/**
+ * 把随包分发的环境安装脚本落到 `$DSH_HOME/redteam/setup.sh`。
+ *
+ * 市场包用户装完只有 node_modules，仓库不在盘上；预检若只说"从仓库取脚本"，
+ * 用户拿不到脚本、首次引导就断了。所以脚本随包走，启动时落一份可执行的副本。
+ * 语义：目标不存在 → 装；已存在但内容不同 → 覆盖（脚本无用户可改状态）；
+ *       内容相同 → 不动（避免每次启动都写盘）。
+ *
+ * @returns `{ action: 'installed'|'updated'|'kept'|'missing', path }`
+ */
+export function installSetupScript() {
+  const paths = packagePaths()
+  const target = join(redteamDataDir(), 'setup.sh')
+  if (!existsSync(paths.setupScript)) return { action: 'missing', path: target }
+  let wanted
+  try {
+    wanted = readFileSync(paths.setupScript, 'utf8')
+  } catch {
+    return { action: 'missing', path: target }
+  }
+  try {
+    mkdirSync(redteamDataDir(), { recursive: true })
+    if (existsSync(target)) {
+      let current
+      try { current = readFileSync(target, 'utf8') } catch { current = '' }
+      if (current === wanted) {
+        /* 权限可能被外部改掉，这里顺手补回来（脚本要能直接 bash 执行） */
+        try { chmodSync(target, 0o755) } catch { /* 忽略 */ }
+        return { action: 'kept', path: target }
+      }
+      writeFileSync(target, wanted, { encoding: 'utf8', mode: 0o755 })
+      return { action: 'updated', path: target }
+    }
+    writeFileSync(target, wanted, { encoding: 'utf8', mode: 0o755 })
+    return { action: 'installed', path: target }
+  } catch (error) {
+    return { action: 'missing', path: target, error: error && error.message ? error.message : String(error) }
   }
 }
 
@@ -156,8 +203,18 @@ export function apply(ctx) {
     ctx.logger?.error?.('redteam-mode: 预设安装失败：%s', error && error.message ? error.message : String(error))
     result = { action: 'failed', dir: join(userPresetRoot(), 'redteam'), skillsDir: paths.skills, skills: 0 }
   }
+  /* 环境安装脚本也要落一份：市场包用户没有仓库，脚本必须随包走 */
+  let setupResult
+  try {
+    setupResult = installSetupScript()
+  } catch (error) {
+    setupResult = { action: 'missing', error: error && error.message ? error.message : String(error) }
+  }
+  if (setupResult.action === 'installed' || setupResult.action === 'updated') {
+    ctx.logger?.info?.('redteam-mode: 环境安装脚本已就位 %s（%s）', setupResult.path, setupResult.action)
+  }
   /* Cordis 要求服务走 provide（直接赋值会报 "cannot set property without provide"） */
-  ctx.provide('redteamMode', Object.freeze({ paths, preset: result }))
+  ctx.provide('redteamMode', Object.freeze({ paths, preset: result, setup: setupResult }))
   ctx.logger?.info?.(
     'redteam-mode: 就绪（数据目录默认 $DSH_HOME/redteam；预设 %s；技能目录 %s）',
     result.dir, result.skillsDir,

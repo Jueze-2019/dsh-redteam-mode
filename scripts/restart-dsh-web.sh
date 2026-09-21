@@ -6,13 +6,27 @@
 #   FORCE_PRESET=1 setsid nohup bash runs/restart-dsh-web.sh [旧PID] >> ... &
 #
 # 说明：
+#   · **技能的 key（FOFA_KEY 等）放 `$DSH_HOME/.env`**（本脚本会 source 它，重启后自动带上；
+#     dsh 自己也会读这个文件，两种启动方式都生效）；只有一次性/CI 场景才用命令行 export。
 #   · 旧 PID 不给就只等端口释放后启动（适用于已经手动停掉的场景）；
 #   · **默认不动** $DSH_HOME/.agent-presets/redteam/（用户可能就地改过预设）；
 #     要强制用包内预设覆盖它，加 FORCE_PRESET=1（插件首启自举读的就是这个变量）。
 set -u
 export DSH_HOME="${DSH_HOME:-/home/jz/.dsh}"
 export PATH="/usr/local/bin:/usr/bin:/bin:/home/jz/.local/bin:$PATH"
-OLD_PID="${1:-}"
+# 本机 key/开关（FOFA_KEY 等）：存在就带上，不存在不影响启动。权限应为 600。
+if [ -f "$DSH_HOME/.env" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$DSH_HOME/.env"
+  set +a
+fi
+# 只接受纯数字 PID：把 --help / -h 之类的参数当成 PID 会以 "旧 PID=--help" 继续走下去，
+# 日志看起来像重启了，其实只是找不到旧进程直接起新的 —— 排查时非常误导。
+case "${1:-}" in
+  ''|*[!0-9]*) [ -n "${1:-}" ] && echo "（忽略非数字参数：$1）" >&2; OLD_PID="" ;;
+  *) OLD_PID="$1" ;;
+esac
 LOG="$DSH_HOME/restart-dsh-web.log"
 WEB_URL="http://127.0.0.1:3080/"
 PORT=3080

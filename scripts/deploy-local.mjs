@@ -52,7 +52,7 @@ for (const profile of profiles) {
      只同步 lib/ 的话它会用上一次部署留下的旧预设覆盖用户预设 —— 表现是"代码更新了、人设还是旧的"，
      更糟的是会把带占位符的坏预设重新写回去（v0.9.0 踩过）。技能目录同理（随包分发）。 */
   const installedRoot = join(profilesRoot, profile, 'node_modules', 'dsh-redteam-mode')
-  for (const sub of ['presets', 'skills']) {
+  for (const sub of ['presets', 'skills', 'scripts']) {
     const srcDir = join(bundle, sub)
     if (!existsSync(srcDir)) continue
     for (const file of readdirSync(srcDir, { withFileTypes: true })) {

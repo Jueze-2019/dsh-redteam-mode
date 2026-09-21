@@ -55,12 +55,12 @@ try {
     '废弃值 foothold 被拦下、退回按 stage 兜底，并返回可见告警')
 
   console.log('— 契约三：chain_add 带分不带证据必须说清楚')
-  const noEvidence = store.addChainStep(id, { stage: 'exploit', stage_code: 'internet', title: '上传 getshell', point_code: 'webshell', asset_id: assetId })
+  const noEvidence = store.addChainStep(id, { stage: 'exploit', stage_code: 'internet', title: '上传 getshell', point_code: 'server-host', asset_id: assetId })
   ok(noEvidence.hit === null && /没有记分/.test(noEvidence.score_hint || ''),
     '带 point_code 但没给 evidence：明确回报没有记分')
   const scored = store.addChainStep(id, {
     stage: 'exploit', stage_code: 'internet', title: '上传 getshell',
-    point_code: 'webshell', target: '10.0.0.9', evidence: '10.0.0.9｜/upload/x.jsp 冰蝎马，已连接',
+    point_code: 'server-host', target: '10.0.0.9', evidence: '10.0.0.9｜/upload/x.jsp 冰蝎马，已连接',
   })
   ok(scored.hit !== null && scored.hit.counted === true, '同时给 point_code + evidence 时照常记分')
   ok(scored.score_hint === null, '记分成功时不给多余告警')
@@ -119,7 +119,10 @@ try {
   ok(coreSrc.includes('gen-prompts.mjs'), 'core.js 里注明提示词由生成器维护')
 
   const total = roles.reduce((sum, role) => sum + DEFAULT_PROMPTS[role].length, 0)
-  ok(total < 32000, `六角色提示词总量 ${total} 字 < 32000（防膨胀栅栏）`)
+  /* v0.10.0 起把"工具与技能"写进各角色（nuclei/目录爆破/未授权利用/凭据攻击/会话 handler/
+   三条隧道/横向提权），总量从 ~31k 涨到 ~36k。栅栏相应上调，但仍必须挡得住无节制膨胀：
+   新增内容应是"角色真的要用到的命令与口径"，不是复述技能正文（技能才是详细步骤的所在）。 */
+  ok(total < 42000, `六角色提示词总量 ${total} 字 < 42000（防膨胀栅栏）`)
 
   console.log('— 契约七：历史默认指纹表（v0.9.0 重写后按设计清空）')
   /* v0.9.0 把六个角色提示词整体重写：旧默认一律不再登记为"可自动升级"，

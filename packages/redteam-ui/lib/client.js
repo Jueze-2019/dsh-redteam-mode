@@ -23,502 +23,9 @@ window.__ModuleLoader__.load({
      * 右侧栏打开时 frame 失去对应 collapsed 属性，面板滑出隐藏、宽度让回右侧栏。
      * 注意属性名随 DSH 版本变化，这里同时兼容旧 data-details-collapsed 与新 data-rightbar-collapsed。
      */
-    const CSS = `
-:root{--rt-dock-w:620px}
-/* 右侧栏收起时给 frame 加内边距，中栏主动收窄。属性名跨 DSH 版本兼容：\n   旧版 details 栏 data-details-collapsed，新版 rightbar 栏 data-rightbar-collapsed。 */\ndiv:has(> [data-shell-overlay] .rt-dock[data-open="1"])[data-details-collapsed],\ndiv:has(> [data-shell-overlay] .rt-dock[data-open="1"])[data-rightbar-collapsed]{padding-right:var(--rt-dock-w)}
-.rt-dock{position:absolute;top:0;right:0;bottom:0;z-index:20;display:flex;flex-direction:column;
-  background:var(--dsw-alias-bg-layer-1);border-left:1px solid var(--dsw-alias-border-l1);
-  box-shadow:-12px 0 32px rgba(0,0,0,.14);pointer-events:auto;color:var(--dsw-alias-label-primary);
-  font-size:13px;line-height:1.5;transition:transform .18s ease,opacity .18s ease}
-/* 右侧栏打开（或新版全屏）时让位：滑出隐藏。必须同时否定两个属性名——\n   旧写法只用 :not([data-details-collapsed])，在新 shell 里该属性不存在会导致条件恒真、面板永远打不开。 */\ndiv:has(> [data-shell-overlay] .rt-dock[data-open="1"]):not([data-details-collapsed]):not([data-rightbar-collapsed]) .rt-dock,\ndiv:has(> [data-shell-overlay] .rt-dock[data-open="1"])[data-rightbar-fullscreen] .rt-dock{
-  transform:translateX(100%);opacity:0;pointer-events:none}
-.rt-grip{position:absolute;left:-3px;top:0;bottom:0;width:6px;cursor:col-resize;background:transparent;z-index:2}
-.rt-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l1)}
-.rt-title{font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px;white-space:nowrap}
-.rt-dot{width:8px;height:8px;border-radius:50%;background:var(--dsw-alias-brand-primary)}
-.rt-spacer{flex:1}
-.rt-btn{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);color:inherit;
-  border-radius:6px;padding:3px 9px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
-.rt-btn:hover{border-color:var(--dsw-alias-border-l2)}
-.rt-btn-primary{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);color:#fff}
-.rt-btn-primary:hover{opacity:.9}
-.rt-btn:disabled{opacity:.5;cursor:default}
-.rt-tabs{display:flex;flex-wrap:wrap;gap:4px;padding:8px 12px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
-.rt-tab{padding:6px 12px;border-radius:6px 6px 0 0;cursor:pointer;font-size:12.5px;color:var(--dsw-alias-label-secondary)}
-.rt-tab.on{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);font-weight:600}
-.rt-body{flex:1;min-height:0;display:flex;flex-direction:column}
-.rt-split{flex:1;min-height:0;display:flex}
-.rt-side{width:200px;flex:none;border-right:1px solid var(--dsw-alias-border-l1);overflow:auto;padding:8px}
-.rt-main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
-.rt-seg{padding:7px 8px;border-radius:6px;cursor:pointer;margin-bottom:4px;border:1px solid transparent}
-.rt-seg:hover{background:var(--dsw-alias-bg-layer-2)}
-.rt-seg.on{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-brand-primary)}
-.rt-seg-cidr{font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
-.rt-seg-meta{font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:2px}
-.rt-toolbar{display:flex;gap:6px;padding:8px 10px;border-bottom:1px solid var(--dsw-alias-border-l1);flex-wrap:wrap;align-items:center}
-.rt-input{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);color:inherit;
-  border-radius:6px;padding:4px 8px;font-size:12px;font-family:inherit;outline:none;min-width:0}
-.rt-input:focus{border-color:var(--dsw-alias-brand-primary)}
-.rt-table{flex:1;overflow:auto}
-.rt-row{display:grid;grid-template-columns:150px 74px 104px 1.15fr 1fr;gap:8px;padding:6px 10px;
-  border-bottom:1px solid var(--dsw-alias-border-l1);align-items:center;cursor:pointer;font-size:12.5px}
-.rt-row:hover{background:var(--dsw-alias-bg-layer-2)}
-.rt-row.head{cursor:default;color:var(--dsw-alias-label-secondary);font-size:11.5px;font-weight:600;position:sticky;top:0;
-  background:var(--dsw-alias-bg-layer-1);z-index:1}
-.rt-row.head:hover{background:var(--dsw-alias-bg-layer-1)}
-.rt-mono{font-family:ui-monospace,Menlo,monospace}
-.rt-tag{display:inline-block;padding:0 5px;border-radius:4px;font-size:11px;margin-right:4px;
-  border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);white-space:nowrap}
-.rt-tag-passive{color:#8b5cf6;border-color:#8b5cf655;background:#8b5cf61a}
-.rt-tag-active{color:#f59e0b;border-color:#f59e0b55;background:#f59e0b1a}
-.rt-tag-live{color:#10b981;border-color:#10b98155;background:#10b9811a}
-.rt-tag-warn{color:#ef4444;border-color:#ef444455;background:#ef44441a}
-/* 纪律提示条：不满足交付要求（非冰蝎/哥斯拉马、没有 suo5 隧道）时顶在区块最上方 */
-.rt-hint{border-radius:6px;padding:7px 9px;margin-bottom:8px;font-size:11.5px;line-height:1.6;
-  border:1px dashed #ef444488;background:#ef44440f;color:var(--dsw-alias-label-primary)}
-.rt-hint b{color:#ef4444}
-.rt-tag-dead{color:var(--dsw-alias-label-secondary)}
-.rt-expand{grid-column:1/-1;padding:8px 4px 10px;font-size:12px;color:var(--dsw-alias-label-secondary)}
-.rt-kv{display:flex;gap:8px;margin-bottom:3px;align-items:baseline}
-.rt-kv b{color:var(--dsw-alias-label-primary);font-weight:600;min-width:64px;flex:none}
-.rt-graphwrap{flex:1;position:relative;overflow:hidden}
-.rt-graph{width:100%;height:100%;display:block}
-.rt-legend{position:absolute;left:10px;bottom:10px;display:flex;gap:10px;font-size:11px;
-  background:var(--dsw-alias-bg-overlay);border:1px solid var(--dsw-alias-border-l1);border-radius:6px;padding:5px 8px}
-.rt-legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
-.rt-pane{flex:1;overflow:auto;padding:12px}
-.rt-card{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:10px;margin-bottom:10px;background:var(--dsw-alias-bg-layer-2)}
-.rt-card h4{margin:0 0 6px;font-size:13px}
-.rt-textarea{width:100%;min-height:260px;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l1);
-  color:inherit;border-radius:6px;padding:8px;font-size:12.5px;font-family:ui-monospace,Menlo,monospace;
-  line-height:1.6;resize:vertical;outline:none;box-sizing:border-box}
-.rt-textarea:focus{border-color:var(--dsw-alias-brand-primary)}
-.rt-list{width:210px;flex:none;border-right:1px solid var(--dsw-alias-border-l1);overflow:auto;padding:8px}
-.rt-item{padding:7px 8px;border-radius:6px;cursor:pointer;margin-bottom:4px;border:1px solid transparent}
-.rt-item:hover{background:var(--dsw-alias-bg-layer-2)}
-.rt-item.on{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-brand-primary)}
-.rt-item-name{font-weight:600;font-size:12.5px}
-.rt-item-desc{font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:2px;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.rt-empty{padding:24px;text-align:center;color:var(--dsw-alias-label-secondary);font-size:12.5px}
-.rt-err{color:var(--dsw-alias-state-error-primary);font-size:12px;padding:6px 10px}
-.rt-foot{padding:8px 12px;border-top:1px solid var(--dsw-alias-border-l1);font-size:11px;
-  color:var(--dsw-alias-label-secondary);display:flex;gap:12px;flex-wrap:wrap;align-items:center}
-.rt-icon-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;border:1px solid var(--dsw-alias-border-l1);
-  background:transparent;color:inherit;border-radius:6px;padding:6px 8px;cursor:pointer;font-family:inherit;font-size:12.5px}
-.rt-icon-btn:hover{background:var(--dsw-alias-bg-layer-2)}
-.rt-icon-btn.on{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary)}
-.rt-hbtn{border:1px solid var(--dsw-alias-border-l1);background:transparent;color:inherit;border-radius:6px;
-  padding:2px 8px;font-size:12px;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:5px}
-.rt-hbtn:hover{background:var(--dsw-alias-bg-layer-2)}
-.rt-hbtn.on{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary)}
-.rt-test{display:inline-block;padding:0 5px;border-radius:4px;font-size:11px;white-space:nowrap;
-  border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary)}
-.rt-test-testing{color:#f59e0b;border-color:#f59e0b55;background:#f59e0b1a}
-.rt-test-tested{color:#10b981;border-color:#10b98155;background:#10b9811a}
-.rt-test-blocked{color:#fff;background:#ef4444;border-color:#ef4444}
-.rt-test-abandoned{color:#94a3b8;border-color:#94a3b855;background:#94a3b81a}
-.rt-test-no_surface{color:#6366f1;border-color:#6366f155;background:#6366f11a}
-.rt-pri{display:inline-block;padding:0 6px;border-radius:4px;font-size:11px;font-weight:600;white-space:nowrap}
-.rt-pri-high{color:#fff;background:#ef4444}
-.rt-pri-medium{color:#fff;background:#f59e0b}
-.rt-pri-low{color:#fff;background:#94a3b8}
-.rt-score-row{display:grid;grid-template-columns:16px 56px minmax(0,1fr) 104px 74px 62px;gap:8px;padding:7px 10px;
-  border-bottom:1px solid var(--dsw-alias-border-l1);align-items:center;font-size:12.5px;cursor:pointer}
-.rt-score-row:hover{background:var(--dsw-alias-bg-layer-2)}
-.rt-score-row.head{cursor:default;color:var(--dsw-alias-label-secondary);font-size:11.5px;font-weight:600;
-  position:sticky;top:0;background:var(--dsw-alias-bg-layer-1);z-index:1}
-.rt-score-detail{grid-column:1/-1;padding:8px 4px 10px;font-size:12px;color:var(--dsw-alias-label-secondary)}
-.rt-score-form{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px}
-.rt-score-form input,.rt-score-form select{width:100%;box-sizing:border-box}
-.rt-vrow{display:grid;grid-template-columns:62px minmax(0,1fr) 132px 108px 74px 52px;gap:8px;padding:6px 10px;
-  border-bottom:1px solid var(--dsw-alias-border-l1);align-items:center;font-size:12.5px;cursor:pointer}
-.rt-vrow:hover{background:var(--dsw-alias-bg-layer-2)}
-.rt-vrow.head{cursor:default;color:var(--dsw-alias-label-secondary);font-size:11.5px;font-weight:600;
-  position:sticky;top:0;background:var(--dsw-alias-bg-layer-1);z-index:1}
-.rt-vdetail{grid-column:1/-1;padding:8px 4px 10px;font-size:12px;color:var(--dsw-alias-label-secondary)}
-.rt-vdetail .rt-kv{margin-bottom:4px}
-.rt-actions{display:flex;gap:6px;margin-top:6px}
-.rt-section{padding:8px 10px 2px;font-size:11.5px;font-weight:600;color:var(--dsw-alias-label-secondary)}
-.rt-link{color:var(--dsw-alias-brand-primary);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rt-link:hover{text-decoration:underline}
-.rt-full{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;
-  background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.5;
-  border-top:3px solid var(--dsw-alias-brand-primary)}
-.rt-full .rt-head{padding:12px 18px}
-.rt-full .rt-tabs{padding:10px 18px 0;gap:6px;flex-wrap:wrap}
-.rt-full .rt-side{width:260px}
-.rt-full .rt-list{width:280px}
-.rt-full .rt-row{grid-template-columns:190px 90px 130px 1.4fr 1.2fr}
-.rt-full .rt-vrow{grid-template-columns:80px minmax(0,1.6fr) 200px 150px 90px 64px}
-.rt-full .rt-pane{padding:18px}
-.rt-full .rt-textarea{min-height:60vh}
-.rt-full .rt-foot{padding:10px 18px;font-size:12px}
-.rt-full .rt-body{max-width:1400px;width:100%;margin:0 auto;flex:1;min-height:0;display:flex;flex-direction:column}
-.rt-chain{flex:1;overflow:auto;padding:10px 12px}
-.rt-step{display:flex;gap:10px;padding:8px 6px;border-left:2px solid var(--dsw-alias-border-l1);margin-left:6px}
-.rt-step:last-child{border-left-color:transparent}
-.rt-step-dot{width:22px;height:22px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;
-  font-size:11px;font-weight:700;color:#fff;background:#64748b;margin-left:-13px}
-.rt-step-body{min-width:0}
-.rt-step-title{font-weight:600;font-size:13px}
-.rt-step-meta{font-size:11.5px;color:var(--dsw-alias-label-secondary);margin-top:2px;word-break:break-word}
-.rt-stage-recon{background:#6366f1}
-.rt-stage-vuln{background:#f59e0b}
-.rt-stage-exploit{background:#ef4444}
-.rt-stage-access{background:#10b981}
-.rt-stage-pivot{background:#8b5cf6}
-.rt-stage-data{background:#0ea5e9}
-.rt-stage-other{background:#64748b}
-.rt-step-head{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
-.rt-step-time{font-size:11px;color:var(--dsw-alias-label-secondary);margin-left:auto;white-space:nowrap}
-.rt-step-detail{font-size:12px;margin-top:5px;white-space:pre-wrap;word-break:break-word;
-  border-left:2px solid var(--dsw-alias-border-l1);padding:2px 0 2px 9px;line-height:1.6}
-.rt-chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:1px 7px;border-radius:5px;
-  border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);margin:4px 5px 0 0;max-width:100%}
-.rt-chip>i{font-style:normal;color:var(--dsw-alias-label-secondary);font-size:10.5px}
-.rt-chip>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
-.rt-stage-tag{display:inline-block;padding:0 6px;border-radius:4px;font-size:11px;color:#fff;font-weight:600}
-.rt-st-recon{background:#6366f1}.rt-st-vuln{background:#f59e0b}.rt-st-exploit{background:#ef4444}
-.rt-st-access{background:#10b981}.rt-st-pivot{background:#8b5cf6}.rt-st-data{background:#0ea5e9}.rt-st-other{background:#64748b}
-.rt-sev{display:inline-block;padding:0 6px;border-radius:4px;font-size:11px;font-weight:600;border:1px solid transparent}
-.rt-sev-critical{color:#fff;background:#b91c1c}.rt-sev-high{color:#fff;background:#ef4444}
-.rt-sev-medium{color:#7c2d12;background:#fdba74}.rt-sev-low{color:#1e3a8a;background:#bfdbfe}
-.rt-sev-info{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-border-l1)}
-.rt-dot-on{display:inline-block;width:7px;height:7px;border-radius:50%;background:#10b981;box-shadow:0 0 0 3px #10b98133}
-.rt-dot-off{display:inline-block;width:7px;height:7px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 3px #ef444433}
-.rt-dot-unk{display:inline-block;width:7px;height:7px;border-radius:50%;background:#94a3b8;box-shadow:0 0 0 3px #94a3b833}
-.rt-sess-grid{display:grid;grid-template-columns:1fr;gap:8px;padding:10px 12px}
-.rt-sess{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:9px 10px;background:var(--dsw-alias-bg-layer-2)}
-.rt-sess-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-.rt-sess-title{font-weight:600;font-size:12.5px;font-family:ui-monospace,Menlo,monospace;word-break:break-all}
-.rt-sess-sub{font-size:11.5px;color:var(--dsw-alias-label-secondary);margin-top:3px;word-break:break-word}
-.rt-code{font-family:ui-monospace,Menlo,monospace;font-size:11px;background:var(--dsw-alias-bg-base);
-  border:1px solid var(--dsw-alias-border-l1);border-radius:4px;padding:1px 5px;cursor:pointer;word-break:break-all}
-.rt-code:hover{border-color:var(--dsw-alias-brand-primary)}
-.rt-evi{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;overflow:hidden;margin-top:8px}
-.rt-evi-head{display:flex;align-items:center;gap:8px;padding:5px 9px;background:var(--dsw-alias-bg-layer-2);
-  font-size:11.5px;font-weight:600;border-bottom:1px solid var(--dsw-alias-border-l1)}
-.rt-evi-body{margin:0;padding:9px 11px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.6;
-  white-space:pre-wrap;word-break:break-word;max-height:340px;overflow:auto;background:var(--dsw-alias-bg-base)}
-.rt-evi-body.req{max-height:220px}
-.rt-hl-req{color:#10b981;font-weight:600}
-.rt-hl-res{color:#0ea5e9;font-weight:600}
-.rt-gain{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:12px;
-  color:#065f46;background:#a7f3d0;border:1px solid #10b98155}
-.rt-total{font-size:20px;font-weight:700;font-family:ui-monospace,Menlo,monospace}
-.rt-sidehead{padding:7px 8px 2px;font-size:11px;font-weight:600;color:var(--dsw-alias-label-secondary);
-  display:flex;align-items:center;gap:5px}
-.rt-sidehead-btn{cursor:pointer;outline:none;padding:6px 6px 5px;border-radius:5px;user-select:none}
-.rt-sidehead-btn:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1)}
-.rt-sidehead-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
-.rt-scope{display:inline-block;padding:0 4px;border-radius:3px;font-size:10px;font-weight:700;line-height:15px;flex:none}
-.rt-scope-internal{color:#0e7490;background:#a5f3fc}
-.rt-scope-external{color:#9a3412;background:#fed7aa}
-.rt-hits{display:flex;flex-direction:column;gap:6px;margin-top:7px}
-.rt-hit{border:1px solid var(--dsw-alias-border-l1);border-left:3px solid #10b981;border-radius:6px;
-  padding:7px 9px;background:var(--dsw-alias-bg-layer-2)}
-.rt-hit-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-.rt-hit-idx{width:16px;height:16px;border-radius:50%;background:#10b981;color:#fff;font-size:10.5px;font-weight:700;
-  display:inline-flex;align-items:center;justify-content:center;flex:none}
-.rt-hit-target{font-family:ui-monospace,Menlo,monospace;font-weight:600;font-size:12px;word-break:break-all}
-.rt-hit-time{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-secondary);white-space:nowrap}
-.rt-hit-evi{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word;
-  background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l1);border-radius:5px;padding:6px 8px;margin-top:5px}
-.rt-hit-note{font-size:11.5px;color:var(--dsw-alias-label-secondary);margin-top:4px}
-.rt-cred{border:1px solid var(--dsw-alias-border-l1);border-left:3px solid #f59e0b;border-radius:6px;
-  padding:8px 10px;background:var(--dsw-alias-bg-layer-2);margin-bottom:7px}
-.rt-cred-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-.rt-cred-host{font-family:ui-monospace,Menlo,monospace;font-weight:600;font-size:12.5px;word-break:break-all}
-.rt-secret{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.6;background:#fef3c7;color:#78350f;
-  border:1px solid #f59e0b66;border-radius:5px;padding:6px 9px;margin-top:6px;white-space:pre-wrap;word-break:break-all;
-  user-select:all;cursor:text}
-.rt-secret-none{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--dsw-alias-state-error-primary);
-  border:1px dashed var(--dsw-alias-state-error-primary);border-radius:5px;padding:5px 9px;margin-top:6px}
-.rt-cred-meta{font-size:11.5px;color:var(--dsw-alias-label-secondary);margin-top:5px;word-break:break-word}
-.rt-stage-score{background:#10b981}
-.rt-counted{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;color:#065f46;background:#a7f3d0;border:1px solid #10b98155;border-radius:9px;padding:0 7px}
-.rt-scorepts{font-size:11.5px;font-weight:700;color:#065f46;background:#a7f3d0;border:1px solid #10b98155;
-  border-radius:10px;padding:0 7px;white-space:nowrap}
-.rt-livebar{display:flex;align-items:center;gap:7px;padding:7px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);
-  background:var(--dsw-alias-bg-layer-2);flex-wrap:wrap}
-.rt-live-dot{width:8px;height:8px;border-radius:50%;background:#10b981;flex:none;animation:rt-pulse 1.6s ease-in-out infinite}
-.rt-live-dot.idle{background:#94a3b8;animation:none}
-@keyframes rt-pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 #10b98166}50%{opacity:.5;box-shadow:0 0 0 5px #10b98100}}
-.rt-live-body{padding:8px 12px 2px;max-height:44vh;overflow:auto}
-.rt-atest{border:1px solid var(--dsw-alias-border-l1);border-left:3px solid #10b981;border-radius:6px;
-  padding:7px 10px;background:var(--dsw-alias-bg-layer-2);margin-bottom:6px}
-.rt-atest.past{border-left-color:#94a3b8;opacity:.85}
-.rt-atest-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-.rt-atest-ip{font-family:ui-monospace,Menlo,monospace;font-weight:600;font-size:12.5px;word-break:break-all}
-.rt-atest-meta{font-size:11.5px;color:var(--dsw-alias-label-secondary);margin-top:3px;word-break:break-word}
-.rt-atest-notes{font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.6;white-space:pre-wrap;
-  word-break:break-word;background:var(--dsw-alias-bg-base);border-radius:4px;padding:5px 7px;margin-top:4px;max-height:76px;overflow:auto}
-.rt-concl{display:flex;align-items:center;gap:4px;padding:6px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);
-  background:var(--dsw-alias-bg-layer-2);flex-wrap:wrap}
-.rt-concl-i{display:inline-flex;align-items:baseline;gap:4px;padding:2px 8px;border-radius:6px;cursor:pointer;
-  border:1px solid transparent}
-.rt-concl-i:hover{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1)}
-.rt-concl-i.on{border-color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-bg-layer-1)}
-.rt-concl-i b{font-family:ui-monospace,Menlo,monospace;font-size:14px;font-weight:700}
-.rt-concl-i>span{color:var(--dsw-alias-label-secondary);font-size:11.5px}
-.rt-more{color:var(--dsw-alias-brand-primary);font-size:11.5px;cursor:pointer;user-select:none;margin-top:4px;display:inline-block}
-.rt-more:hover{text-decoration:underline}
-.rt-subtabs{display:flex;gap:4px;padding:6px 10px 0;border-bottom:1px solid var(--dsw-alias-border-l1);align-items:center}
-.rt-subtab{padding:4px 10px;border-radius:6px 6px 0 0;cursor:pointer;font-size:12px;color:var(--dsw-alias-label-secondary)}
-.rt-subtab.on{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);font-weight:600}
-.rt-sevbar{width:3px;border-radius:2px;align-self:stretch;flex:none;margin-right:2px}
-/* ── 折叠层次体系 ─────────────────────────────────────────────────────────────
-   L1 折叠头 .rt-sec   ：通栏、无圆角无边框、左色条、深底 —— 永远是"扁"的
-   L2 内容卡 .rt-atest/.rt-hit/.rt-cred/.rt-evi：内缩、有边框、圆角 —— 立起来
-   L3 详情/长文本 .rt-clip-body / .rt-evi-body ：无边框、最浅、等宽
-   L4 子项容器 .rt-sec-body：左缩进 + 竖引导线，表明"属于上面那个头"
-   ──────────────────────────────────────────────────────────────────────────── */
-.rt-sec-wrap{margin:0}
-.rt-sec{display:flex;align-items:center;gap:8px;padding:7px 12px 7px 9px;cursor:pointer;
-  background:var(--dsw-alias-bg-layer-2);border-left:3px solid var(--dsw-alias-border-l2);
-  border-top:1px solid var(--dsw-alias-border-l1);user-select:none;outline:none}
-.rt-sec:hover{background:var(--dsw-alias-bg-layer-1)}
-.rt-sec:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
-.rt-sec.flat{cursor:default}
-.rt-sec.flat:hover{background:var(--dsw-alias-bg-layer-2)}
-.rt-sec-caret{flex:none;width:11px;font-size:10px;color:var(--dsw-alias-label-secondary);text-align:center}
-.rt-sec-title{font-weight:600;font-size:13px;white-space:nowrap}
-.rt-sec-count{font-size:11.5px;color:var(--dsw-alias-label-secondary);white-space:nowrap}
-.rt-sec-sub{font-size:11.5px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rt-sec-right{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-secondary);white-space:nowrap;flex:none}
-.rt-sec.t-stage{border-left-color:#8b5cf6}
-.rt-sec.t-target{border-left-color:#0ea5e9}
-.rt-sec.t-folder{border-left-color:#64748b}
-.rt-sec.t-test{border-left-color:#10b981}
-.rt-sec.t-queue{border-left-color:#f59e0b}
-.rt-sec.t-past{border-left-color:#94a3b8}
-.rt-sec-body{margin-left:12px;border-left:1px solid var(--dsw-alias-border-l1);padding:7px 0 3px 10px}
-.rt-sec-body>.rt-atest:last-child,.rt-sec-body>.rt-hit:last-child{margin-bottom:2px}
-/* 长文本折叠（L3）：默认预览 2 行并渐隐，展开后限高滚动 */
-.rt-clip{margin-top:6px}
-.rt-clip-head{display:flex;align-items:center;gap:6px}
-.rt-clip-label{font-size:11px;color:var(--dsw-alias-label-secondary);font-weight:600}
-.rt-clip-body{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.65;white-space:pre-wrap;
-  word-break:break-word;background:var(--dsw-alias-bg-base);border-radius:5px;padding:6px 8px;margin-top:3px}
-.rt-clip:not(.open) .rt-clip-body{max-height:46px;overflow:hidden;
-  -webkit-mask-image:linear-gradient(180deg,#000 55%,transparent);mask-image:linear-gradient(180deg,#000 55%,transparent)}
-.rt-clip.open .rt-clip-body{max-height:340px;overflow:auto}
-.rt-flow{padding:10px 12px 16px}
-.rt-flow-start,.rt-flow-end{font-size:11.5px;color:var(--dsw-alias-label-secondary);padding:4px 0}
-.rt-flow-end{font-weight:600;color:var(--dsw-alias-label-primary)}
-.rt-flow-link{display:flex;align-items:center;gap:8px;padding:3px 0 3px 10px}
-.rt-flow-arrow{color:var(--dsw-alias-border-l2);font-size:11px;flex:none}
-.rt-flow-action{font-size:11.5px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rt-flow-action.inferred{opacity:.7;font-style:italic}
-.rt-flow-node{border:1px solid var(--dsw-alias-border-l1);border-left:3px solid #10b981;border-radius:8px;
-  padding:8px 11px;background:var(--dsw-alias-bg-layer-2);cursor:pointer;outline:none}
-.rt-flow-node:hover{border-color:var(--dsw-alias-border-l2)}
-.rt-flow-node:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
-.rt-flow-node.overflow{border-left-color:#94a3b8;opacity:.75}
-.rt-flow-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.rt-flow-idx{width:18px;height:18px;border-radius:50%;background:#10b981;color:#fff;font-size:11px;font-weight:700;
-  display:inline-flex;align-items:center;justify-content:center;flex:none}
-.rt-flow-node.overflow .rt-flow-idx{background:#94a3b8}
-.rt-flow-name{font-weight:600;font-size:13px}
-.rt-flow-pts{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;font-weight:700;color:#065f46;
-  background:#a7f3d0;border:1px solid #10b98155;border-radius:10px;padding:0 8px;white-space:nowrap}
-.rt-flow-pts.off{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1);border-color:var(--dsw-alias-border-l1)}
-.rt-flow-times{font-size:11px;color:var(--dsw-alias-label-secondary)}
-.rt-flow-target{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;margin-top:4px;word-break:break-all;
-  color:var(--dsw-alias-label-secondary)}
-.rt-flow-gain{font-size:12px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rt-flow-detail{margin-top:7px;padding-top:7px;border-top:1px dashed var(--dsw-alias-border-l1)}
-.rt-hflow-wrap{flex:1;min-height:0;display:flex;flex-direction:column;overflow:auto}
-.rt-hflow{display:flex;align-items:center;gap:0;padding:16px 12px;overflow-x:auto;flex-wrap:nowrap}
-.rt-hflow-item{display:flex;align-items:center;flex:none}
-.rt-hflow-start,.rt-hflow-end{font-size:11.5px;color:var(--dsw-alias-label-secondary);white-space:nowrap;padding:0 4px}
-.rt-hflow-end{font-weight:600;color:var(--dsw-alias-label-primary)}
-.rt-hflow-arrow{color:var(--dsw-alias-border-l2);padding:0 5px;font-size:13px;flex:none}
-.rt-hflow-node{display:flex;align-items:center;gap:5px;border:1px solid var(--dsw-alias-border-l1);
-  border-left:3px solid #10b981;border-radius:7px;padding:5px 8px;background:var(--dsw-alias-bg-layer-2);
-  cursor:pointer;white-space:nowrap;outline:none}
-.rt-hflow-node:hover{border-color:var(--dsw-alias-border-l2)}
-.rt-hflow-node:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
-.rt-hflow-node.overflow{border-left-color:#94a3b8;opacity:.72}
-.rt-hflow-node.open{border-color:var(--dsw-alias-brand-primary)}
-.rt-hflow-pts{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;font-weight:700;color:#065f46;background:#a7f3d0;
-  border-radius:8px;padding:0 6px}
-.rt-hflow-node.overflow .rt-hflow-pts{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1)}
-.rt-hflow-name{font-size:11.5px}
-.rt-hflow-n{font-size:10.5px;color:var(--dsw-alias-label-secondary)}
-.rt-rep-list{padding:10px 12px 14px}
-.rt-rep-tools{display:flex;gap:6px;justify-content:flex-end;margin-bottom:8px}
-.rt-rep{border:1px solid var(--dsw-alias-border-l1);border-left:3px solid #10b981;border-radius:8px;
-  padding:9px 11px;margin-bottom:10px;background:var(--dsw-alias-bg-layer-2)}
-.rt-rep-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.rt-rep-idx{font-size:15px;color:#10b981;font-weight:700;flex:none}
-.rt-rep-name{font-weight:600;font-size:13px}
-.rt-rep-meta{font-size:12px;margin-top:4px;color:var(--dsw-alias-label-secondary);word-break:break-word}
-.rt-rep-meta b{color:var(--dsw-alias-label-primary);font-weight:600;margin-right:2px}
-.rt-rep-missing{font-size:11.5px;color:var(--dsw-alias-state-error-primary);margin-top:6px;
-  border:1px dashed var(--dsw-alias-state-error-primary);border-radius:5px;padding:5px 8px}
-.rt-rep-req{margin-top:7px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;overflow:hidden}
-.rt-rep-req-head{display:flex;align-items:center;gap:7px;padding:4px 8px;font-size:11.5px;font-weight:600;
-  background:var(--dsw-alias-bg-layer-1);border-bottom:1px solid var(--dsw-alias-border-l1)}
-.rt-rep-http{margin:0;padding:8px 10px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto;background:var(--dsw-alias-bg-base)}
-/* ── 报告里的「这一步怎么来的」：动作步骤 / 命令 / 凭据 / 隧道 ───────────── */
-.rt-rep-trace{margin-top:8px;border:1px solid var(--dsw-alias-border-l1);border-radius:7px;padding:8px 10px;
-  background:var(--dsw-alias-bg-base)}
-.rt-rep-trace-head{display:flex;align-items:center;gap:7px;margin-bottom:5px}
-.rt-rep-trace-title{font-weight:600;font-size:12.5px}
-.rt-rep-trace-how{font-size:12px;color:var(--dsw-alias-label-secondary);margin-bottom:6px}
-.rt-rep-step{border-left:2px solid var(--dsw-alias-border-l1);padding:2px 0 6px 9px;margin-bottom:6px}
-.rt-rep-step-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.rt-rep-step-no{width:17px;height:17px;border-radius:50%;background:var(--dsw-alias-brand-primary);color:#fff;
-  font-size:10.5px;display:flex;align-items:center;justify-content:center;flex:none}
-.rt-rep-step-title{font-weight:600;font-size:12.5px}
-.rt-rep-step-detail{font-size:12px;color:var(--dsw-alias-label-secondary);margin-top:2px}
-.rt-rep-step-cmd{font-size:11.5px;margin-top:4px;display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap}
-.rt-rep-step-cmd .rt-mono{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);
-  border-radius:5px;padding:2px 6px;word-break:break-all}
-.rt-rep-step-result{font-size:11.5px;margin-top:3px;word-break:break-word}
-.rt-rep-src{margin-top:6px;padding-top:6px;border-top:1px dashed var(--dsw-alias-border-l1)}
-.rt-rep-src-title{font-weight:600;font-size:12px;margin-bottom:3px}
-/* ── 全链路攻击路径图 ─────────────────────────────────────────────── */
-.rt-ap{padding:10px 12px 18px;overflow:auto}
-.rt-ap-stage{margin-bottom:2px}
-.rt-ap-head{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--dsw-alias-bg-layer-2);
-  border-left:4px solid #64748b;border-top:1px solid var(--dsw-alias-border-l1);border-radius:6px 6px 0 0}
-.rt-ap-no{width:20px;height:20px;border-radius:5px;color:#fff;font-size:11px;font-weight:700;flex:none;
-  display:inline-flex;align-items:center;justify-content:center}
-.rt-ap-name{font-weight:700;font-size:13.5px}
-.rt-ap-en{font-size:10px;color:var(--dsw-alias-label-secondary);letter-spacing:.3px}
-.rt-ap-phase{font-size:10.5px;color:var(--dsw-alias-label-secondary);white-space:nowrap}
-.rt-ap-goal{display:flex;align-items:baseline;gap:8px;padding:6px 10px 6px 9px;font-size:12px;
-  border-left:4px solid #64748b;background:var(--dsw-alias-bg-layer-1)}
-.rt-ap-goal-tag{font-size:10.5px;font-weight:700;border:1px solid;border-radius:4px;padding:0 5px;white-space:nowrap;flex:none}
-.rt-ap-result{padding:7px 10px 3px;border-left:4px solid transparent}
-.rt-ap-result-head{display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap}
-.rt-ap-pts{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;font-weight:700;color:#065f46;background:#a7f3d0;
-  border:1px solid #10b98155;border-radius:10px;padding:0 7px;white-space:nowrap}
-.rt-ap-pts.off{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1);border-color:var(--dsw-alias-border-l1)}
-.rt-ap-nth{font-size:10.5px;color:var(--dsw-alias-label-secondary);white-space:nowrap}
-.rt-ap-hit{border:1px solid var(--dsw-alias-border-l1);border-left:3px solid #10b981;border-radius:6px;
-  padding:6px 9px;margin-bottom:5px;background:var(--dsw-alias-bg-layer-2);cursor:pointer;outline:none}
-.rt-ap-hit:hover{border-color:var(--dsw-alias-border-l2)}
-.rt-ap-hit:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
-.rt-ap-hit.overflow{border-left-color:#94a3b8;opacity:.75}
-.rt-ap-hit-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-.rt-ap-hit-name{font-weight:600;font-size:12.5px}
-.rt-ap-hit-target{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--dsw-alias-label-secondary);
-  margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%}
-.rt-ap-act{font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:3px}
-.rt-ap-act.inferred{font-style:italic;opacity:.75}
-.rt-ap-none{font-size:11.5px;color:var(--dsw-alias-label-secondary);padding:2px 0 4px}
-.rt-ap-trans{display:flex;align-items:center;gap:7px;padding:2px 0 2px 14px}
-.rt-ap-trans-t{font-size:11px;color:var(--dsw-alias-label-secondary)}
-/* 横向路径图 */
-.rt-ap-h{display:flex;align-items:stretch;padding:10px 12px 14px;overflow-x:auto;flex:1;min-height:0}
-.rt-ap-col{display:flex;align-items:stretch;flex:none}
-.rt-ap-col-arrow{align-self:center;color:var(--dsw-alias-border-l2);padding:0 6px;font-size:12px;flex:none}
-.rt-hcol{width:228px;display:flex;flex-direction:column;border:1px solid var(--dsw-alias-border-l1);
-  border-top:3px solid #64748b;border-radius:7px;background:var(--dsw-alias-bg-layer-1);overflow:hidden}
-.rt-hcol-goal{font-size:11px;color:var(--dsw-alias-label-secondary);padding:5px 8px;line-height:1.45;
-  border-bottom:1px solid var(--dsw-alias-border-l1);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.rt-hcol-body{padding:6px 8px;flex:1;min-height:0;overflow:auto}
-.rt-hcol-hit{display:flex;align-items:center;gap:5px;font-size:11px;margin-bottom:3px}
-.rt-hcol-hit.off{opacity:.6}
-.rt-hcol-pts{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;font-weight:700;color:#065f46;background:#a7f3d0;
-  border-radius:7px;padding:0 5px;flex:none}
-.rt-hcol-hit.off .rt-hcol-pts{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2)}
-.rt-hcol-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rt-hcol-none{font-size:11px;color:var(--dsw-alias-label-secondary)}
-.rt-hcol-secs{display:flex;flex-wrap:wrap;gap:3px;margin-top:6px}
-.rt-hcol-sec{font-size:10px;color:var(--dsw-alias-label-secondary);border:1px solid var(--dsw-alias-border-l1);
-  border-radius:4px;padding:0 4px}
-.rt-hcol-attck{font-family:ui-monospace,Menlo,monospace;font-size:9.5px;color:var(--dsw-alias-label-secondary);
-  padding:4px 8px;border-top:1px solid var(--dsw-alias-border-l1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rt-ap-cum{font-size:11px;color:var(--dsw-alias-label-secondary);white-space:nowrap}
-.rt-ap-sub{font-size:11px;font-weight:600;color:var(--dsw-alias-label-secondary);margin:6px 0 3px}
-.rt-ap-assets,.rt-ap-tunnels{display:flex;flex-direction:column;gap:3px}
-.rt-ap-asset{display:flex;align-items:center;gap:6px;font-size:11.5px;padding:3px 6px;border-radius:5px;
-  background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1)}
-.rt-ap-tunnel{display:flex;align-items:center;gap:6px;font-size:11.5px;padding:4px 7px;border-radius:5px;
-  background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-left:3px solid #f59e0b}
-.rt-hcol-sub{font-size:10.5px;color:var(--dsw-alias-label-secondary);margin-bottom:2px;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;gap:5px;align-items:center}
-.rt-hcol-sub.off{opacity:.6}
-.rt-hit-row{display:flex;flex-wrap:wrap;align-items:center;gap:2px 7px;font-size:11.5px;padding:4px 7px;border-radius:5px;
-  background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);margin-bottom:3px}
-/* 资产与内容都自适应换行：长域名/长口令/长结果一律换行显示，不截断成省略号 */
-.rt-hit-asset{font-family:ui-monospace,Menlo,monospace;font-weight:600;flex:0 1 auto;max-width:100%;
-  overflow-wrap:anywhere;word-break:break-word}
-.rt-hit-txt{flex:1 1 100%;color:var(--dsw-alias-label-primary);line-height:1.55;
-  white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
-.rt-hit-txt.none{color:var(--dsw-alias-state-error-primary)}
-.rt-hit-row .rt-hit-time{flex:none;margin-left:auto}
-/* 自己注册/自建的账号：留痕但不计分，整行压暗 */
-.rt-hit-row.self-created{opacity:.72;border-left:3px solid #ef444488}
-.rt-rep-group{margin-bottom:14px}
-.rt-rep-stage{display:flex;align-items:center;gap:8px;padding:7px 10px;margin-bottom:7px;
-  background:var(--dsw-alias-bg-layer-2);border-left:4px solid #64748b;border-radius:6px;
-  cursor:pointer;outline:none;user-select:none}
-.rt-rep-stage:hover{background:var(--dsw-alias-bg-layer-1)}
-.rt-rep-stage:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
-.rt-rep-no{width:20px;height:20px;border-radius:5px;color:#fff;font-size:11px;font-weight:700;flex:none;
-  display:inline-flex;align-items:center;justify-content:center}
-.rt-rep-stage-name{font-weight:700;font-size:13px}
-.rt-rep-stage-n{font-size:11px;color:var(--dsw-alias-label-secondary)}
-/* 折叠后仍要能一眼看到"这一阶段拿了多少分"，所以分数留在头上 */
-.rt-rep-pts{font-size:11px;font-weight:600;padding:1px 6px;border-radius:5px;border:1px solid transparent;flex:none}
-.rt-rep-body{padding-left:6px}
-/* ── 知识库（POC/EXP） ──────────────────────────────────────────── */
-.rt-kb-filter{display:flex;align-items:center;gap:7px;padding:8px 10px;border-bottom:1px solid var(--dsw-alias-border-l1)}
-/* 知识库归类总览：一行标签，点一下按该类筛选 */
-.rt-kb-cats{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;border-bottom:1px solid var(--dsw-alias-border-l1)}
-/* 知识库分组标题（按归类分组时每组一条） */
-.rt-kb-cat{display:flex;align-items:center;gap:7px;padding:7px 10px;background:var(--dsw-alias-bg-layer-2);
-  border-bottom:1px solid var(--dsw-alias-border-l1);position:sticky;top:0;z-index:1}
-.rt-kb-cat-name{font-weight:600;font-size:12.5px}
-/* 技能可用性徽章（技能库页签） */
-.rt-avail{display:inline-block;padding:0 5px;border-radius:4px;font-size:10.5px;white-space:nowrap;
-  border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary)}
-.rt-avail-available{color:#10b981;border-color:#10b98155;background:#10b9811a}
-.rt-avail-broken{color:#ef4444;border-color:#ef444455;background:#ef44441a}
-.rt-avail-unknown{color:#94a3b8;border-color:#94a3b855;background:#94a3b81a}
-/* 版本 / 更新弹窗 */
-.rt-modal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center}
-.rt-modal-box{width:min(560px,92vw);max-height:80vh;overflow:auto;background:var(--dsw-alias-bg-layer-1);
-  border:1px solid var(--dsw-alias-border-l1);border-radius:10px;padding:14px 16px;font-size:12.5px;line-height:1.7;
-  box-shadow:0 18px 48px rgba(0,0,0,.35);color:var(--dsw-alias-label-primary)}
-.rt-modal-box .rt-kv b{min-width:76px}
-.rt-kb-check{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--dsw-alias-label-secondary);white-space:nowrap;cursor:pointer}
-.rt-kb{border:1px solid var(--dsw-alias-border-l1);border-radius:7px;margin:0 0 8px;overflow:hidden;
-  background:var(--dsw-alias-bg-layer-2)}
-.rt-kb.open{border-color:var(--dsw-alias-brand-primary)}
-.rt-kb-head{display:flex;align-items:center;gap:7px;padding:7px 9px;cursor:pointer;outline:none;flex-wrap:wrap}
-.rt-kb-head:hover{background:var(--dsw-alias-bg-layer-1)}
-.rt-kb-head:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
-.rt-kb-title{font-weight:600;font-size:12.5px;overflow-wrap:anywhere}
-.rt-kb-kind{font-size:10px;font-weight:700;letter-spacing:.4px;padding:1px 5px;border-radius:4px;
-  color:#fff;background:#64748b;flex:none}
-.rt-kb-kind.k-exp{background:#ef4444}
-.rt-kb-kind.k-poc{background:#f59e0b}
-.rt-kb-kind.k-template{background:#8b5cf6}
-.rt-kb-kind.k-script{background:#0ea5e9}
-.rt-kb-kind.k-payload{background:#10b981}
-.rt-kb-sub{font-size:11px;color:var(--dsw-alias-label-secondary);padding:0 9px 7px;overflow-wrap:anywhere}
-.rt-kb-body{padding:0 9px 9px}
-.rt-kb-actions{display:flex;gap:6px;margin:7px 0}
-.rt-kb-body .rt-kv span{overflow-wrap:anywhere;word-break:break-word}
-/* 本机 nuclei 模板命中：路径要能完整看到（复制成命令直接跑） */
-.rt-kb-tpl{margin-top:12px;border-top:1px dashed var(--dsw-alias-border-l1);padding-top:8px}
-.rt-kb-tpl-row{display:flex;align-items:center;gap:7px;font-size:11.5px;padding:3px 7px;border-radius:5px;
-  background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);margin-bottom:3px}
-.rt-kb-tpl-path{flex:0 1 auto;font-weight:600;overflow-wrap:anywhere}
-.rt-kb-tpl-name{flex:1 1 auto;min-width:0;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
-.rt-md{flex:1;overflow:auto;margin:0;padding:14px 16px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;
-  line-height:1.65;white-space:pre-wrap;word-break:break-word;background:var(--dsw-alias-bg-base)}
-.rt-weblink{display:block;font-size:11.5px;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-`
-
-    /* ---------------------------------------------------------- 桥接与状态 */
+    /* 样式表在 ./styles.js（唯一维护点）。浏览器半侧不能运行期 import，
+       这里放占位符，由 bundle 的 build.mjs 在生成 lib/client.js 时替换成正文。 */
+    const CSS = '__RT_STYLES__'    /* ---------------------------------------------------------- 桥接与状态 */
     /** 是否在「全面浏览」独立窗口里（URL hash 标记，复用同一套界面代码）。 */
     const isFullWindow = () => {
       try { return String(window.location.hash || '') === '#redteam-full' } catch { return false }
@@ -574,6 +81,83 @@ window.__ModuleLoader__.load({
     }
     const provLabel = (p) => (p === 'passive' ? '被动' : p === 'active' ? '主动' : '未知')
 
+    /**
+     * 给「可点击但不是 <button>」的元素补上键盘可达性，返回可直接展开进 props 的对象。
+     *
+     * 为什么需要：面板里大量用 div/span 当按钮（表格行、页签、结论条、C 段条目…），
+     * 它们鼠标能点、键盘完全够不着 —— 而这类元素此前有 16 处是各写各的，
+     * 写法还不一致（有的只有 role、有的漏了 Space 键）。
+     * 统一到一个工厂后，新增可点击元素只要 `...clickable(fn, { label })` 就有完整语义。
+     *
+     * 注意：**不要**用它包真正的 `<button>`（原生按钮自带全部语义）。
+     * @param onActivate - 激活回调（鼠标点击 / Enter / Space 都走它）。
+     * @param options - `{ label?, expanded? }`：label 进 aria-label，expanded 进 aria-expanded。
+     * @returns props 片段：role / tabIndex / onClick / onKeyDown / aria-*
+     */
+    const clickable = (onActivate, options = {}) => {
+      const props = {
+        role: 'button',
+        tabIndex: 0,
+        onClick: onActivate,
+        onKeyDown: (e) => {
+          /* Enter 与 Space 是按钮的标准激活键；Space 还要阻止页面滚动 */
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onActivate(e)
+          }
+        },
+      }
+      if (options.label !== undefined) props['aria-label'] = String(options.label)
+      if (options.expanded !== undefined) props['aria-expanded'] = options.expanded ? 'true' : 'false'
+      return props
+    }
+
+    /**
+     * 复制文本到剪贴板，**返回真实的成功与否**。
+     *
+     * clipboard API 在非安全上下文（http + 非 localhost）、页面失焦、权限被拒时都会
+     * 返回被拒绝的 Promise —— 同步 try/catch 抓不到，于是界面会显示"已复制"而剪贴板是空的。
+     * 这里 await 真实结果，并在不可用时退回 execCommand('copy')（老浏览器/非安全上下文仍可用）。
+     * @param text - 要复制的文本。
+     * @returns Promise<boolean>
+     */
+    const copyText = async (text) => {
+      const value = text === undefined || text === null ? '' : String(text)
+      if (value === '') return false
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(value)
+          return true
+        }
+      } catch (e) { /* 落到下面的兜底方案 */ }
+      /* 兜底：临时 textarea + execCommand —— 非安全上下文里唯一还能用的办法 */
+      try {
+        const ta = document.createElement('textarea')
+        ta.value = value
+        ta.setAttribute('readonly', '')
+        ta.style.position = 'fixed'
+        ta.style.left = '-9999px'
+        document.body.appendChild(ta)
+        ta.select()
+        const okFlag = document.execCommand('copy')
+        document.body.removeChild(ta)
+        return okFlag === true
+      } catch (e) { return false }
+    }
+
+    /**
+     * 复制并给出**如实**的界面反馈（成功/失败文案统一）。
+     * @param text - 要复制的文本。
+     * @param label - 成功时提示里显示的名字。
+     * @param onResult - 可选回调：`(ok, message) => void`；不传时返回 Promise<boolean>。
+     */
+    const copyWithFeedback = async (text, label, onResult) => {
+      const okFlag = await copyText(text)
+      const message = okFlag ? '已复制：' + label : '复制失败（浏览器未授权剪贴板）—— 请手动选中文本复制'
+      if (typeof onResult === 'function') onResult(okFlag, message)
+      return okFlag
+    }
+
     function ProvTag(props) {
       if (!props.p) return h('span', { className: 'rt-tag' }, '未知')
       return h('span', { className: 'rt-tag rt-tag-' + props.p }, provLabel(props.p))
@@ -614,7 +198,6 @@ window.__ModuleLoader__.load({
       const [sort, setSort] = React.useState('priority')
       const [showAll, setShowAll] = React.useState(null)
       const [state, setState] = React.useState({ loading: false, error: null, total: 0, items: [] })
-      const [graphState, setGraphState] = React.useState({ loading: false, data: null, error: null })
       const [domains, setDomains] = React.useState(null)
       const [web, setWeb] = React.useState(null)
       const [openId, setOpenId] = React.useState(null)
@@ -662,17 +245,6 @@ window.__ModuleLoader__.load({
           .then((r) => setWeb((r && r.items) || []), () => setWeb([]))
       }, [eng, view, cidr, refreshKey])
 
-      React.useEffect(() => {
-        if (!eng || view !== 'graph') return
-        setGraphState((s) => Object.assign({}, s, { loading: true, error: null }))
-        api({ op: 'attackGraph', engagement: eng, cidr: cidr || undefined }).then((r) => {
-          if (!r || r.ok === false) {
-            setGraphState({ loading: false, data: null, error: (r && r.error) || '图谱加载失败' })
-            return
-          }
-          setGraphState({ loading: false, data: { nodes: r.nodes || [], edges: r.edges || [] }, error: null })
-        }, (e) => setGraphState({ loading: false, data: null, error: String((e && e.message) || e) }))
-      }, [eng, view, cidr, refreshKey])
 
       const toggleRow = (id) => {
         if (openId === id) { setOpenId(null); setDetail(null); return }
@@ -686,9 +258,9 @@ window.__ModuleLoader__.load({
       const segs = (snapshot && snapshot.segments) || []
 
       const sideChildren = []
-      sideChildren.push(h('div', {
-        key: 'all', className: 'rt-seg' + (cidr ? '' : ' on'), onClick: () => setCidr(null),
-      },
+      sideChildren.push(h('div', Object.assign({
+        key: 'all', className: 'rt-seg' + (cidr ? '' : ' on'),
+      }, clickable(() => setCidr(null), { label: '全部 C 段' })),
         h('div', { className: 'rt-seg-cidr' }, '全部 C 段'),
         h('div', { className: 'rt-seg-meta' }, segs.length + ' 个网段')))
       /* C 段按内外网分组：先外网（互联网可达，通常是入口）再内网（打进去之后才看得到） */
@@ -711,11 +283,10 @@ window.__ModuleLoader__.load({
         if (!open) return out
         for (const s of list) {
           /* 一段一行：只给 C 段 + 资产数（端口数不再占位，归属与存活放进悬浮提示） */
-          out.push(h('div', {
+          out.push(h('div', Object.assign({
             key: s.cidr, className: 'rt-seg' + (cidr === s.cidr ? ' on' : ''),
-            onClick: () => setCidr(s.cidr),
             title: (s.org || '未知归属') + ' · 存活 ' + (s.live || 0) + '/' + (s.assets || 0) + ' 台',
-          },
+          }, clickable(() => setCidr(s.cidr), { label: '筛选 C 段 ' + s.cidr, expanded: cidr === s.cidr })),
             h('div', { className: 'rt-seg-cidr', style: { display: 'flex', alignItems: 'baseline', gap: 5 } },
               h('span', { className: 'rt-scope rt-scope-' + kind }, kind === 'internal' ? '内' : '外'),
               h('span', { style: { flex: 1 } }, s.cidr),
@@ -771,16 +342,16 @@ window.__ModuleLoader__.load({
         h('button', { className: 'rt-btn' + (view === 'list' ? ' rt-btn-primary' : ''), onClick: () => setView('list') }, '列表'),
         h('button', { className: 'rt-btn' + (view === 'timeline' ? ' rt-btn-primary' : ''), title: '按发现时间看资产（什么时候发现、哪天收了多少）', onClick: () => setView('timeline') }, '发现时间'),
         h('button', { className: 'rt-btn' + (view === 'domain' ? ' rt-btn-primary' : ''), onClick: () => setView('domain') }, '域名'),
-        h('button', { className: 'rt-btn' + (view === 'web' ? ' rt-btn-primary' : ''), onClick: () => setView('web') }, 'Web'),
-        h('button', { className: 'rt-btn' + (view === 'graph' ? ' rt-btn-primary' : ''), onClick: () => setView('graph') }, '图谱'))
+        h('button', { className: 'rt-btn' + (view === 'web' ? ' rt-btn-primary' : ''), onClick: () => setView('web') }, 'Web'))
 
       /* ── 结论行：一屏看清家底，数字点一下就是筛选 ───────────────────── */
       const tests = (snapshot && snapshot.tests) || {}
       const snapStats = (snapshot && snapshot.stats) || {}
       const noFilter = !testStatus && !priority && !scope && !prov && !assetState && !cidr
-      const conclItem = (key, label, value, active, onClick) => h('span', {
-        key: key, className: 'rt-concl-i' + (active ? ' on' : ''), onClick: onClick, title: '点击筛选 / 再点取消',
-      }, h('b', null, String(value || 0)), h('span', null, label))
+      const conclItem = (key, label, value, active, onClick) => h('span', Object.assign({
+        key: key, className: 'rt-concl-i' + (active ? ' on' : ''), title: '点击筛选 / 再点取消',
+      }, clickable(onClick, { label: '按「' + label + '」筛选（' + (value || 0) + '）', expanded: active })),
+        h('b', null, String(value || 0)), h('span', null, label))
       const toggleTest = (v) => { setTestStatus((cur) => (cur === v ? '' : v)); setAssetState('') }
       const conclusion = h('div', { className: 'rt-concl' },
         conclItem('all', '台资产', snapStats.assets, noFilter, () => {
@@ -814,9 +385,9 @@ window.__ModuleLoader__.load({
         /* 端口最多列 3 个，其余用 +N；主被动来源不再占列，进详情 */
         const shownPorts = openPorts.slice(0, 3).map((p) => p.port + (p.service ? '/' + p.service : '')).join(', ')
         const morePorts = openPorts.length > 3 ? ' +' + (openPorts.length - 3) : ''
-        rowNodes.push(h('div', {
-          key: 'r' + it.id, className: 'rt-row', onClick: () => toggleRow(it.id),
-        },
+        rowNodes.push(h('div', Object.assign({
+          key: 'r' + it.id, className: 'rt-row',
+        }, clickable(() => toggleRow(it.id), { label: '展开资产 ' + it.ip, expanded: openId === it.id })),
           h('span', { className: 'rt-mono', style: { display: 'flex', alignItems: 'baseline', gap: 4, flexWrap: 'wrap' } },
             h('span', {
               className: 'rt-scope rt-scope-' + (it.scope === 'internal' ? 'internal' : 'external'),
@@ -887,7 +458,8 @@ window.__ModuleLoader__.load({
                 d.test_surface || (portRows.length ? '未记录（开放端口见下）' : '无开放端口'),
                 d.scope ? h('span', { className: 'rt-scope rt-scope-' + (d.scope === 'internal' ? 'internal' : 'external'), style: { marginLeft: 8 } },
                   d.scope === 'internal' ? '内网资产' : '外网资产') : null)),
-              h('span', { className: 'rt-more', onClick: () => setShowAll(all ? null : it.id) },
+              h('span', Object.assign({ className: 'rt-more' },
+                clickable(() => setShowAll(all ? null : it.id), { label: all ? '收起资产详情' : '展开资产详情', expanded: all })),
                 all ? '收起全部 ▲' : '展开全部（端口 · 指纹 · 采集溯源 · 测试记录）▼'),
               all ? h('div', null,
                 h('div', { className: 'rt-kv' }, h('b', null, '主机名'), h('span', null, (d.names || []).map((n) => n.name).join(', ') || '—')),
@@ -931,7 +503,7 @@ window.__ModuleLoader__.load({
                 h('a', { className: 'rt-link', href: 'http://' + g.domain, target: '_blank', rel: 'noreferrer' }, g.domain),
                 h('span', { className: 'rt-tag', style: { marginLeft: 8 } }, g.count + ' 个资产')),
               g.assets.map((a) => h('div', {
-                key: g.domain + a.id, className: 'rt-row',
+                key: String(g.domain) + '\u0000' + a.id + '\u0000' + a.ip, className: 'rt-row',
                 style: { gridTemplateColumns: '150px 130px 70px 1fr', cursor: 'pointer' },
                 onClick: () => { setView('list'); setQ(''); setQApplied(a.ip) },
               },
@@ -959,22 +531,10 @@ window.__ModuleLoader__.load({
         web === null ? h('div', { className: 'rt-empty' }, '加载中…')
           : (!web.length ? h('div', { className: 'rt-empty' }, cidr ? '该 C 段下暂无 Web 资产' : '暂无 Web 资产（HTTP 探测后会写入 URL 与标题）') : null))
 
-      const graphPane = h('div', { className: 'rt-graphwrap' },
-        graphState.data
-          ? h(GraphCanvas, { data: graphState.data })
-          : h('div', { className: 'rt-empty' }, graphState.loading ? '图谱加载中…' : (graphState.error || '暂无数据')),
-        h('div', { className: 'rt-legend' },
-          h('span', null, h('i', { style: { background: '#6366f1' } }), 'C 段'),
-          h('span', null, h('i', { style: { background: '#10b981' } }), '存活资产'),
-          h('span', null, h('i', { style: { background: '#9ca3af' } }), '离线资产'),
-          h('span', null, h('i', { style: { background: '#f59e0b' } }), '开放端口'),
-          h('span', null, h('i', { style: { background: '#ef4444' } }), '已确认漏洞'),
-          h('span', null, h('i', { style: { background: '#fbbf24' } }), '已控制')))
 
       let pane = listPane
       if (view === 'domain') pane = domainPane
       else if (view === 'web') pane = webPane
-      else if (view === 'graph') pane = graphPane
       /* 发现时间视图自带滚动容器，直接放进 rt-main 的 flex 里 */
       else if (view === 'timeline') pane = h(DiscoveryView, { engagement: eng, refreshKey: refreshKey })
 
@@ -985,10 +545,12 @@ window.__ModuleLoader__.load({
           pane))
     }
 
-    /* ---------------------------------------------------------- 图谱画布 */
+    /* ---------------------------------------------------------- 资产发现时间线 */
     /**
-     * 发现时间视图：一天一行（收了多少资产、内外网各多少），点某天看当天发现的资产。
-     * 「这条资产什么时候发现的」在列表里只有一个小字，这里给完整的时间线。
+     * 资产发现时间线：什么时候发现了什么、哪天收了多少。
+     * ⚠️ 这个组件曾在"移除图谱视图"时被连带删掉 —— 删除区间的结束标记选得太宽
+     *    （图谱画布的收尾与它挨着），bundle 自检的 "client.js 有资产「发现时间」视图"
+     *    因此变红。恢复时把插入点固定成"资产测绘注释块之前"，避免再被别的删除波及。
      */
     function DiscoveryView(props) {
       const eng = props.engagement
@@ -1016,13 +578,16 @@ window.__ModuleLoader__.load({
             + '（发现时间 = 第一次进入资产库的时刻；重复采集只刷新"最近采集"）')),
         (data.days || []).length === 0 ? h('div', { className: 'rt-empty' }, '还没有资产。') : null,
         h('div', { className: 'rt-card' },
-          h('h4', null, '按天统计', day ? h('span', { className: 'rt-tag', style: { marginLeft: 6, cursor: 'pointer' }, onClick: () => setDay('') }, '清除筛选：' + day) : null),
+          h('h4', null, '按天统计', day
+            ? h('span', Object.assign({ className: 'rt-tag', style: { marginLeft: 6, cursor: 'pointer' } },
+                clickable(() => setDay(''), { label: '清除按天筛选：' + day })), '清除筛选：' + day)
+            : null),
           h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 8 } },
-            (data.days || []).map((d) => h('div', {
+            (data.days || []).map((d) => h('div', Object.assign({
               key: d.day, className: 'rt-seg' + (day === d.day ? ' on' : ''), style: { marginBottom: 0, cursor: 'pointer' },
-              onClick: () => setDay(day === d.day ? '' : d.day),
               title: d.day + '：新增 ' + d.assets + ' 台（内网 ' + d.internal + ' / 外网 ' + d.external + '）',
-            },
+            }, clickable(() => setDay(day === d.day ? '' : d.day),
+              { label: '筛选 ' + d.day + ' 发现的资产', expanded: day === d.day })),
               h('div', { className: 'rt-seg-cidr' }, d.day),
               h('div', { className: 'rt-seg-meta' }, d.assets + ' 台 · 内 ' + d.internal + ' / 外 ' + d.external))))),
         h('div', { className: 'rt-card' },
@@ -1037,114 +602,6 @@ window.__ModuleLoader__.load({
               a.discovered_at ? fmt(a.discovered_at) : '时间未知'),
             h('span', { style: { flex: 1 } }, (a.primary_name || '—') + (a.open_ports ? ' · ' + a.open_ports + ' 端口' : '')),
             h(PriTag, { p: a.priority })))))
-    }
-
-    function GraphCanvas(props) {
-      const ref = React.useRef(null)
-      React.useEffect(() => {
-        const canvas = ref.current
-        if (!canvas || !props.data) return
-        const rect = canvas.getBoundingClientRect()
-        const W = Math.max(320, rect.width)
-        const H = Math.max(240, rect.height)
-        const dpr = window.devicePixelRatio || 1
-        canvas.width = Math.floor(W * dpr)
-        canvas.height = Math.floor(H * dpr)
-        const g = canvas.getContext('2d')
-        g.setTransform(dpr, 0, 0, dpr, 0, 0)
-
-        const kindColor = { segment: '#6366f1', asset: '#10b981', port: '#f59e0b', domain: '#8b5cf6', vuln: '#ef4444' }
-        const nodes = props.data.nodes.map((n, i) => {
-          const a = (i / Math.max(1, props.data.nodes.length)) * Math.PI * 2
-          const owned = n.kind === 'asset' && n.meta && n.meta.owned
-          return Object.assign({}, n, {
-            x: W / 2 + Math.cos(a) * Math.min(W, H) * 0.32,
-            y: H / 2 + Math.sin(a) * Math.min(W, H) * 0.32,
-            vx: 0, vy: 0,
-            r: n.kind === 'segment' ? 13 : n.kind === 'vuln' ? 8 : n.kind === 'asset' ? 7 : 4.5,
-            owned: owned,
-          })
-        })
-        const byId = new Map(nodes.map((n) => [n.id, n]))
-        const links = props.data.edges
-          .map((e) => ({ s: byId.get(e.source), t: byId.get(e.target), r: e.relation }))
-          .filter((l) => l.s && l.t)
-
-        let raf = null
-        let ticks = 0
-        const tick = () => {
-          ticks++
-          for (let i = 0; i < nodes.length; i++) {
-            const a = nodes[i]
-            for (let j = i + 1; j < nodes.length; j++) {
-              const b = nodes[j]
-              let dx = b.x - a.x
-              let dy = b.y - a.y
-              let d2 = dx * dx + dy * dy
-              if (d2 < 1) { d2 = 1; dx = Math.random() - 0.5; dy = Math.random() - 0.5 }
-              const d = Math.sqrt(d2)
-              const rep = 1400 / d2
-              const fx = (dx / d) * rep
-              const fy = (dy / d) * rep
-              a.vx -= fx; a.vy -= fy; b.vx += fx; b.vy += fy
-            }
-          }
-          for (const l of links) {
-            const dx = l.t.x - l.s.x
-            const dy = l.t.y - l.s.y
-            const d = Math.max(1, Math.sqrt(dx * dx + dy * dy))
-            const target = l.s.kind === 'segment' ? 110 : 62
-            const f = (d - target) * 0.035
-            const fx = (dx / d) * f
-            const fy = (dy / d) * f
-            l.s.vx += fx; l.s.vy += fy; l.t.vx -= fx; l.t.vy -= fy
-          }
-          for (const n of nodes) {
-            n.vx += (W / 2 - n.x) * 0.004
-            n.vy += (H / 2 - n.y) * 0.004
-            n.vx *= 0.82; n.vy *= 0.82
-            n.x = Math.max(24, Math.min(W - 24, n.x + n.vx))
-            n.y = Math.max(24, Math.min(H - 24, n.y + n.vy))
-          }
-          g.clearRect(0, 0, W, H)
-          g.lineWidth = 1
-          for (const l of links) {
-            g.strokeStyle = l.r === 'contains' ? 'rgba(99,102,241,.30)'
-              : l.r === 'has_vuln' ? 'rgba(239,68,68,.55)'
-                : 'rgba(148,163,184,.35)'
-            g.beginPath()
-            g.moveTo(l.s.x, l.s.y)
-            g.lineTo(l.t.x, l.t.y)
-            g.stroke()
-          }
-          for (const n of nodes) {
-            if (n.owned) {
-              g.beginPath()
-              g.arc(n.x, n.y, n.r + 4, 0, Math.PI * 2)
-              g.strokeStyle = '#fbbf24'
-              g.lineWidth = 2
-              g.stroke()
-              g.lineWidth = 1
-            }
-            g.beginPath()
-            g.arc(n.x, n.y, n.r, 0, Math.PI * 2)
-            g.fillStyle = n.kind === 'asset' && n.meta && n.meta.state !== 'live'
-              ? '#9ca3af'
-              : (kindColor[n.kind] || '#94a3b8')
-            g.fill()
-            if (n.kind === 'segment' || n.kind === 'asset' || n.kind === 'domain' || n.kind === 'vuln') {
-              g.fillStyle = n.kind === 'vuln' ? 'rgba(248,113,113,.95)' : 'rgba(148,163,184,.95)'
-              g.font = (n.kind === 'segment' ? '600 11px ' : '11px ') + 'ui-monospace,Menlo,monospace'
-              g.textAlign = 'center'
-              g.fillText(String(n.label), n.x, n.y - n.r - 5)
-            }
-          }
-          if (ticks < 260) raf = window.requestAnimationFrame(tick)
-        }
-        tick()
-        return () => { if (raf) window.cancelAnimationFrame(raf) }
-      }, [props.data])
-      return h('canvas', { ref: ref, className: 'rt-graph' })
     }
 
     /* ---------------------------------------------------------- 智能体提示词 */
@@ -1202,10 +659,10 @@ window.__ModuleLoader__.load({
       }
 
       const cur = roles.find((x) => x.role === active)
-      const items = roles.map((r) => h('div', {
+      const items = roles.map((r) => h('div', Object.assign({
         key: r.role, className: 'rt-item' + (active === r.role ? ' on' : ''),
-        onClick: () => { setActive(r.role); setMsg(null) },
-      },
+      }, clickable(() => { setActive(r.role); setMsg(null) },
+        { label: '查看「' + r.title + '」提示词', expanded: active === r.role })),
         h('div', { className: 'rt-item-name' }, r.title),
         h('div', { className: 'rt-item-desc' }, (r.content || '').replace(/[#*`]/g, '').slice(0, 60) || '（空）')))
 
@@ -1283,10 +740,9 @@ window.__ModuleLoader__.load({
       const availSummary = meta.availability ? meta.availability.summary : null
       const needRestart = err !== null && String(err).indexOf('unknown op') >= 0
 
-      const listItems = filtered.map((s) => h('div', {
+      const listItems = filtered.map((s) => h('div', Object.assign({
         key: s.name, className: 'rt-item' + (active === s.name ? ' on' : ''),
-        onClick: () => open(s.name),
-      },
+      }, clickable(() => open(s.name), { label: '查看技能 ' + s.name, expanded: active === s.name })),
         h('div', { className: 'rt-item-name' }, s.name,
           s.modelInvocable === false ? h('span', { className: 'rt-tag', style: { marginLeft: 6 } }, '仅人工') : null,
           /* 可用性状态：能跑 / 有缺口 / 判不了 —— 一眼看出哪些技能现在用不了 */
@@ -1330,11 +786,10 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'rt-avail rt-avail-available' }, '可用 ' + (availSummary.available || 0)),
                 availSummary.broken > 0 ? h('span', { className: 'rt-avail rt-avail-broken' }, '不可用 ' + availSummary.broken) : null,
                 availSummary.unknown > 0 ? h('span', { className: 'rt-avail rt-avail-unknown' }, '未知 ' + availSummary.unknown) : null,
-                h('span', {
+                h('span', Object.assign({
                   className: 'rt-tag', style: { cursor: 'pointer' },
                   title: '技能正文或环境变量刚改过？点这里跳过 30 秒缓存重查',
-                  onClick: () => load(true),
-                }, '重查可用性'))
+                }, clickable(() => load(true), { label: '重新检查技能可用性' })), '重查可用性'))
             : null,
           h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)', marginBottom: 6 } },
             '共 ' + items.length + ' 个技能 · 来自 ' + ((meta.byDir || []).length) + ' 个目录',
@@ -1454,7 +909,7 @@ window.__ModuleLoader__.load({
             h('div', { className: 'rt-spacer' }),
             h('button', {
               className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
-              onClick: (e) => { e.stopPropagation(); try { navigator.clipboard.writeText(evi) } catch (err) { /* ignore */ } },
+              onClick: (e) => { e.stopPropagation(); copyText(evi) },
             }, '复制')),
           looksHttp ? h(HttpBlock, { text: evi }) : h('pre', { className: 'rt-evi-body' }, evi)))
       }
@@ -1465,7 +920,7 @@ window.__ModuleLoader__.load({
             e.label || 'HTTP 证据',
             h('span', { className: 'rt-tag' }, (e.method || '') + ' ' + (e.status === null || e.status === undefined ? '' : e.status)),
             h('div', { className: 'rt-spacer' }),
-            h('span', { style: { fontWeight: 400, color: 'var(--dsw-alias-label-secondary)' } }, fmt(e.captured_at))),
+            h('span', { style: { fontWeight: 400, color: 'var(--dsw-alias-label-secondary)' } }, fmt(e.captured_at || e.created_at))),
           e.request ? h('div', null,
             h('div', { className: 'rt-evi-head', style: { borderTop: 'none' } }, '▸ 请求（可直接粘进 Burp Repeater）'),
             h(HttpBlock, { text: e.request, compact: true })) : null,
@@ -1529,9 +984,10 @@ window.__ModuleLoader__.load({
       const needRestart = state.error !== null && String(state.error).indexOf('unknown op') >= 0
 
       /* ── 结论行：只给结论，数字点一下就是筛选 ─────────────────────── */
-      const concl = (key, label, value, active, onClick) => h('span', {
-        key: key, className: 'rt-concl-i' + (active ? ' on' : ''), onClick: onClick, title: '点击筛选 / 再点取消',
-      }, h('b', null, String(value || 0)), h('span', null, label))
+      const concl = (key, label, value, active, onClick) => h('span', Object.assign({
+        key: key, className: 'rt-concl-i' + (active ? ' on' : ''), title: '点击筛选 / 再点取消',
+      }, clickable(onClick, { label: '按「' + label + '」筛选（' + (value || 0) + '）', expanded: active })),
+        h('b', null, String(value || 0)), h('span', null, label))
       const conclusion = h('div', { className: 'rt-concl' },
         concl('conf', '已确认', (stats.byStatus.confirmed || 0), status === 'confirmed', () => setStatus((v) => (v === 'confirmed' ? '' : 'confirmed'))),
         concl('exp', '已利用', (stats.byStatus.exploited || 0), status === 'exploited', () => setStatus((v) => (v === 'exploited' ? '' : 'exploited'))),
@@ -1666,10 +1122,7 @@ window.__ModuleLoader__.load({
                 h('div', { className: 'rt-spacer' }),
                 h('button', {
                   className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
-                  onClick: (e) => {
-                    e.stopPropagation()
-                    try { navigator.clipboard.writeText(String(c.secret_value || '')) } catch (err) { /* ignore */ }
-                  },
+                  onClick: (e) => { e.stopPropagation(); copyText(String(c.secret_value || '')) },
                 }, '复制')),
               c.secret_value
                 ? h('div', { className: 'rt-secret', title: '点击可全选' }, c.secret_value)
@@ -1694,10 +1147,10 @@ window.__ModuleLoader__.load({
               h('span', { className: 'rt-mono', title: a.session_ref || '' }, a.session_ref || '—')))
           : h('div', { className: 'rt-empty' }, '暂无'))
 
-      const subTabBtn = (key, label, n) => h('span', {
+      const subTabBtn = (key, label, n) => h('span', Object.assign({
         className: 'rt-subtab' + (subTab === key ? ' on' : ''),
-        onClick: () => setSubTab(key),
-      }, label + ' ' + n)
+      }, clickable(() => setSubTab(key), { label: label + '（' + n + '）', expanded: subTab === key })),
+      label + ' ' + n)
 
       return h('div', { className: 'rt-main' }, toolbar, conclusion,
         h('div', { className: 'rt-subtabs' },
@@ -1782,8 +1235,10 @@ window.__ModuleLoader__.load({
         onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(x.id) } },
       },
         h('div', { className: 'rt-ap-hit-head' },
-          h('span', { className: 'rt-ap-pts' }, '+' + (x.points || 0)),
+          h('span', { className: 'rt-ap-pts' + (x.counted ? '' : ' uncounted'), title: x.capped_reason || undefined },
+            '+' + (x.counted ? (x.points || 0) : 0)),
           h('span', { className: 'rt-ap-hit-name' }, x.point_name),
+          x.capped ? h('span', { className: 'rt-tag rt-tag-warn', title: x.capped_reason || '同一资产同一端口只算分值最高的一条' }, '服务已拿满 · 不计分') : null,
           x.nth_of_point > 1 ? h('span', { className: 'rt-ap-nth' }, '第 ' + x.nth_of_point + ' 次') : null,
           h('span', { className: 'rt-ap-hit-target' }, x.target || x.asset_ip || '—')),
         x.action
@@ -1970,12 +1425,11 @@ window.__ModuleLoader__.load({
       }
       React.useEffect(load, [eng, refreshKey])
 
-      const copy = (text, label) => {
-        try {
-          navigator.clipboard.writeText(text)
-          setMsg({ ok: '已复制：' + label })
-        } catch (e) { setMsg({ err: '复制失败，请手动选择' }) }
-      }
+      /* 复制结果必须是真实的：clipboard API 失败时（非安全上下文/失焦/被拒）要如实提示，
+         否则用户以为复制成功、粘到 Yakit 里是空的。 */
+      const copy = (text, label) => copyWithFeedback(text, label, (okFlag, message) => {
+        setMsg(okFlag ? { ok: message } : { err: message })
+      })
       const download = (text, label) => {
         try {
           const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' })
@@ -2005,7 +1459,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'rt-spacer' }),
           h('button', {
             className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
-            onClick: () => copy(x.requests.map((v) => v.request || '').filter(Boolean).join('\n\n'), '第 ' + x.seq + ' 项请求'),
+            onClick: () => copy((x.requests || []).map((v) => v.request || '').filter(Boolean).join('\n\n'), '第 ' + x.seq + ' 项请求'),
           }, '复制请求')),
         h('div', { className: 'rt-rep-meta' },
           h('span', null, h('b', null, '目标 ')), h('span', { className: 'rt-mono' }, x.target || x.asset_ip || '—')),
@@ -2018,11 +1472,14 @@ window.__ModuleLoader__.load({
           h('span', null, fmt(x.recorded_at) + (x.recorded_by ? '（' + (ROLE_LABEL[x.recorded_by] || x.recorded_by) + '）' : ''))) : null,
         /* ── 这一步怎么来的：动作步骤（含实际命令与回显）+ 凭据 + 隧道 + WebShell ─────
            报告的交付价值全在这块：账号密码怎么来的、隧道怎么搭的，用户照着就能复现。 */
-        h('div', { className: 'rt-rep-trace' },
-          h('div', { className: 'rt-rep-trace-head' },
-            h('span', { className: 'rt-rep-trace-title' }, '这一步怎么来的'),
+        h('details', { className: 'rt-rep-trace', open: x.incomplete === true || (x.steps || []).length === 0 },
+          h('summary', { className: 'rt-rep-trace-head', style: { cursor: 'pointer' } },
+            h('span', { className: 'rt-rep-trace-title' }, '这一步怎么来的（点击展开复现链）'),
             (x.steps || []).length ? h('span', { className: 'rt-tag' }, (x.steps || []).length + ' 个动作') : null,
+            (x.credentials || []).length ? h('span', { className: 'rt-tag' }, (x.credentials || []).length + ' 条凭据') : null,
+            (x.tunnels || []).length ? h('span', { className: 'rt-tag' }, (x.tunnels || []).length + ' 条隧道') : null,
             x.incomplete ? h('span', { className: 'rt-tag rt-tag-warn' }, '复现链不完整') : h('span', { className: 'rt-tag rt-tag-live' }, '可复现')),
+          h('div', { style: { paddingTop: 6 } },
           x.how ? h('div', { className: 'rt-rep-trace-how' }, x.how) : null,
           (x.steps || []).length === 0
             ? h('div', { className: 'rt-rep-missing' },
@@ -2082,9 +1539,9 @@ window.__ModuleLoader__.load({
                     + (w.privilege ? ' · 权限 ' + w.privilege : '') + (w.status ? ' · ' + w.status : '')))))
             : null,
           (x.gaps || []).length ? h('div', { className: 'rt-rep-missing' }, '⚠️ 复现缺口：' + x.gaps.join('；')) : null),
-        x.requests.length === 0
+        (x.requests || []).length === 0
           ? h('div', { className: 'rt-rep-missing' }, '⚠️ 这一项没有原始请求记录，无法直接复现 —— 请用 redteam_http_evidence_add 补上')
-          : x.requests.map((r, ri) => h('div', { key: 'q' + ri, className: 'rt-rep-req' },
+          : (x.requests || []).map((r, ri) => h('div', { key: 'q' + ri, className: 'rt-rep-req' },
               h('div', { className: 'rt-rep-req-head' },
                 h('span', null, '复现请求 ' + (ri + 1) + (r.source === 'auto' ? '（按目标路径自动匹配，请核对）' : '')),
                 h('span', { className: 'rt-tag' }, (r.method || 'GET') + ' ' + (r.status === null || r.status === undefined ? '' : r.status)),
@@ -2097,7 +1554,7 @@ window.__ModuleLoader__.load({
               r.response ? h('div', null,
                 h('div', { className: 'rt-rep-req-head' }, h('span', null, '响应摘要')),
                 h('pre', { className: 'rt-rep-http', style: { maxHeight: 160 } }, String(r.response).slice(0, 1600))) : null)),
-        x.note ? h('div', { className: 'rt-rep-meta' }, h('b', null, '备注 '), h('span', null, x.note)) : null)
+        x.note ? h('div', { className: 'rt-rep-meta' }, h('b', null, '备注 '), h('span', null, x.note)) : null))
 
       return h('div', { className: 'rt-main' },
         h('div', { className: 'rt-toolbar' },
@@ -2110,6 +1567,13 @@ window.__ModuleLoader__.load({
             className: 'rt-tag' + (summary.incomplete ? ' rt-tag-warn' : ' rt-tag-live'),
             title: '复现链是否完整：有攻击步骤、写了实际命令、关联了漏洞/凭据/隧道',
           }, '可复现 ' + (summary.count - (summary.incomplete || 0)) + '/' + summary.count) : null,
+          summary && summary.serviceCappedExcluded
+            ? h('span', {
+                className: 'rt-tag rt-tag-warn',
+                title: (summary.serviceCapped || []).map((x) => (x.service || '') + '｜' + (x.point_name || '')).join('\n')
+                  || '同一资产同一端口的重复账号/数据库权限命中：服务已拿满，不计分、不进报告',
+              }, '同服务已拿满不计分 ' + summary.serviceCappedExcluded)
+            : null,
           h('div', { className: 'rt-spacer' }),
           h('button', { className: 'rt-btn', disabled: busy || !mdText, onClick: () => copy(mdText, '整份报告') }, '复制全文'),
           h('button', { className: 'rt-btn', disabled: busy || !mdText, onClick: () => download(mdText, (data && data.target) || eng) }, '下载 .md'),
@@ -2285,10 +1749,10 @@ window.__ModuleLoader__.load({
         }, (e) => { setDetailBusy(false); setMsg({ err: String((e && e.message) || e) }) })
       }
 
-      const copy = (text, label) => {
-        try { navigator.clipboard.writeText(text); setMsg({ ok: '已复制：' + label }) }
-        catch (e) { setMsg({ err: '复制失败，请手动选择' }) }
-      }
+      /* 同报告页：await 真实结果再提示 */
+      const copy = (text, label) => copyWithFeedback(text, label, (okFlag, message) => {
+        setMsg(okFlag ? { ok: message } : { err: message })
+      })
       const useIt = (row) => {
         api({ op: 'pocUse', id: row.id, used_on: '控制台手动标记' }).then(() => {
           setMsg({ ok: '已记一次复用：' + row.title })
@@ -2484,8 +1948,15 @@ window.__ModuleLoader__.load({
       }
       React.useEffect(load, [eng, refreshKey])
 
-      const startEdit = (p) => setForm({ id: p.id, name: p.name, category: p.category || '', points: p.points, description: p.description || '', enabled: p.enabled })
-      const startNew = () => { setForm({ name: '', category: '', points: 10, description: '', enabled: true }); setMsg(null) }
+      /* builtin 要一路带到表单：内置得分点的分值/名称/口径由《得分规则》锁定，
+         界面必须把输入框置灰并说明原因 —— 以前是「能改、提示已保存、刷新后变回去」，
+         用户以为是 bug。 */
+      const startEdit = (p) => setForm({
+        id: p.id, name: p.name, category: p.category || '', points: p.points,
+        description: p.description || '', enabled: p.enabled, builtin: p.builtin === true,
+        src: p.src, cap: p.cap, rule: p.rule,
+      })
+      const startNew = () => { setForm({ name: '', category: '', points: 10, description: '', enabled: true, builtin: false }); setMsg(null) }
       const setField = (k, v) => setForm((f) => Object.assign({}, f, { [k]: v }))
 
       const save = () => {
@@ -2495,7 +1966,15 @@ window.__ModuleLoader__.load({
         api({ op: 'saveScorePoint', engagement: eng, point: form }).then((r) => {
           setBusy(false)
           if (!r || r.ok === false) { setMsg({ err: (r && r.error) || '保存失败' }); return }
-          setMsg({ ok: '已保存' })
+          /* overridden === false 表示后端**没有采纳**提交的分值（内置点由规则锁定）。
+             这时不能笼统说「已保存」 —— 那句话会让用户以为分值改成功了。 */
+          if (r.overridden === false) {
+            setMsg({ err: '已保存「启用/停用」。分值未改动：这是随《得分规则》分发的内置得分点，'
+              + '分值 / 上限 / 计分口径由规则锁定（同一条规则的上限按组内所有得分点累计，'
+              + '单独改分值会让一条命中吃掉整组上限）。要自定义分值时请「+ 新增得分点」。' })
+          } else {
+            setMsg({ ok: r.note || '已保存' })
+          }
           setForm(null)
           load()
         }, (e) => { setBusy(false); setMsg({ err: String((e && e.message) || e) }) })
@@ -2514,11 +1993,28 @@ window.__ModuleLoader__.load({
         }, (e) => { setBusy(false); setMsg({ err: String((e && e.message) || e) }) })
       }
 
-      const summary = (data && data.summary) || { achievedPoints: 0, pointCount: 0, hitPointCount: 0, hitCount: 0, selfCreatedHits: 0 }
+      const summary = (data && data.summary) || { achievedPoints: 0, pointCount: 0, hitPointCount: 0, hitCount: 0, selfCreatedHits: 0, serviceCappedHits: 0 }
       const items = (data && data.items) || []
 
+      /* 按合并版的 8 个类别分组渲染（后端 ruleGroups 已排好序、组内按分值升序）。
+         兼容：后端没给 ruleGroups（老 host）时退回平铺。 */
+      const groups = (data && data.ruleGroups && data.ruleGroups.length)
+        ? data.ruleGroups
+        : [{ key: 'all', name: '', capSum: 0, points: 0, counted: 0, tiers: items }]
       const rows = []
-      for (const p of items) {
+      for (const g of groups) {
+        if (g.name) {
+          rows.push(h('div', { key: 'g-' + g.key, className: 'rt-score-group' },
+            h('span', null, g.name),
+            h('span', { className: 'rt-sg-sub' },
+              g.tiers.length + ' 项'
+              + (g.capSum > 0 ? ' · 各项上限合计 ' + g.capSum + ' 分（各项独立，不跨项累加）' : '')),
+            h('div', { className: 'rt-spacer' }),
+            g.points > 0
+              ? h('span', { className: 'rt-tag rt-tag-active' }, '+' + g.points + ' 分')
+              : null))
+        }
+        for (const p of g.tiers) {
         const achieved = p.hits.length > 0
         const open = openId === p.id
         rows.push(h('div', {
@@ -2531,13 +2027,17 @@ window.__ModuleLoader__.load({
             className: achieved ? 'rt-pri rt-pri-high' : 'rt-pri rt-pri-low',
             style: achieved ? {} : { background: 'var(--dsw-alias-bg-layer-2)', color: 'var(--dsw-alias-label-secondary)' },
           }, p.points + '分')),
-          h('span', { title: p.description || '' }, p.name + (p.category ? '（' + p.category + '）' : '')),
-          /* 不设上限：直接给命中次数与已得分（次数 × 分值） */
-          h('span', { title: '同类得分不设数量上限，按命中次数累加' },
-            h('span', { className: 'rt-sec-count' }, p.hits.length > 0 ? p.counted + ' 次命中' : '未命中')),
-          h('span', null, achieved
-            ? h('span', { className: 'rt-tag rt-tag-live' }, '已拿下')
-            : h('span', { className: 'rt-tag' }, p.enabled ? '待争取' : '停用')),
+          h('span', { title: p.description || '' },
+            p.name,
+            p.tier ? h('span', { className: 'rt-scope' }, '　' + p.tier) : null),
+          /* 命中与上限：这一条计入几次、上限用了多少（G3 各项上限独立，到顶就不再累计） */
+          h('span', { title: p.capped > 0
+            ? '已计入 ' + p.counted + ' 次，另有 ' + p.capped + ' 条因「' + (p.scope_label || '计分口径') + '」或已达上限不计分'
+            : (p.scope_label || '') },
+            h('span', { className: 'rt-sec-count' }, p.hits.length > 0 ? p.counted + ' 次命中' : '未命中'),
+            p.cap > 0
+              ? h('span', { className: 'rt-scope' }, '　上限 ' + (p.cap_used === null ? 0 : p.cap_used) + '/' + p.cap)
+              : null),
           h('span', { style: { textAlign: 'right' } }, p.earned > 0
             ? h('span', { className: 'rt-tag rt-tag-active' }, '+' + p.earned + ' 分')
             : h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, '—'))))
@@ -2545,19 +2045,23 @@ window.__ModuleLoader__.load({
         /* 命中记录：一行一条 —— 第一行给"序号 + 资产 + 时间 + 复制"，内容另起一行自适应换行 */
         const hitNodes = p.hits.map((hh, hi) => h('div', {
           key: 'h' + hh.id,
-          className: 'rt-hit-row' + (hh.self_created ? ' self-created' : ''),
+          className: 'rt-hit-row' + (hh.self_created ? ' self-created' : '') + (hh.capped ? ' service-capped' : ''),
         },
           h('span', { className: 'rt-hit-idx' }, String(hi + 1)),
           h('span', { className: 'rt-hit-asset', title: hh.target || hh.asset_ip || '' },
             hh.asset_ip || hh.target || '未指定资产'),
           hh.self_created ? h('span', { className: 'rt-tag rt-tag-warn', title: '自己注册/自建的账号不算得分权限，只作过程记录' }, '自建 · 不计分') : null,
+          hh.capped ? h('span', {
+            className: 'rt-tag rt-tag-warn',
+            title: hh.capped_reason || '同一资产同一端口只算分值最高的一条，这条不计分',
+          }, '服务已拿满 · 不计分' + (hh.service ? '（' + hh.service + '）' : '')) : null,
           h('span', { className: 'rt-hit-time' }, fmt(hh.recorded_at)),
           h('button', {
             className: 'rt-btn', style: { padding: '0 5px', fontSize: 10.5 },
             title: '复制这一条',
             onClick: (e) => {
               e.stopPropagation()
-              try { navigator.clipboard.writeText((hh.asset_ip || hh.target || '') + '  ' + (hh.evidence || '')) } catch (err) { /* ignore */ }
+              copyText((hh.asset_ip || hh.target || '') + '  ' + (hh.evidence || ''))
             },
           }, '复制'),
           hh.evidence
@@ -2570,7 +2074,12 @@ window.__ModuleLoader__.load({
           p.description ? h('div', { className: 'rt-kv' }, h('b', null, '得分条件'), h('span', null, p.description)) : null,
           h('div', { className: 'rt-kv' }, h('b', null, '状态'),
             h('span', null, (p.enabled ? '启用' : '停用') + ' · ' + p.points + ' 分/次 · 命中 ' + p.hits.length +
-              ' 次 = ' + p.earned + ' 分' + (p.self_created ? '（另有 ' + p.self_created + ' 次自建不计分）' : ''))),
+              ' 次 = ' + p.earned + ' 分' + (p.self_created ? '（另有 ' + p.self_created + ' 次自建不计分）' : '') +
+              (p.capped ? '（另有 ' + p.capped + ' 次同服务重复命中不计分）' : ''))),
+          p.capped
+            ? h('div', { className: 'rt-kv' }, h('b', null, '服务封顶'),
+                h('span', null, p.service_summary + '；账号权限与数据库权限按「同资产同端口」只算一次，拿到最高权限账号即该服务拿满'))
+            : null,
           p.hits.length
             ? h('div', null,
                 h('div', { className: 'rt-section', style: { padding: '6px 0 0' } },
@@ -2581,6 +2090,7 @@ window.__ModuleLoader__.load({
                   '还没有 —— 拿下成果后用 redteam_score_hit 记分：写明目标资产 + 拿到的账号密码/权限')),
           h('div', { className: 'rt-actions' },
             h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); startEdit(p) } }, '编辑')))))
+        }
       }
 
       return h('div', { className: 'rt-main' },
@@ -2598,17 +2108,52 @@ window.__ModuleLoader__.load({
                 title: '自己注册/自己创建的账号不算得分权限，只作过程记录（不计分、不占上限、不进报告）',
               }, '自建不计分 ' + summary.selfCreatedHits)
             : null,
+          summary.serviceCappedHits
+            ? h('span', {
+                className: 'rt-tag rt-tag-warn',
+                title: '账号权限与数据库权限按「同资产同端口」只算一次：该服务已拿满，这些重复命中不计分（只作留痕）',
+              }, '服务已拿满不计分 ' + summary.serviceCappedHits)
+            : null,
           h('div', { className: 'rt-spacer' }),
           h('button', { className: 'rt-btn', onClick: startNew }, '+ 新增得分点'),
           h('button', { className: 'rt-btn', disabled: busy, onClick: load }, busy ? '刷新中…' : '刷新')),
         msg ? h('div', { className: msg.err ? 'rt-err' : 'rt-foot' }, msg.err || msg.ok) : null,
         err ? h('div', { className: 'rt-err' }, err) : null,
         form ? h('div', { className: 'rt-pane', style: { flex: 'none', borderBottom: '1px solid var(--dsw-alias-border-l1)' } },
+          /* 内置得分点（builtin）：分值 / 名称 / 分类由《得分规则》锁定，输入框置灰。
+             可改的只有「启用 / 停用」。这样界面上就不会再出现「改完提示已保存、刷新变回去」的困惑。 */
+          form.builtin
+            ? h('div', { className: 'rt-hint', style: { marginBottom: 8 } },
+                h('b', null, '内置得分点（来自《突破入侵类得分规则（合并版）》）'),
+                h('div', { style: { marginTop: 3 } },
+                  '分值、上限、计分口径与名称由规则锁定 —— 同一条规则的上限按组内所有得分点累计，'
+                  + '单独改分值会让一条命中吃掉整组上限。这里可以改「启用 / 停用」；'
+                  + '要自定义分值时请返回上一屏点「+ 新增得分点」。'),
+                form.src !== null && form.src !== undefined
+                  ? h('div', { style: { marginTop: 3, color: 'var(--dsw-alias-label-secondary)' } },
+                      '规则原文序号 ' + form.src + (form.rule ? '　·　上限分组 rule=' + form.rule : '')
+                      + (form.cap > 0 ? '　·　上限 ' + form.cap + ' 分' : '　·　不设上限'))
+                  : null)
+            : null,
           h('div', { className: 'rt-score-form' },
-            h('input', { className: 'rt-input', placeholder: '名称（必填）', value: form.name, onChange: (e) => setField('name', e.target.value) }),
-            h('input', { className: 'rt-input', placeholder: '分类，如 账号权限', value: form.category, onChange: (e) => setField('category', e.target.value) }),
             h('input', {
-              className: 'rt-input', type: 'number', placeholder: '单次分值', title: '这一类的单次分值；每命中一次就按这个分值累加（不设次数上限）',
+              className: 'rt-input', placeholder: '名称（必填）', value: form.name,
+              readOnly: form.builtin === true,
+              title: form.builtin ? '内置得分点的名称由规则锁定' : '',
+              onChange: (e) => setField('name', e.target.value),
+            }),
+            h('input', {
+              className: 'rt-input', placeholder: '分类，如 账号权限', value: form.category,
+              readOnly: form.builtin === true,
+              title: form.builtin ? '内置得分点的分类由规则锁定（决定它属于面板哪一组）' : '',
+              onChange: (e) => setField('category', e.target.value),
+            }),
+            h('input', {
+              className: 'rt-input', type: 'number', placeholder: '单次分值',
+              readOnly: form.builtin === true,
+              title: form.builtin
+                ? '内置得分点的分值由《得分规则》锁定，不能在这里改'
+                : '这一类的单次分值；每命中一次就按这个分值累加（受该条规则上限约束）',
               value: form.points, onChange: (e) => setField('points', Number(e.target.value)),
             }),
             h('select', { className: 'rt-input', value: form.enabled ? '1' : '0', onChange: (e) => setField('enabled', e.target.value === '1') },
@@ -2616,19 +2161,28 @@ window.__ModuleLoader__.load({
               h('option', { value: '0' }, '停用'))),
           h('input', {
             className: 'rt-input', style: { width: '100%', marginBottom: 6, boxSizing: 'border-box' },
-            placeholder: '得分条件说明', value: form.description, onChange: (e) => setField('description', e.target.value),
+            placeholder: '得分条件说明', value: form.description,
+            readOnly: form.builtin === true,
+            title: form.builtin ? '内置得分点的条款正文由规则锁定' : '',
+            onChange: (e) => setField('description', e.target.value),
           }),
           h('div', { className: 'rt-actions' },
             h('button', { className: 'rt-btn rt-btn-primary', disabled: busy, onClick: save }, '保存'),
-            form.id ? h('button', { className: 'rt-btn', disabled: busy, onClick: remove }, '删除') : null,
+          form.id
+            ? (form.builtin
+                ? h('button', {
+                    className: 'rt-btn', disabled: true,
+                    title: '内置得分点不能删除：删掉会让面板缺一条规则、报告少一类成果（下次启动还会自动补回来）。要让它不参与计分请改用「停用」。',
+                  }, '删除（内置项不可删）')
+                : h('button', { className: 'rt-btn', disabled: busy, onClick: remove }, '删除'))
+            : null,
             h('button', { className: 'rt-btn', onClick: () => setForm(null) }, '取消'))) : null,
         h('div', { className: 'rt-table' },
           h('div', { className: 'rt-score-row head' },
-            h('span', null, ''), h('span', null, '分值'), h('span', null, '得分点'),
-            h('span', null, '命中'), h('span', null, '状态'), h('span', { style: { textAlign: 'right' } }, '已得分')),
+            h('span', null, ''), h('span', null, '分值'), h('span', null, '得分点（按分值从低到高）'),
+            h('span', null, '命中 / 上限'), h('span', { style: { textAlign: 'right' } }, '已得分')),
           rows,
-          !items.length ? h('div', { className: 'rt-empty' }, '暂无得分点，点右上角「新增得分点」') : null),
-        h('div', { className: 'rt-foot' }, h('span', null, '得分点可编辑；智能体按分值优先级推进，拿下成果用 redteam_score_hit 记分')))
+          !items.length ? h('div', { className: 'rt-empty' }, '暂无得分点，点右上角「新增得分点」') : null))
     }
 
     /* ---------------------------------------------------------- 折叠底座 */
@@ -2706,7 +2260,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'rt-spacer' }),
           h('button', {
             className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
-            onClick: (e) => { e.stopPropagation(); try { navigator.clipboard.writeText(text) } catch (err) { /* ignore */ } },
+            onClick: (e) => { e.stopPropagation(); copyText(text) },
           }, '复制'),
           h('button', {
             className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
@@ -2735,14 +2289,22 @@ window.__ModuleLoader__.load({
       /* 折叠状态按「页签 + 靶标」记忆；正在测永远常显，不参与折叠 */
       const collapse = useCollapse('testing:' + eng)
 
+      /* 5 秒轮询要有在途守卫：网络慢或后端卡住时，请求会越堆越多、
+         而且旧响应回来会覆盖新状态（界面上表现为数字来回跳）。 */
+      const inflight = React.useRef(false)
+      const seq = React.useRef(0)
       const load = () => {
-        if (!eng) return
+        if (!eng || inflight.current) return
+        inflight.current = true
+        const my = ++seq.current
         api({ op: 'activeTests', engagement: eng, limit: 20 }).then((r) => {
+          if (my !== seq.current) return          /* 切了靶标：这条已经过期，丢掉 */
           if (!r || r.ok === false) { setErr((r && r.error) || '读取失败'); return }
           setErr(null); setData(r); setAt(new Date())
-        }, (e) => setErr(String((e && e.message) || e)))
+        }, (e) => { if (my === seq.current) setErr(String((e && e.message) || e)) })
+          .finally(() => { if (my === seq.current) inflight.current = false })
       }
-      React.useEffect(load, [eng, refreshKey])
+      React.useEffect(() => { seq.current += 1; load() }, [eng, refreshKey])
       React.useEffect(() => {
         if (!eng || !auto) return undefined
         const timer = setInterval(load, 5000)
@@ -2886,13 +2448,12 @@ window.__ModuleLoader__.load({
         }, (e) => { setBusy(false); setMsg({ err: String((e && e.message) || e) }) })
       }
 
-      const copy = (key, text) => {
-        try {
-          navigator.clipboard.writeText(text)
-          setCopied(key)
-          setTimeout(() => setCopied((c) => (c === key ? null : c)), 1500)
-        } catch (e) { setMsg({ err: '复制失败，请手动选择' }) }
-      }
+      /* 只有真的写进剪贴板才把按钮点亮成「已复制」；失败时如实报错 */
+      const copy = (key, text) => copyWithFeedback(text, text, (okFlag, message) => {
+        if (!okFlag) { setMsg({ err: message }); return }
+        setCopied(key)
+        setTimeout(() => setCopied((c) => (c === key ? null : c)), 1500)
+      })
 
       const markTunnel = (t, status) => {
         setMsg(null)
@@ -2910,31 +2471,36 @@ window.__ModuleLoader__.load({
       const shells = (data && data.webshells) || []
       const tunnels = (data && data.tunnels) || []
       const statusDot = (s) => h('span', { className: s === 'online' || s === 'active' ? 'rt-dot-on' : (s === 'unknown' || !s ? 'rt-dot-unk' : 'rt-dot-off') })
+      /* 卡片里统一用「标签 + 值」两列，长文本自动换行 —— 比一行点分隔好扫读 */
+      const fact = (label, value) => h('div', { className: 'rt-sess-fact' }, h('b', null, label), h('span', null, value))
       /* 交付要求：马必须是冰蝎/哥斯拉加密马（用户才连得上），内网必须走 suo5 隧道 */
       const isEncryptedShell = (t) => /behinder|godzilla|冰蝎|哥斯拉/i.test(String(t || ''))
       const isSuo5 = (t) => /suo5/i.test(String(t || ''))
-      const badShells = shells.filter((w) => !isEncryptedShell(w.shell_type))
-      const activeSuo5 = tunnels.filter((t) => isSuo5(t.kind) && t.status === 'active')
+      /* 提示条：只留一句结论 + 可展开的做法（原来是把三段长解释平铺，正文全被淹掉） */
+      const hint = (key, title, detail) => h('div', { key, className: 'rt-hint' },
+        h('b', null, title),
+        h('details', { className: 'rt-sess-fold', style: { marginTop: 3 } },
+          h('summary', null, '怎么做（点击展开）'),
+          h('div', { style: { marginTop: 4 } }, detail)))
       const hints = []
-      if (badShells.length > 0) {
-        hints.push(h('div', { key: 'h1', className: 'rt-hint' },
-          h('b', null, '有 ' + badShells.length + ' 个入口不是冰蝎马/哥斯拉马 '),
-          '——一句话马/自研马/内存马用户连不上，不算可交付入口。请用技能 webshell-toolkit 重新上传冰蝎马（behinder）或哥斯拉马（godzilla），' +
-          '并把 shell_type + pass_key 写进 redteam_webshell_add。只有作临时中转的才可保留，并在备注里写明。'))
-      }
+      const badShells = shells.filter((w) => !isEncryptedShell(w.shell_type))
       const legitTunnels = tunnels.filter((t) => t.legit === true)
-      if (tunnels.length > 0 && legitTunnels.length === 0) {
-        hints.push(h('div', { key: 'h3', className: 'rt-hint' },
-          h('b', null, '现有的 ' + tunnels.length + ' 条通道都不算"跨越靶标边界" '),
-          '——自己的 VPS / 自己配置的服务器上开的 socks5、frp、代理不算隧道，也不算边界突破或内网突破。必须是目标侧发起的通道：' +
-          '目标反弹 shell 到我方服务器、目标上跑 frp/Stowaway 客户端、或经目标 WebShell 建的 suo5/HTTP 隧道；登记时用 entry_kind 说明。'))
+      if (badShells.length > 0) {
+        hints.push(hint('h1', '有 ' + badShells.length + ' 个入口不是冰蝎马/哥斯拉马（用户连不上，不算可交付入口）',
+          '用技能 webshell-toolkit 重新上传冰蝎马（behinder）或哥斯拉马（godzilla），'
+          + '并把 shell_type + pass_key 写进 redteam_webshell_add。只作临时中转的可在备注里写明。'))
       }
+      if (tunnels.length > 0 && legitTunnels.length === 0) {
+        hints.push(hint('h3', '现有 ' + tunnels.length + ' 条通道都不算"跨越靶标边界"（不算边界/内网突破）',
+          '自己的 VPS / 自建服务器上开的 socks5、frp、代理不算隧道。必须是目标侧发起的通道：'
+          + '目标反弹 shell 到我方、目标上跑 frp/Stowaway 客户端、或经目标 WebShell 建的 suo5/HTTP 隧道；登记时用 entry_kind 说明。'))
+      }
+      const activeSuo5 = tunnels.filter((t) => isSuo5(t.kind) && t.status === 'active')
       if (shells.length > 0 && activeSuo5.length === 0) {
-        hints.push(h('div', { key: 'h2', className: 'rt-hint' },
-          h('b', null, '还没有可用的 suo5 隧道 '),
-          '——打进内网的标准通道只有 suo5。请用技能 suo5-tunnel 通过上面的 WebShell 建 socks5 隧道，' +
-          '再 redteam_tunnel_add（kind=suo5、listen=127.0.0.1:1080、entry=WebShell URL、reach=可达网段）登记，' +
-          '并用「检测连通性」确认 status=active。'))
+        hints.push(hint('h2', '还没有可用的 suo5 隧道（打进内网的标准通道）',
+          '用技能 suo5-tunnel 通过上面的 WebShell 建 socks5 隧道，再 redteam_tunnel_add'
+          + '（kind=suo5、listen=127.0.0.1:1080、entry=WebShell URL、reach=可达网段）登记，'
+          + '最后点「检测连通性」确认 status=active。'))
       }
 
       const shellCards = shells.map((w) => h('div', { key: 'w' + w.id, className: 'rt-sess' },
@@ -2955,14 +2521,16 @@ window.__ModuleLoader__.load({
             className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
             onClick: () => markShell(w, 'offline'),
           }, '标记失效')),
-        h('div', { className: 'rt-sess-sub' },
-          [w.pass_key ? '密码 ' + w.pass_key : null,
-            w.asset_ip ? '资产 ' + w.asset_ip : null,
-            w.secret_ref ? '凭据引用 ' + w.secret_ref : null,
-            '最后检测 ' + (w.last_check ? fmt(w.last_check) : '未检测'),
-            w.latency_ms !== null && w.latency_ms !== undefined ? w.latency_ms + 'ms' : null,
-            w.check_note || null].filter(Boolean).join(' · ')),
-        w.note ? h('div', { className: 'rt-sess-sub' }, '备注：' + w.note) : null))
+        h('div', { className: 'rt-sess-facts' },
+          fact('类型', (isEncryptedShell(w.shell_type) ? '加密马（冰蝎/哥斯拉，用户可直连）' : '非加密马 —— 用户连不上，仅可作临时中转')),
+          w.pass_key ? fact('连接口令', h('span', { className: 'rt-mono' }, w.pass_key)) : null,
+          w.asset_ip ? fact('所在资产', w.asset_ip) : null,
+          w.privilege ? fact('权限', w.privilege) : null,
+          w.secret_ref ? fact('凭据引用', h('span', { className: 'rt-mono' }, w.secret_ref)) : null,
+          fact('最后检测', (w.last_check ? fmt(w.last_check) : '未检测')
+            + (w.latency_ms !== null && w.latency_ms !== undefined ? '（' + w.latency_ms + 'ms）' : '')),
+          w.check_note ? fact('检测说明', w.check_note) : null,
+          w.note ? fact('备注', w.note) : null)))
 
       const tunnelCards = tunnels.map((t) => {
         const proxy = t.listen ? 'socks5://' + t.listen : ''
@@ -2989,22 +2557,33 @@ window.__ModuleLoader__.load({
             t.status === 'active'
               ? h('button', { className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 }, onClick: () => markTunnel(t, 'down') }, '标记失效')
               : h('button', { className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 }, onClick: () => markTunnel(t, 'active') }, '标记可用')),
-          h('div', { className: 'rt-sess-sub' },
-            [t.entry ? '入口 ' + t.entry : null,
-              t.asset_ip ? '资产 ' + t.asset_ip : null,
-              '最后检测 ' + (t.last_check ? fmt(t.last_check) : '未检测'),
-              t.latency_ms !== null && t.latency_ms !== undefined ? t.latency_ms + 'ms' : null,
-              t.check_note || null].filter(Boolean).join(' · ')),
+          h('div', { className: 'rt-sess-facts' },
+            fact('目标侧入口', t.entry || '未登记'),
+            fact('跨越边界', t.legit === true
+              ? h('span', { className: 'rt-tag rt-tag-live' }, t.entry_kind_label || t.entry_kind || '已确认目标侧')
+              : (t.legit === false
+                  ? h('span', { className: 'rt-tag rt-tag-warn' }, '不算突破（只在自己 VPS 上开代理）')
+                  : h('span', { className: 'rt-tag' }, '未声明 entry_kind，待确认'))),
+            t.reach ? fact('可达网段', t.reach) : null,
+            t.asset_ip ? fact('所在资产', t.asset_ip) : null,
+            fact('最后检测', (t.last_check ? fmt(t.last_check) : '未检测')
+              + (t.latency_ms !== null && t.latency_ms !== undefined ? '（' + t.latency_ms + 'ms）' : '')),
+            t.check_note ? fact('检测说明', t.check_note) : null,
+            t.note ? fact('备注', t.note) : null),
+          /* 命令默认折叠：卡片首要信息是"这条通道能不能用、通向哪"，命令按需展开 */
+          t.command ? h('details', { className: 'rt-sess-fold' },
+            h('summary', null, '建立命令（点击展开 / 复制）'),
+            h('div', Object.assign({ className: 'rt-code', title: '点击复制' }, clickable(() => copy('c' + t.id, t.command), { label: '复制命令' })),
+              copied === 'c' + t.id ? '已复制' : t.command)) : null,
           t.status === 'active' && t.listen
-            ? h('div', { style: { marginTop: 6 } },
-                h('div', { className: 'rt-sess-sub' }, '走隧道扫描（技能 gogo-intranet / fscan-intranet）：'),
-                h('div', { className: 'rt-code', title: '点击复制', onClick: () => copy('g' + t.id, gogoCmd) },
-                  copied === 'g' + t.id ? '已复制' : gogoCmd),
-                h('div', { className: 'rt-code', style: { display: 'block', marginTop: 3 }, title: '点击复制', onClick: () => copy('f' + t.id, fscanCmd) },
-                  copied === 'f' + t.id ? '已复制' : fscanCmd))
-            : null,
-          t.command ? h('div', { className: 'rt-sess-sub' }, '建立命令：' + t.command) : null,
-          t.note ? h('div', { className: 'rt-sess-sub' }, '备注：' + t.note) : null)
+            ? h('details', { className: 'rt-sess-fold' },
+                h('summary', null, '走这条隧道扫描（gogo / fscan 命令）'),
+                h('div', { className: 'rt-sess-cmd' },
+                  h('div', Object.assign({ className: 'rt-code', title: '点击复制' }, clickable(() => copy('g' + t.id, gogoCmd), { label: '复制 gogo 命令' })),
+                    copied === 'g' + t.id ? '已复制' : gogoCmd),
+                  h('div', Object.assign({ className: 'rt-code', style: { display: 'block', marginTop: 3 }, title: '点击复制' }, clickable(() => copy('f' + t.id, fscanCmd), { label: '复制 fscan 命令' })),
+                    copied === 'f' + t.id ? '已复制' : fscanCmd)))
+            : null)
       })
 
       return h('div', { className: 'rt-main' },
@@ -3228,7 +2807,7 @@ window.__ModuleLoader__.load({
               title: '重新检查 npm 上的最新版本',
             }, busy ? '检查中…' : '检查更新'),
         open
-          ? h('div', { className: 'rt-modal', onClick: () => setOpen(false) },
+          ? h('div', { className: 'rt-modal', 'aria-hidden': 'true', onClick: () => setOpen(false) },
               h('div', { className: 'rt-modal-box', onClick: (e) => e.stopPropagation() },
                 h('h4', { style: { marginTop: 0 } }, '更新 RedTeam 模式'),
                 h('div', { className: 'rt-kv' }, h('b', null, '当前版本'), h('span', null, current || '未知')),
@@ -3265,6 +2844,34 @@ window.__ModuleLoader__.load({
     }
 
     /* ---------------------------------------------------------- 常驻面板主体 */
+    /**
+     * 「未读」状态：按靶标记在 localStorage 里，每 25 秒问一次 host 的 consoleDigest
+     * （每个页签的条数 + 最近更新时间）。比本地记住的快照新 → 该页签点红点；
+     * 用户点开那个页签就把当前值记成已读，红点消失。
+     */
+    const UNREAD_KEY = 'rt-unread:'
+    const loadUnread = (eng) => {
+      try {
+        const raw = window.localStorage.getItem(UNREAD_KEY + eng)
+        const parsed = raw ? JSON.parse(raw) : null
+        return parsed && typeof parsed === 'object' ? parsed : null
+      } catch (e) { return null }
+    }
+    const saveUnread = (eng, value) => {
+      try { window.localStorage.setItem(UNREAD_KEY + eng, JSON.stringify(value)) } catch (e) { /* 隐私模式等：不持久化也能用 */ }
+    }
+    /** 这个页签相对上次查看有没有新内容（条数变多，或最新一条比上次查看还新）。 */
+    const digestHasNew = (prev, cur) => {
+      if (!cur) return false
+      if (!prev) return true
+      const pc = Number(prev.count || 0)
+      const cc = Number(cur.count || 0)
+      if (cc > pc) return true
+      const pa = prev.at || ''
+      const ca = cur.at || ''
+      return ca !== '' && ca !== pa && ca > pa
+    }
+
     function Panel() {
       const st = useUI()
       const [engagements, setEngagements] = React.useState([])
@@ -3272,12 +2879,25 @@ window.__ModuleLoader__.load({
       const [snapshot, setSnapshot] = React.useState(null)
       const [err, setErr] = React.useState(null)
       const [newName, setNewName] = React.useState('')
-      const [width, setWidth] = React.useState(620)
+      /* 面板宽度按靶标之外**全局**记住：拖一次就够，不该每次刷新都回到 620px。
+         夹在 [380,900] 之间并做兜底，避免 localStorage 里的脏值把面板挤没。 */
+      const [width, setWidth] = React.useState(() => {
+        try {
+          const saved = Number(window.localStorage.getItem('rt-dock-width'))
+          if (Number.isFinite(saved) && saved >= 380 && saved <= 900) return saved
+        } catch (e) { /* 隐私模式：用默认值 */ }
+        return 620
+      })
       const [creating, setCreating] = React.useState(false)
       const [refreshKey, setRefreshKey] = React.useState(0)
+      const [digest, setDigest] = React.useState(null)
+      const [seen, setSeen] = React.useState(null)
 
       /* 面板宽度 → :root 自定义属性（frame 的 padding-right 依赖它） */
-      React.useEffect(() => { setDockWidth(width) }, [width])
+      React.useEffect(() => {
+        setDockWidth(width)
+        try { window.localStorage.setItem('rt-dock-width', String(width)) } catch (e) { /* 隐私模式 */ }
+      }, [width])
 
       const loadSnapshot = (id) => {
         if (!id) { setSnapshot(null); return }
@@ -3336,6 +2956,51 @@ window.__ModuleLoader__.load({
         }
         window.addEventListener('mousemove', move)
         window.addEventListener('mouseup', up)
+      }
+
+      /* 切靶标：重新读该靶标的未读快照，并立刻取一次摘要 */
+      React.useEffect(() => {
+        if (!eng) { setDigest(null); setSeen(null); return undefined }
+        setSeen(loadUnread(eng))
+        let alive = true
+        let digestInflight = false
+        const tick = () => {
+          if (digestInflight) return        /* 上一轮还没回来，跳过这一轮，别把请求堆起来 */
+          digestInflight = true
+          api({ op: 'consoleDigest', engagement: eng }).then((r) => {
+            if (alive && r && r.ok !== false && r.sections) setDigest(r.sections)
+          }, () => { /* 网络异常：不打断，等下一轮 */ })
+            .finally(() => { digestInflight = false })
+        }
+        tick()
+        const timer = window.setInterval(tick, 25000)
+        return () => { alive = false; window.clearInterval(timer) }
+      }, [eng, refreshKey])
+
+      /**
+       * 打开某个页签 = 看过这个页签的内容：把当前摘要记成已读。
+       * 没读过（第一次打开面板）不算新内容 —— 否则一进来满屏红点，反而看不出"哪里有新东西"。
+       */
+      const markTabSeen = React.useCallback((tab) => {
+        if (!eng) return
+        setSeen((prev) => {
+          const base = prev || (() => {
+            const fresh = {}
+            for (const [k, v] of Object.entries((digest || {}))) fresh[k] = { count: Number(v.count || 0), at: v.at || null }
+            return fresh
+          })()
+          const next = Object.assign({}, base)
+          const cur = digest && digest[tab]
+          if (cur) next[tab] = { count: Number(cur.count || 0), at: cur.at || null }
+          saveUnread(eng, next)
+          return next
+        })
+      }, [eng, digest])
+
+      const unreadOf = (tab) => {
+        if (!eng || !digest) return false
+        if (!seen) return false
+        return digestHasNew(seen[tab], digest[tab])
       }
 
       const stats = (snapshot && snapshot.stats) || {}
@@ -3422,10 +3087,20 @@ window.__ModuleLoader__.load({
           h('button', { className: 'rt-btn', title: '刷新名册、快照与当前页面数据', onClick: refreshAll }, '刷新'),
           full ? null : h('button', { className: 'rt-btn', title: '在新浏览器窗口打开完整控制台', onClick: openFull }, '全面浏览'),
           full ? null : h('button', { className: 'rt-btn', title: '收起面板（对话列恢复全宽）', onClick: () => setUI({ open: false }) }, '收起')),
-        h('div', { className: 'rt-tabs' }, tabs.map((t) => h('div', {
-          key: t[0], className: 'rt-tab' + (st.tab === t[0] ? ' on' : ''),
-          onClick: () => setUI({ tab: t[0] }),
-        }, t[1]))),
+        /* 页签栏用标准 tablist/tab 角色：读屏软件据此播报「第几个页签、是否选中」。
+           键盘用户 Tab 进来后可用 Enter/Space 切换（由 clickable 提供）。 */
+        h('div', { className: 'rt-tabs', role: 'tablist' }, tabs.map((t) => {
+          const activate = () => { markTabSeen(t[0]); setUI({ tab: t[0] }) }
+          return h('div', Object.assign({}, clickable(activate, { label: t[1] }), {
+            key: t[0], className: 'rt-tab' + (st.tab === t[0] ? ' on' : ''),
+            role: 'tab',
+            'aria-selected': st.tab === t[0] ? 'true' : 'false',
+            title: unreadOf(t[0]) ? t[1] + '：有新内容，点开看过红点就会消失' : t[1],
+          }), t[1], unreadOf(t[0])
+            /* 红点是纯视觉信息，给读屏软件一个文字替代 */
+            ? h('span', { className: 'rt-tab-dot', 'aria-label': '有新内容' })
+            : null)
+        })),
         h('div', { className: 'rt-body' }, h(RtBoundary, { key: st.tab }, body)),
         h('div', { className: 'rt-foot' },
           h('span', null, 'C 段 ' + (stats.segments || 0)),

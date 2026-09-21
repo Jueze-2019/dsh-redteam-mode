@@ -17,6 +17,7 @@ register(new URL(
 ), import.meta.url)
 
 const { apply } = await import('../lib/index.js')
+const { ROLE_ORDER } = await import('../../redteam-store/lib/core.js')
 const { existsSync, readdirSync } = await import('node:fs')
 const { join } = await import('node:path')
 const { pathToFileURL } = await import('node:url')
@@ -134,9 +135,35 @@ ok(!/patch: \{ type: 'object' \}/.test(String(byName.get('redteam_poc_update')))
 const scoreHit = byName.get('redteam_score_hit')
 ok(String(scoreHit.description).includes('自己注册的账号不算得分权限'), 'redteam_score_hit 仍带"自建账号不计分"红线')
 ok(scoreHit.parameters.self_created !== undefined, 'redteam_score_hit 提供 self_created 参数')
+ok(/同一系统只算最高权限一次|整个目标只算一次|上限/.test(String(scoreHit.description)),
+  'redteam_score_hit 说明计分口径（取高/上限）红线')
+ok(scoreHit.parameters.points !== undefined, 'redteam_score_hit 提供 points（多档条目按档位记分）')
+ok(scoreHit.parameters.port !== undefined, 'redteam_score_hit 提供 port 参数（服务封顶的判定粒度）')
 const tunnelAdd = byName.get('redteam_tunnel_add')
 ok(tunnelAdd.parameters.entry_kind !== undefined, 'redteam_tunnel_add 提供 entry_kind 参数')
 ok(String(tunnelAdd.description).includes('不算隧道'), 'redteam_tunnel_add 仍带"自己的服务器不算隧道"红线')
+/* ── 角色白名单必须覆盖 ROLE_ORDER（让"写死 enum 漏掉 assess"不再复发）────────
+   预设明确要求主会话用 redteam_role_prompt 取**资产梳理**角色的提示词写进子任务描述，
+   而 enum 写死 4 个值时会直接拒绝 assess —— 子智能体拿不到角色约束，
+   表面只是"取不到提示词"，实际是整条资产梳理流水线失去角色约束。 */
+const rolePrompt = byName.get('redteam_role_prompt')
+const roleReset = byName.get('redteam_role_prompt_reset')
+ok(Array.isArray(rolePrompt.parameters.role.enum), 'redteam_role_prompt.role 是白名单 enum')
+ok(ROLE_ORDER.every((r) => rolePrompt.parameters.role.enum.includes(r)),
+  'redteam_role_prompt 的 enum 覆盖全部作战角色（' + ROLE_ORDER.join('/') + '）')
+ok(rolePrompt.parameters.role.enum.includes('assess'),
+  'enum 里含 assess（曾经漏掉它，导致资产梳理提示词永远取不到）')
+ok(Array.isArray(roleReset.parameters.role.enum) && ROLE_ORDER.every((r) => roleReset.parameters.role.enum.includes(r)),
+  'redteam_role_prompt_reset 的 enum 同样覆盖全部作战角色')
+
+/* ── 描述里必须写明合法值（自由 string 写错一个空格就变 legit=null，界面无从分辨）── */
+const wsAdd = byName.get('redteam_webshell_add')
+ok(wsAdd.parameters.shell_type !== undefined, 'redteam_webshell_add 提供 shell_type')
+ok(/behinder|godzilla|冰蝎|哥斯拉/.test(String(wsAdd.parameters.shell_type.description)),
+  'shell_type 描述里写明合法值（behinder / godzilla）')
+ok(/self-only|target-outbound|target-http|target-agent/.test(String(tunnelAdd.parameters.entry_kind.description)),
+  'entry_kind 描述里写明四种合法值')
+
 
 console.log(`\n通过 ${pass}/${pass + fail}`)
 process.exit(fail === 0 ? 0 : 1)

@@ -15,20 +15,52 @@ import {
 } from 'node:fs'
 import { join, basename, isAbsolute } from 'node:path'
 
-const nowIso = () => new Date().toISOString()
+/* ── 拆分出去的模块（对外 API 不变：下面把它们原样再导出一次）──────────────
+   动机是"一个文件 5600 行、改表结构要翻过 500 行计分逻辑"：
+   · ip-utils.js    IP / 网段 / slug / 时间戳等纯函数；
+   · schema.js      两张表的 DDL 与两处增量迁移；
+   · validate.js    写库前的校验与规范化（路径穿越、非法枚举）；
+   · score-rules.js 计分口径与默认得分点（面板/报告/攻击链共用的唯一实现）。 */
+import {
+  ipToInt, cidrOf, isIpv6, expandIpv6, scopeOfIp, slugify, slugTarget, slugPoc,
+  defaultPocFilename, nowIso,
+} from './ip-utils.js'
+import {
+  buildHttpRequest, buildCurlCommand, parseCurl, commandKind, parseTarget, fillTemplate,
+} from './report-replay.js'
+import {
+  DDL, KNOWLEDGE_DDL, POC_CATEGORIES, pocCategoryName, guessPocCategory,
+  migrate, migrateKnowledge,
+} from './schema.js'
+import {
+  WEBSHELL_TYPES, WEBSHELL_STATUSES, normalizeShellType, normalizeShellStatus, assertPathWithin,
+} from './validate.js'
+import {
+  TUNNEL_ENTRY_KINDS, tunnelIsLegit, ACCOUNT_POINT_CODES, SERVICE_CAPPED_POINT_CODES,
+  parseTargetPort, scoreServiceKey, serviceLabel, applyScoreCaps, scoreCapReasonText,
+  serviceCapReason, evaluateScoreBoard, loadScoreMeta, loadAssetNames, hitPointsOf,
+  scoreMultiplierOf, SENSITIVE_DATA_MIN_ROWS, parseRowCount, formatRows,
+  DEDUP_SCOPES, SCORE_GENERAL_RULES, SCORE_GROUPS, DEFAULT_SCORE_POINTS, scoreConfirmOf, SCORE_CONFIRM,
+  /* 内部辅助：原本就是 core.js 里的模块级函数，拆分后由 score-rules.js 提供 */
+  normalizePort, targetAuthority, systemKeyOf, pickBestHit, legacyCapGroup, targetHasIpv6Host,
+} from './score-rules.js'
 
-/* ------------------------------------------------------------------ 通用 */
-
-export function slugify(name) {
-  const s = String(name || '').trim().toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, '-')
-    .replace(/^-+|-+$/g, '')
-  return s || 'engagement'
+/* 再导出：core.js 的对外导出面与拆分前完全一致（调用方零改动） */
+export {
+  ipToInt, cidrOf, isIpv6, expandIpv6, scopeOfIp, slugify, slugTarget, slugPoc,
+  defaultPocFilename, nowIso,
+  DDL, KNOWLEDGE_DDL, POC_CATEGORIES, pocCategoryName, guessPocCategory,
+  migrate, migrateKnowledge,
+  WEBSHELL_TYPES, WEBSHELL_STATUSES, normalizeShellType, normalizeShellStatus, assertPathWithin,
+  TUNNEL_ENTRY_KINDS, tunnelIsLegit, ACCOUNT_POINT_CODES, SERVICE_CAPPED_POINT_CODES,
+  parseTargetPort, scoreServiceKey, serviceLabel, applyScoreCaps, scoreCapReasonText,
+  serviceCapReason, evaluateScoreBoard, loadScoreMeta, loadAssetNames, hitPointsOf,
+  scoreMultiplierOf, SENSITIVE_DATA_MIN_ROWS, parseRowCount, formatRows,
+  DEDUP_SCOPES, SCORE_GENERAL_RULES, SCORE_GROUPS, DEFAULT_SCORE_POINTS, scoreConfirmOf, SCORE_CONFIRM,
+  normalizePort, targetAuthority, systemKeyOf, pickBestHit, legacyCapGroup, targetHasIpv6Host,
 }
 
-const ipToInt = (ip) => ip.split('.').reduce((n, o) => (n * 256 + Number(o)) >>> 0, 0)
-const cidrOf = (ip) => ip.split('.').slice(0, 3).join('.') + '.0/24'
-
+/* ------------------------------------------------------------------ 角色与枚举 */
 /**
  * 作战角色（六个）。角色 code 同时用于：
  *   · 角色提示词文件 `engagements/<靶标>/agents/<code>.md`
@@ -55,405 +87,14 @@ export { ROLE_TITLES, SEVERITIES, VULN_STATUSES }
 
 /* ------------------------------------------------------------------ schema */
 
-const DDL = `
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-PRAGMA busy_timeout = 5000;
-
-CREATE TABLE IF NOT EXISTS scan_run (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  agent_session_id TEXT, tool TEXT, argv TEXT,
-  started_at TEXT, finished_at TEXT, status TEXT DEFAULT 'running'
-);
-
-CREATE TABLE IF NOT EXISTS segment (
-  cidr TEXT PRIMARY KEY, ip_start TEXT, ip_end TEXT,
-  org TEXT, asn TEXT, country TEXT, city TEXT,
-  source TEXT, first_seen TEXT, last_seen TEXT
-);
-
-CREATE TABLE IF NOT EXISTS asset (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  segment_cidr TEXT NOT NULL, ip TEXT NOT NULL, ip_int INTEGER,
-  state TEXT DEFAULT 'unknown', primary_name TEXT, confidence REAL,
-  first_seen TEXT, last_seen TEXT, discovered_at TEXT,
-  test_status TEXT DEFAULT 'untested', test_notes TEXT, test_surface TEXT,
-  test_updated_at TEXT, test_updated_by TEXT, blocked_count INTEGER DEFAULT 0,
-  priority TEXT, potential TEXT, assess_reason TEXT, assessed_at TEXT, assessed_by TEXT,
-  UNIQUE(segment_cidr, ip)
-);
-
-CREATE TABLE IF NOT EXISTS asset_name (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  asset_id INTEGER NOT NULL, name TEXT NOT NULL, kind TEXT,
-  provenance TEXT, tool TEXT, first_seen TEXT, last_seen TEXT,
-  UNIQUE(asset_id, name, kind)
-);
-
-CREATE TABLE IF NOT EXISTS port (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  asset_id INTEGER NOT NULL, proto TEXT DEFAULT 'tcp', port INTEGER NOT NULL,
-  state TEXT DEFAULT 'open', provenance TEXT, tool TEXT, banner TEXT,
-  url TEXT, title TEXT,
-  first_seen TEXT, last_seen TEXT,
-  UNIQUE(asset_id, proto, port)
-);
-
-CREATE TABLE IF NOT EXISTS service (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  port_id INTEGER NOT NULL, name TEXT, product TEXT, version TEXT, cpe TEXT,
-  provenance TEXT, tool TEXT, first_seen TEXT, last_seen TEXT
-);
-
-CREATE TABLE IF NOT EXISTS fingerprint (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  asset_id INTEGER NOT NULL, port_id INTEGER,
-  category TEXT, vendor TEXT, product TEXT, version TEXT,
-  evidence TEXT, confidence REAL, provenance TEXT, tool TEXT,
-  first_seen TEXT, last_seen TEXT
-);
-
-CREATE TABLE IF NOT EXISTS observation (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  entity_kind TEXT NOT NULL, entity_id INTEGER NOT NULL,
-  attr TEXT, value TEXT, provenance TEXT, tool TEXT,
-  scan_run_id INTEGER, collected_at TEXT, raw_ref TEXT
-);
-
-CREATE TABLE IF NOT EXISTS edge (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  src_kind TEXT NOT NULL, src_id TEXT NOT NULL,
-  dst_kind TEXT NOT NULL, dst_id TEXT NOT NULL,
-  relation TEXT NOT NULL, confidence REAL, scan_run_id INTEGER,
-  first_seen TEXT, last_seen TEXT,
-  UNIQUE(src_kind, src_id, dst_kind, dst_id, relation)
-);
-
-CREATE TABLE IF NOT EXISTS tag (
-  entity_kind TEXT NOT NULL, entity_id INTEGER NOT NULL, tag TEXT NOT NULL,
-  note TEXT, created_by TEXT, created_at TEXT,
-  PRIMARY KEY (entity_kind, entity_id, tag)
-);
-
-CREATE TABLE IF NOT EXISTS vuln (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  asset_id INTEGER, port_id INTEGER, cve TEXT, title TEXT, severity TEXT,
-  source TEXT, confidence REAL, status TEXT, evidence TEXT, target TEXT,
-  found_by_agent TEXT, found_at TEXT, gained TEXT, agent TEXT
-);
-
-/* 得分点：来自攻防演练得分规则，用户可编辑（分值、启用、分类） */
-CREATE TABLE IF NOT EXISTS score_point (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  code TEXT UNIQUE,
-  name TEXT NOT NULL,
-  category TEXT,
-  points INTEGER DEFAULT 0,
-  max_hits INTEGER DEFAULT 1,
-  description TEXT,
-  enabled INTEGER DEFAULT 1,
-  sort_order INTEGER DEFAULT 0,
-  created_at TEXT, updated_at TEXT
-);
-
-/* 得分记录：某个得分点在某个目标上被拿下 */
-/* 作战阶段：全链路攻击路径图的五个阶段（内容可编辑） */
-CREATE TABLE IF NOT EXISTS stage (
-  code TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  subtitle TEXT,
-  color TEXT,
-  goal TEXT,
-  sections TEXT,
-  tools TEXT,
-  transition TEXT,
-  sort_order INTEGER DEFAULT 0,
-  updated_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS score_hit (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  point_id INTEGER NOT NULL,
-  asset_id INTEGER, vuln_id INTEGER, step_id INTEGER, target TEXT,
-  evidence TEXT, note TEXT,
-  self_created INTEGER DEFAULT 0,
-  recorded_by TEXT, recorded_at TEXT
-);
-
-/* 凭据：secret_value 存明文口令/密钥（面板直接显示，便于随时复用），secret_ref 指向 runs/ 下的证据文件。
-   注意：本库只在本机，禁止把库文件或导出内容提交到任何仓库。 */
-CREATE TABLE IF NOT EXISTS credential (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  asset_id INTEGER, host TEXT, username TEXT, secret_type TEXT,
-  secret_value TEXT, secret_ref TEXT,
-  privilege TEXT, source TEXT, tool TEXT, note TEXT,
-  found_by_agent TEXT, found_at TEXT, agent TEXT,
-  UNIQUE(host, username, secret_type)
-);
-
-/* 访问会话：拿到入口后的一次可控访问记录（横向移动的起点） */
-CREATE TABLE IF NOT EXISTS access_session (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  asset_id INTEGER, host TEXT, username TEXT, method TEXT, privilege TEXT,
-  session_ref TEXT, note TEXT, found_by_agent TEXT, obtained_at TEXT
-);
-
-/* WebShell：已经上线的可控入口。智能体随时可以复用，避免"打到最后忘了还有 webshell" */
-CREATE TABLE IF NOT EXISTS webshell (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  asset_id INTEGER, url TEXT NOT NULL, shell_type TEXT, pass_key TEXT,
-  secret_ref TEXT, privilege TEXT,
-  status TEXT DEFAULT 'unknown', last_check TEXT, check_note TEXT, latency_ms INTEGER,
-  note TEXT, found_by_agent TEXT, created_at TEXT, updated_at TEXT, agent TEXT,
-  UNIQUE(url, pass_key)
-);
-
-/* 内网隧道：suo5 / socks5 / ssh -R / frp 等。记录入口、监听地址与可达网段 */
-CREATE TABLE IF NOT EXISTS tunnel (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  asset_id INTEGER, webshell_id INTEGER, kind TEXT, listen TEXT,
-  entry TEXT, reach TEXT,
-  entry_kind TEXT,
-  status TEXT DEFAULT 'unknown', last_check TEXT, check_note TEXT, latency_ms INTEGER,
-  pid TEXT, command TEXT, note TEXT, found_by_agent TEXT, created_at TEXT, updated_at TEXT, agent TEXT
-);
-
-/* HTTP 证据：原始请求/响应，可直接粘贴进 Burp Suite / Yakit 复现 */
-CREATE TABLE IF NOT EXISTS http_evidence (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  vuln_id INTEGER, asset_id INTEGER, label TEXT,
-  method TEXT, url TEXT, status INTEGER,
-  request TEXT, response TEXT, note TEXT,
-  captured_by TEXT, captured_at TEXT
-);
-
-/* 攻击文件：针对某个目标实际生效的脚本/POC/EXP（只收录验证有效的） */
-CREATE TABLE IF NOT EXISTS attack_file (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  target TEXT NOT NULL, target_kind TEXT, name TEXT NOT NULL, kind TEXT,
-  path TEXT NOT NULL, description TEXT, evidence TEXT,
-  asset_id INTEGER, vuln_id INTEGER, created_by TEXT, created_at TEXT,
-  UNIQUE(target, name)
-);
-
-/* 攻击链步骤：人工/智能体记录的链路节点，用于攻击链页面与报告。
-   tool/agent/result 三列是"这一步怎么做的"的凭证：报告要写清账号密码怎么来的、
-   隧道怎么搭的，靠的就是步骤上的工具与命令原文。 */
-CREATE TABLE IF NOT EXISTS attack_step (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  seq INTEGER, stage TEXT, title TEXT, detail TEXT,
-  asset_id INTEGER, vuln_id INTEGER, access_id INTEGER, point_id INTEGER,
-  evidence_ref TEXT, tool TEXT, agent TEXT, result TEXT,
-  recorded_by TEXT, recorded_at TEXT
-);
-
-CREATE VIRTUAL TABLE IF NOT EXISTS asset_fts USING fts5(
-  asset_id UNINDEXED, ip, names, banners, titles, fingerprints
-);
-
-CREATE INDEX IF NOT EXISTS ix_asset_segment ON asset(segment_cidr);
-CREATE INDEX IF NOT EXISTS ix_asset_ip_int ON asset(ip_int);
-CREATE INDEX IF NOT EXISTS ix_port_asset ON port(asset_id);
-CREATE INDEX IF NOT EXISTS ix_port_port ON port(port);
-CREATE INDEX IF NOT EXISTS ix_service_port ON service(port_id);
-CREATE INDEX IF NOT EXISTS ix_service_name ON service(name, product, version);
-CREATE INDEX IF NOT EXISTS ix_fp_asset ON fingerprint(asset_id);
-CREATE INDEX IF NOT EXISTS ix_fp_product ON fingerprint(product, version);
-CREATE INDEX IF NOT EXISTS ix_edge_src ON edge(src_kind, src_id);
-CREATE INDEX IF NOT EXISTS ix_edge_dst ON edge(dst_kind, dst_id);
-CREATE INDEX IF NOT EXISTS ix_obs_entity ON observation(entity_kind, entity_id);
-CREATE INDEX IF NOT EXISTS ix_vuln_asset ON vuln(asset_id);
-CREATE INDEX IF NOT EXISTS ix_vuln_sev ON vuln(severity, status);
-CREATE INDEX IF NOT EXISTS ix_vuln_cve ON vuln(cve);
-CREATE INDEX IF NOT EXISTS ix_cred_host ON credential(host);
-CREATE INDEX IF NOT EXISTS ix_access_host ON access_session(host);
-CREATE INDEX IF NOT EXISTS ix_webshell_status ON webshell(status);
-CREATE INDEX IF NOT EXISTS ix_tunnel_status ON tunnel(status);
-CREATE INDEX IF NOT EXISTS ix_http_vuln ON http_evidence(vuln_id);
-CREATE INDEX IF NOT EXISTS ix_http_asset ON http_evidence(asset_id);
-CREATE INDEX IF NOT EXISTS ix_step_seq ON attack_step(seq, id);
-CREATE INDEX IF NOT EXISTS ix_attack_target ON attack_file(target);
-CREATE INDEX IF NOT EXISTS ix_score_hit_point ON score_hit(point_id);
-CREATE INDEX IF NOT EXISTS ix_score_hit_asset ON score_hit(asset_id);
-
-CREATE VIEW IF NOT EXISTS v_asset_summary AS
-SELECT a.id, a.ip, a.segment_cidr, a.state, a.primary_name, a.first_seen, a.last_seen,
-  (SELECT COUNT(*) FROM port p WHERE p.asset_id = a.id AND p.state = 'open') AS open_ports,
-  (SELECT COUNT(*) FROM observation o WHERE o.entity_kind = 'asset' AND o.entity_id = a.id AND o.provenance = 'passive') AS passive_signals,
-  (SELECT COUNT(*) FROM observation o WHERE o.entity_kind = 'asset' AND o.entity_id = a.id AND o.provenance = 'active') AS active_signals
-FROM asset a;
-
-CREATE VIEW IF NOT EXISTS v_asset_service AS
-SELECT p.asset_id, p.port, p.proto, p.provenance AS port_provenance,
-       s.name AS service, s.product, s.version, s.provenance AS service_provenance
-FROM port p LEFT JOIN service s ON s.port_id = p.id;
-`
 
 /* ------------------------------------------------------------------ 知识库（POC/EXP，全局共享） */
 
-/**
- * 知识库与靶标库分开：**通用可复用的 POC/EXP 跨靶标共享**，所以放独立的
- * `knowledge.db` + `pocs/` 目录，不挂在某个 engagements/<靶标>/ 下面。
- * 靶标专属、不可复用的脚本仍走 attack_file（攻击文件页）。
- */
-const KNOWLEDGE_DDL = `
-CREATE TABLE IF NOT EXISTS poc (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  code TEXT NOT NULL,                -- 稳定标识（slug），智能体可直接引用
-  title TEXT NOT NULL,
-  kind TEXT,                         -- poc | exp | script | template | payload
-  category TEXT,                     -- 归类：rce / deserialization / file-upload / sqli / unauthorized / auth-bypass / weak-password / ssrf / xxe / path-traversal / file-read / info-leak / privesc / tunnel / other
-  cve TEXT,                          -- CVE / CNVD / 厂商编号
-  component TEXT,                    -- 组件/产品（Weblogic、Shiro、泛微 OA…）
-  versions TEXT,                     -- 影响版本
-  severity TEXT,
-  language TEXT,                     -- python | go | java | bash | http | nuclei | js | php
-  source TEXT,                       -- web | self | manual | nuclei-template | kb
-  source_url TEXT,
-  description TEXT,
-  usage TEXT,                        -- 用法/命令行示例
-  content TEXT,                      -- 正文（脚本 / POC / 原始请求）
-  path TEXT,                         -- 落盘位置（pocs/<code>/<file>），便于智能体直接 cat
-  verified INTEGER DEFAULT 0,        -- 是否实测验证过
-  verified_note TEXT,                -- 验证证据（哪台目标、什么回显）
-  hit_count INTEGER DEFAULT 0,       -- 被复用次数
-  used_on TEXT,                      -- 最近一次使用在哪个靶标/目标
-  -- 来源溯源：这条知识是在哪个靶标、哪台资产上发现/验证出来的（建立时间看 created_at）
-  engagement_id TEXT,
-  engagement_name TEXT,
-  asset_target TEXT,
-  found_by_agent TEXT,
-  tags TEXT,
-  created_by TEXT, created_at TEXT, updated_at TEXT,
-  UNIQUE(code)
-);
-CREATE INDEX IF NOT EXISTS ix_poc_cve ON poc(cve);
-CREATE INDEX IF NOT EXISTS ix_poc_component ON poc(component);
-CREATE INDEX IF NOT EXISTS ix_poc_kind ON poc(kind, verified);
-/* 注意：归类 / 来源靶标两个索引**不能写在这里** —— 老 knowledge.db 的 poc 表还没有
-   这两列，CREATE INDEX 会在 exec(DDL) 阶段直接抛
-   "no such column: category"，连补列的迁移都跑不到。它们在 migrateKnowledge() 补完列之后再建。 */
-CREATE VIRTUAL TABLE IF NOT EXISTS poc_fts USING fts5(
-  poc_id UNINDEXED, title, cve, component, versions, tags, description, content
-);
-`
 
 /**
  * 知识库归类（与得分点/攻击面口径对齐）：智能体回填时必须选一个，
  * 面板按它分组，用户才能"一类一类看"而不是几百条平铺。
  */
-const POC_CATEGORIES = [
-  { code: 'rce', name: '远程命令执行', hint: '框架/中间件/组件 RCE、表达式注入、模板注入' },
-  { code: 'deserialization', name: '反序列化', hint: 'Java/PHP/.NET 反序列化链、fastjson/jackson 等' },
-  { code: 'file-upload', name: '文件上传 getshell', hint: '上传绕过、解析漏洞、二次渲染、竞争' },
-  { code: 'sqli', name: 'SQL 注入', hint: '注入点验证、拖库、写文件、提权' },
-  { code: 'unauthorized', name: '未授权访问', hint: '未鉴权接口/服务（Redis、Docker、Actuator、Swagger 调用）' },
-  { code: 'auth-bypass', name: '认证绕过 / 越权', hint: '登录绕过、JWT 缺陷、越权读写、逻辑缺陷' },
-  { code: 'weak-password', name: '弱口令 / 口令爆破', hint: '管理端弱口令、数据库弱口令、默认口令' },
-  { code: 'ssrf', name: 'SSRF', hint: '服务端请求伪造、云元数据、内网探测跳板' },
-  { code: 'xxe', name: 'XXE', hint: 'XML 外部实体读取与 SSRF' },
-  { code: 'path-traversal', name: '目录穿越 / 任意文件读取', hint: '路径穿越、任意文件读、源码/配置读取' },
-  { code: 'info-leak', name: '信息泄露', hint: '配置/凭据/源码/备份泄露（能升级为得分的那些）' },
-  { code: 'privesc', name: '提权 / 横向', hint: '本地提权、凭据复用、Pass-the-Hash、横向工具' },
-  { code: 'tunnel', name: '隧道 / 代理', hint: 'suo5、frp、chisel、Neo-ReGeorg、内网代理' },
-  { code: 'other', name: '其它', hint: '不属于上面任何一类（写清用途）' },
-]
-export { POC_CATEGORIES }
-
-/** 归类 code → 中文名（未知值原样返回，允许用户自定义）。 */
-export function pocCategoryName(code) {
-  const hit = POC_CATEGORIES.find((c) => c.code === String(code || ''))
-  return hit ? hit.name : (code ? String(code) : '未归类')
-}
-
-/**
- * 老条目的归类推测（迁移时给 category 为空的条目打标）。
- * 依据是 code/title/component 里的关键词 —— 命中就归那一类，都不中才落 `other`。
- * 顺序即优先级：越具体的越靠前（例如"任意文件上传"要压过泛化的"上传"）。
- * 新写入的条目由 `redteam_poc_add` 的 `category` 参数决定，不走这里。
- */
-export function guessPocCategory(text) {
-  const t = String(text || '').toLowerCase()
-  const has = (...words) => words.some((w) => t.includes(w))
-  if (has('反序列化', 'deserial', 'shiro', 'fastjson', 'weblogic', 'log4j', 'jackson')) return 'deserialization'
-  if (has('文件上传', 'file-upload', 'fileupload', 'upload', 'getshell', 'webshell', '写马')) return 'file-upload'
-  if (has('sql 注入', 'sqli', 'sql注入', '注入拖库', 'union select')) return 'sqli'
-  if (has('弱口令', '爆破', 'brute', '默认口令', '默认凭据', 'hydra')) return 'weak-password'
-  if (has('隧道', 'socks', 'suo5', 'frp', 'chisel', 'regeorg', '代理')) return 'tunnel'
-  if (has('未授权', 'unauth', '免认证', '免鉴权', '未鉴权', '无鉴权')) return 'unauthorized'
-  if (has('越权', '认证绕过', '鉴权绕过', 'jwt', '逻辑漏洞', '验证码绕过', 'auth-bypass')) return 'auth-bypass'
-  if (has('rce', '命令执行', '代码执行', '表达式注入', '模板注入', 'ssti', '命令注入', '远程执行')) return 'rce'
-  if (has('ssrf', '服务端请求伪造')) return 'ssrf'
-  if (has('xxe', '外部实体')) return 'xxe'
-  if (has('任意文件读', '文件读取', '目录穿越', '路径穿越', 'path traversal', 'lfi', '任意文件下载')) return 'path-traversal'
-  if (has('提权', '横向', 'pass-the-hash', 'mimikatz', 'impacket', '凭据复用')) return 'privesc'
-  if (has('信息泄露', '配置泄露', '敏感信息', '源码泄露', '泄露', 'leak')) return 'info-leak'
-  return 'other'
-}
-
-/**
- * 知识库轻量迁移：给既有 knowledge.db 补列（归类 / 来源溯源）。
- * 与靶标库迁移同样先查 PRAGMA 再 ADD COLUMN，重复执行安全、老库不用重建。
- */
-function migrateKnowledge(db) {
-  const has = (column) => {
-    try {
-      return db.prepare('PRAGMA table_info(poc)').all().some((row) => row.name === column)
-    } catch { return true }
-  }
-  const ensure = (column, ddl) => {
-    if (has(column)) return
-    try { db.exec(`ALTER TABLE poc ADD COLUMN ${column} ${ddl}`) } catch { /* 并发迁移时忽略 */ }
-  }
-  ensure('category', 'TEXT')
-  ensure('engagement_id', 'TEXT')
-  ensure('engagement_name', 'TEXT')
-  ensure('asset_target', 'TEXT')
-  ensure('found_by_agent', 'TEXT')
-  try { db.exec('CREATE INDEX IF NOT EXISTS ix_poc_category ON poc(category)') } catch { /* 忽略 */ }
-  try { db.exec('CREATE INDEX IF NOT EXISTS ix_poc_engagement ON poc(engagement_id)') } catch { /* 忽略 */ }
-  /* 老条目没有归类：按 code/标题/组件的关键词推一个（推测逻辑只有一份，见 guessPocCategory） */
-  try {
-    const rows = db.prepare("SELECT id, code, title, component FROM poc WHERE COALESCE(category, '') = ''").all()
-    const upd = db.prepare('UPDATE poc SET category = ? WHERE id = ?')
-    for (const row of rows) {
-      upd.run(guessPocCategory([row.code, row.title, row.component].filter(Boolean).join(' ')), row.id)
-    }
-  } catch { /* 忽略 */ }
-}
-
-/* ------------------------------------------------------------------ 判定规则 */
-
-/**
- * 什么算"真隧道"（算边界突破/内网突破的凭证）：**必须跨越了靶标边界**，
- * 即通道的一端在目标侧。三种情况：
- *   · target-outbound：目标主动连出到我的服务器（反弹 shell 落地、目标上跑 frp/Stowaway 客户端）
- *   · target-http：经目标 WebShell/HTTP 通道（suo5、Neo-ReGeorg、reGeorg、自研 HTTP 隧道）
- *   · target-agent：经目标上已控进程/会话转发的隧道（SSH -R 由目标发起等）
- * 不算的：self-only —— 只在自己 VPS / 自建服务器上开的代理或服务端，没碰到目标。
- */
-const TUNNEL_ENTRY_KINDS = {
-  'target-outbound': '目标主动连出（反弹 shell / 目标上跑 frp 客户端）',
-  'target-http': '经目标 WebShell/HTTP 通道（suo5 / Neo-ReGeorg）',
-  'target-agent': '经目标已控进程/会话转发（SSH -R 等）',
-  'self-only': '只在自己 VPS/自建服务器上（不算突破）',
-}
-export { TUNNEL_ENTRY_KINDS }
-
-/** 这条隧道算不算"跨越了靶标边界"。未声明（老数据/没填）返回 null，界面按"待确认"显示。 */
-export function tunnelIsLegit(entryKind) {
-  const k = String(entryKind || '').trim()
-  if (k === '') return null
-  return k !== 'self-only'
-}
-
-/**
- * 账号/权限类得分点：**自己注册、自己创建的账号不算拿到权限**（演练得分针对"拿到别人已有的"）。
- * 这些得分点命中时会要求声明 self_created，避免把自助注册当成战果。
- */
-const ACCOUNT_POINT_CODES = ['web-account-user', 'web-account-admin', 'server-shell', 'db-access', 'internal-pivot', 'core-system']
-export { ACCOUNT_POINT_CODES }
-
 /* ------------------------------------------------------------------ 知识库常量 */
 
 /** POC 类型：poc=验证性利用、exp=可执行利用、template=nuclei 等模板、script=辅助脚本、payload=载荷。 */
@@ -462,157 +103,12 @@ const POC_KINDS = ['poc', 'exp', 'script', 'template', 'payload']
 const POC_SOURCES = ['web', 'self', 'manual', 'nuclei-template', 'kb']
 export { POC_KINDS, POC_SOURCES }
 
-/** 生成知识库条目的稳定标识：组件 + 编号/标题，便于智能体直接引用。 */
-export function slugPoc(title, cve) {
-  const t = String(title || '').trim()
-  const c = String(cve || '').trim()
-  /* 标题里往往已经写了 CVE，别再拼一遍（否则 code 会变成 xxx-cve-2023-21839-cve-2023-21839） */
-  const flat = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '')
-  const base = (c !== '' && !flat(t).includes(flat(c))) ? c + ' ' + t : t
-  const slug = base.toLowerCase()
-    .replace(/cve[-_ ]?(\d{4})[-_ ]?(\d+)/g, 'cve-$1-$2')
-    .replace(/[^\w\u4e00-\u9fa5.-]+/g, '-')
-    .replace(/-{2,}/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80)
-    .replace(/-+$/, '')
-  return slug === '' ? 'poc-' + Date.now() : slug
-}
 
-/** 按语言给正文一个合适的文件名（智能体可以直接照着运行）。 */
-function defaultPocFilename(title, kind, language) {
-  const ext = {
-    python: 'py', py: 'py', go: 'go', java: 'java', bash: 'sh', sh: 'sh', shell: 'sh',
-    js: 'js', node: 'js', php: 'php', ruby: 'rb', powershell: 'ps1', http: 'http', nuclei: 'yaml', yaml: 'yaml',
-  }[String(language || '').toLowerCase()]
-  if (ext) return 'poc.' + ext
-  if (kind === 'template') return 'poc.yaml'
-  return 'poc.txt'
-}
 
-/* ------------------------------------------------------------------ 目标命名 */
-/**
- * 把目标（IP / URL / C 段）归一化成攻击文件目录名。
- *  · IP 或 ip:port → 只取 IP（同一 IP 的多个端口归一个文件夹）
- *  · URL → 只取 host（去掉协议、端口、路径）
- *  · C 段 10.0.0.0/24 → 10.0.0.0_24
- */
-export function slugTarget(target) {
-  const raw = String(target || '').trim()
-  if (raw === '') return 'unknown'
-  const ipMatch = /^(\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?$/.exec(raw)
-  if (ipMatch !== null) return ipMatch[1]
-  const urlMatch = /^https?:\/\/([^/?#]+)/i.exec(raw)
-  const hostPort = urlMatch !== null ? urlMatch[1] : raw
-  const host = hostPort.replace(/:(\d+)$/, '')
-  return host.replace(/[^\w.\-]/g, '_').replace(/_+$/, '') || 'unknown'
-}
 
 /* ------------------------------------------------------------------ 迁移 */
 
-/**
- * 轻量迁移：给既有库补列。先查 PRAGMA 再 ADD COLUMN，重复执行安全。
- * 只在新增列时执行，因此老靶标库不需要重建。
- */
-function migrate(db) {
-  const has = (table, column) => {
-    try {
-      return db.prepare(`PRAGMA table_info(${table})`).all().some((row) => row.name === column)
-    } catch {
-      return true
-    }
-  }
-  const ensure = (table, column, ddl) => {
-    if (has(table, column)) return false
-    try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`) } catch { /* 并发迁移时忽略 */ }
-    return true
-  }
-  ensure('vuln', 'target', 'TEXT')
-  ensure('vuln', 'found_by_agent', 'TEXT')
-  ensure('vuln', 'found_at', 'TEXT')
-  ensure('port', 'url', 'TEXT')
-  ensure('port', 'title', 'TEXT')
-  ensure('asset', 'test_status', "TEXT DEFAULT 'untested'")
-  ensure('asset', 'test_notes', 'TEXT')
-  ensure('asset', 'test_surface', 'TEXT')
-  ensure('asset', 'test_updated_at', 'TEXT')
-  ensure('asset', 'test_updated_by', 'TEXT')
-  ensure('asset', 'blocked_count', 'INTEGER DEFAULT 0')
-  ensure('asset', 'priority', 'TEXT')
-  ensure('asset', 'potential', 'TEXT')
-  ensure('asset', 'assess_reason', 'TEXT')
-  ensure('asset', 'assessed_at', 'TEXT')
-  ensure('asset', 'assessed_by', 'TEXT')
-  /* 发现时间：本条资产**第一次进入本库**的时刻（不随重复采集刷新，便于"这条什么时候发现的"）。
-     与 first_seen（数据源/工具给出的首次出现时间）不是一回事，两个都留。 */
-  ensure('asset', 'discovered_at', 'TEXT')
-  /* 产出这条记录的智能体角色（recon/assess/vuln-scan/exploit/internal），
-     报告要写清"谁发现的、怎么拿到的" */
-  ensure('vuln', 'agent', 'TEXT')
-  ensure('credential', 'agent', 'TEXT')
-  ensure('webshell', 'agent', 'TEXT')
-  ensure('tunnel', 'agent', 'TEXT')
-  /* 攻击步骤：用了什么工具/命令、由谁记录。报告里"隧道怎么搭的、马怎么上的"靠这三列说清 */
-  ensure('attack_step', 'tool', 'TEXT')
-  ensure('attack_step', 'agent', 'TEXT')
-  ensure('attack_step', 'result', 'TEXT')
-  /* 内外网维度：internal（内网/私网地址）| external（互联网可达）。手工指定优先于自动推导 */
-  ensure('asset', 'scope', 'TEXT')
-  /* 通过这个漏洞拿到了什么：账号权限 / 服务器权限 / 内网隧道 / 得分点等 */
-  ensure('vuln', 'gained', 'TEXT')
-  /* 凭据明文：面板要直接显示口令，不再只存引用（库在本机，禁止导出/提交） */
-  ensure('credential', 'secret_value', 'TEXT')
-  /* 得分类别不设数量上限（max_hits 列保留只为兼容老库结构，计分不再使用） */
-  /* 得分 ↔ 漏洞/步骤 关联：报告取原始请求、流程图连线用 */
-  ensure('score_hit', 'vuln_id', 'INTEGER')
-  ensure('score_hit', 'step_id', 'INTEGER')
-  ensure('attack_step', 'point_id', 'INTEGER')
-  /* 攻击链已推倒重来：老的五阶段行整体作废，attck 列移除 */
-  try {
-    /* 注意：'target' 在新老两版里同名，必须按名称区分，否则第二次打开会把新版阶段删掉 */
-    db.prepare("DELETE FROM stage WHERE code IN ('external','foothold','tunnel','privilege')").run()
-    db.prepare("DELETE FROM stage WHERE code = 'target' AND name = '靶标系统权限'").run()
-    db.prepare("DELETE FROM stage WHERE code NOT IN ('recon','internet','boundary','internal','target')").run()
-  } catch { /* 表还不存在，忽略 */ }
-  if (has('stage', 'attck')) {
-    try { db.exec('ALTER TABLE stage DROP COLUMN attck') } catch { /* 老 SQLite 不支持则保留 */ }
-  }
-  /* 攻击步骤上的阶段：老值是上一版的阶段 code，清掉以便按 legacy stage 重新映射。
-     注意：'target' 在新版里仍是合法阶段（⑤ 靶标权限），不能一起清——否则每次打开
-     靶标都会把「显式指定 ⑤」的步骤与得分打回自动推导。 */
-  try {
-    db.prepare("UPDATE attack_step SET stage_code = NULL WHERE stage_code IN ('external','foothold','tunnel','privilege')").run()
-    db.prepare("UPDATE score_hit SET stage_code = NULL WHERE stage_code IN ('external','foothold','tunnel','privilege')").run()
-  } catch { /* 忽略 */ }
-  /* 阶段归属改为按每条得分自动推导，得分点上的 stage_code 已废弃 */
-  if (has('score_point', 'stage_code')) {
-    try { db.exec('ALTER TABLE score_point DROP COLUMN stage_code') } catch { /* 忽略 */ }
-  }
-  /* 蓝队视角已从作战阶段中移除：老库把这一列删掉（失败则忽略，不影响使用） */
-  if (has('stage', 'blue_team')) {
-    try { db.exec('ALTER TABLE stage DROP COLUMN blue_team') } catch { /* 老 SQLite 不支持则保留 */ }
-  }
-  /* 阶段归属：得分命中可显式覆盖（默认自动推导）；攻击步骤记录所属阶段 */
-  ensure('score_hit', 'stage_code', 'TEXT')
-  /* 自建账号标记：自己注册/自己创建的账号不算得分权限，只作过程记录（老数据默认 0） */
-  ensure('score_hit', 'self_created', 'INTEGER DEFAULT 0')
-  /* 隧道入口归属：判断这条通道有没有真的跨越靶标边界（self-only 不算突破） */
-  ensure('tunnel', 'entry_kind', 'TEXT')
-  if (ensure('attack_step', 'stage_code', 'TEXT')) {
-    try {
-      const stmt = db.prepare('UPDATE attack_step SET stage_code = ? WHERE stage = ?')
-      for (const [legacy, code] of Object.entries(LEGACY_STAGE_MAP)) stmt.run(code, legacy)
-    } catch { /* 忽略 */ }
-  }
-  /* 老库回填：按 IP 归属自动区分内外网 */
-  try {
-    db.exec(`UPDATE asset SET scope = (${SCOPE_SQL}) WHERE scope IS NULL OR scope = ''`)
-  } catch { /* 首次建库时表为空，忽略 */ }
-  /* 老库回填发现时间：没有 discovered_at 的用 first_seen 顶上（总比空白好） */
-  try {
-    db.exec("UPDATE asset SET discovered_at = COALESCE(first_seen, last_seen) WHERE discovered_at IS NULL OR discovered_at = ''")
-  } catch { /* 忽略 */ }
-}
+/** 允许的马类型（与技能 webshell-toolkit 交付要求一致：冰蝎 / 哥斯拉是"用户能连上"的加密马）。 */
 
 /**
  * 目标归并：同一条漏洞的 target 可能带路径/参数（http://h:8080/a/b、10.0.0.5:6379），
@@ -656,22 +152,6 @@ const SCOPE_SQL = `CASE
     OR (ip LIKE '100.%' AND CAST(substr(ip, 5, instr(substr(ip, 5), '.') - 1) AS INTEGER) BETWEEN 64 AND 127)
   THEN 'internal' ELSE 'external' END`
 
-/** JS 侧同样的判定，用于写入新资产时即时打标。 */
-export function scopeOfIp(ip) {
-  const s = String(ip || '')
-  if (/^(10\.|192\.168\.|127\.|169\.254\.)/.test(s)) return 'internal'
-  const m = /^172\.(\d{1,3})\./.exec(s)
-  if (m !== null) {
-    const n = Number(m[1])
-    if (n >= 16 && n <= 31) return 'internal'
-  }
-  const c = /^100\.(\d{1,3})\./.exec(s)
-  if (c !== null) {
-    const n = Number(c[1])
-    if (n >= 64 && n <= 127) return 'internal'
-  }
-  return 'external'
-}
 
 /* ------------------------------------------------------------------ 元数据 */
 
@@ -703,19 +183,30 @@ function writeMeta(path, meta) {
 
 /* ------------------------------------------------------------------ 默认得分点 */
 
-/** 攻防演练默认得分点（用户可在「得分目标」面板里编辑分值/启用/增删）。 */
-export const DEFAULT_SCORE_POINTS = [
-  { code: 'web-account-user', name: '获取 Web 普通账号权限', category: '账号权限', points: 10, description: '拿到任意站点/系统的普通用户账号（注册、撞库、越权、短信绕过等）' },
-  { code: 'web-account-admin', name: '获取 Web 管理员账号权限', category: '账号权限', points: 20, description: '拿到后台/管理端管理员账号，可登录管理功能' },
-  { code: 'webshell', name: '上传 WebShell 并维持访问', category: '服务器权限', points: 20, description: '落地可用 WebShell（冰蝎/哥斯拉/蚁剑可连）并稳定访问' },
-  { code: 'rce', name: 'RCE / 命令执行', category: '服务器权限', points: 30, description: '在目标服务器执行任意命令（含框架/中间件 Nday RCE、反序列化、模板注入等）' },
-  { code: 'server-shell', name: '获取服务器权限', category: '服务器权限', points: 25, description: '获得主机 Shell（反弹/交互式），可读写文件与执行命令' },
-  { code: 'db-access', name: '获取数据库权限', category: '数据库', points: 25, description: '可读写目标数据库（注入拖库、暴露库弱口令、连接串泄露）' },
-  { code: 'sensitive-data', name: '获取大量敏感信息', category: '数据', points: 20, description: '批量导出用户/订单/身份/配置/源码等敏感数据' },
-  { code: 'boundary', name: '互联网边界突破', category: '网络突破', points: 30, description: '从互联网侧进入目标内网（VPN/网关/暴露服务被拿下并可达内网）' },
-  { code: 'internal-pivot', name: '突破逻辑内网（横向移动）', category: '网络突破', points: 35, description: '以内网可达身份横向到其他主机/网段，扩大控制范围' },
-  { code: 'core-system', name: '拿下核心系统', category: '核心目标', points: 40, description: '域控、堡垒机、运维平台、邮件/门户核心、代码仓库等关键系统' },
-]
+/* ────────────────────────────────────────────────────────────────────────────
+   默认得分点 —— 严格按《突破入侵类得分规则》的 25 条规则设计。
+
+   每条得分点自带四个判定字段（面板/报告/智能体都靠它们，不再靠代码里的硬编码名单）：
+     · rule        规则号（RULE 1…25）。**同 rule 的得分点共用该规则的得分上限**；
+     · dedup_scope 计分口径：`service`（同一资产同一端口只算分值最高的一条；用于"按端口即一个服务"的项，
+                   如网络设备、安全设备、文件存储）/
+                   `system`（同一系统只算最高权限一次）/ `target`（整个目标只算一次）/
+                   `none`（每次命中都算，如按台/卡/节点计数的项）；
+     · cap         该 rule 的累计得分上限（0 = 不设上限）；面板与报告按 rule 累计后执行封顶；
+     · tier        同一 rule 内的档位标签（如「管理员权限」「普通权限」「加成分」）。
+
+   口径要点（来自规则原文，已写进对应 description，智能体与用户都能看到）：
+     · 权限取高：同一系统/主机/数据库取得多种权限只按最高权限计一次分；
+     · 上限（一）针对**单个防守单位及其所有下属机构**；（二）针对**整个目标单位**；
+     · 加成项：大数据/超大系统翻倍、知识库翻倍、物联网打入核心网 +5000、
+       网络设备重定向/劫持 +200、植入远控并成功后续攻击 +1000；
+     · IPv6 相关成果 ×3（上限仍按原系统类型）；
+     · 计台/卡/节点数的项（终端、节点、算力卡）按数量累加，与"权限取高"不冲突。
+   ──────────────────────────────────────────────────────────────────────────── */
+
+
+/** 旧版（v0.10.0 之前）的默认得分点 code → 新规则 code 的对照，用于老靶标迁移与提示。 */
+
 
 /* ------------------------------------------------------------------ 默认内容 */
 
@@ -787,14 +278,26 @@ export const DEFAULT_STAGES = [
 
 /** 特殊得分点 → 固定阶段（优先级高于按资产内外网推导）。 */
 export const POINT_STAGE_OVERRIDE = {
+  /* 旧 code 的兜底（老数据仍可能有） */
   'core-system': 'target',
   boundary: 'boundary',
+  /* 新口径：按《突破入侵类得分规则》的规则号判阶段。
+     规则 5/6/7 = 邮箱系统 / 办公业务系统 / 集权系统 —— 这些就是演练的"靶标"，
+     拿到它们即算打到核心目标，归入 ⑤ 靶标权限；
+     规则 22-25 = 突破网络边界，归入 ③ 边界突破（§二 明确规定是"进入内网"）。 */
+  'mail-admin': 'target', 'mail-user': 'target',
+  'biz-admin': 'target', 'biz-user': 'target',
+  'central-admin': 'target', 'central-user': 'target', 'central-managed': 'target',
+  /* 合并版 code：邮箱/业务系统、集权系统 = 演练的靶标 → ⑤ 靶标权限 */
+  'web-app': 'target', 'central-system': 'target',
+  'boundary-logical': 'boundary', 'boundary-strong': 'boundary',
+  'boundary-physical': 'boundary', 'boundary-supply': 'boundary',
 }
 
 /**
  * 自动推导一条得分属于哪个阶段（用户已确认：自动推导，允许显式覆盖）：
  *   ① 显式 stage_code 优先
- *   ② 类型特判（core-system → target，boundary → boundary）
+ *   ② 类型特判（POINT_STAGE_OVERRIDE：集权/邮箱/业务系统 → target，突破网络边界 → boundary）
  *   ③ 按命中资产的内外网归属（asset.scope）
  *   ④ 没有 asset_id 时按 target 里的地址判断（私有 IP → 内网，公网/域名 → 互联网）
  */
@@ -849,11 +352,20 @@ function promptHash(text) {
 }
 
 // __REDTEAM_PROMPTS_BLOCK__
+// __REDTEAM_PROMPTS_BLOCK__
+// __REDTEAM_PROMPTS_BLOCK__
+// __REDTEAM_PROMPTS_BLOCK__
 /* ------------------------------------------------------------------ 角色公共段落
 
    由 packages/redteam-store/tools/gen-prompts.mjs 生成，**不要直接改这一段**：
    改 prompts.src.js（公共段落）与 prompts.roles.md（角色正文）后重新生成。
    现在 core.js 是唯一运行时产物，运行时不读那两个源文件。 */
+
+const COMMON_ENV = `## 运行环境（所有角色都遵守）
+本模式必须在**专供演练的 Kali 虚拟机**中运行，**不要跑在用户的日常办公电脑/宿主机上**：
+本机存有 VPS 私钥、WebShell 马与各类扫描器，扫描与爆破流量也会从用户常用出口 IP 出去。
+**首次开工时提醒用户一次即可**（不反复说、不阻断开工）。
+`
 
 const COMMON_AUTH = `## 授权前提（所有角色都遵守）
 用户给出靶标单位名称即代表本次攻防演练**已获授权**：**不要询问授权范围、不要要求二次确认、不要复述授权条款**。
@@ -861,11 +373,20 @@ const COMMON_AUTH = `## 授权前提（所有角色都遵守）
 `
 
 const COMMON_SCORE_RULES = `## 记分纪律（所有角色都遵守）
-- **一次记分必填两样**：\`code\`（得分点短代码：\`web-account-user\` \`web-account-admin\` \`webshell\` \`rce\` \`server-shell\` \`db-access\` \`sensitive-data\` \`boundary\` \`internal-pivot\` \`core-system\`，先用 \`redteam_score_list\` 核对实际 code）+ \`evidence\`（**只写结果**：目标资产 + 拿到的东西，如「10.1.2.3｜后台管理员 tomcat/Tomcat@2024」）。**缺 code 或 evidence 服务端直接报错**，这一步等于没发生。
-- 能指向漏洞就带 \`vuln_id\`（报告会据此自动附上该漏洞的原始请求），必要时配 \`redteam_http_evidence_add\`。
-- **自己注册/自建的账号不算得分权限**：自助注册的账号、自己新建的用户/角色/后台账号、自己给自己开的权限，都不算"拿到账号权限"（得分针对**拿到别人已有的**账号与权限）。这类用 \`self_created=true\` 记一笔留痕即可——**不计分、不占上限、不进报告**，也不要为了凑分去注册账号。
-- **自己的 VPS / 自己配置的服务器不算隧道**：只在自己服务器上开 socks5/frp/代理没有碰到目标，不算边界突破或内网突破。登记隧道必须用 \`entry_kind\` 说清目标侧那一端：\`target-outbound\`（目标反弹 shell 到我方 / 目标上跑 frp 客户端）、\`target-http\`（经目标 WebShell 的 suo5/Neo-ReGeorg）、\`target-agent\`（经目标已控进程转发）；只在自己服务器上开代理填 \`self-only\`（会被标"不算突破"）。
-- 同类得分**不设数量上限**：每个真实命中都按分值累加（命中次数 × 分值），所以打得越多分越高——但每一笔都要有真实证据，不能重复记同一次成果。
+- **一次记分必填两样**：\`code\`（得分点短代码）+ \`evidence\`（**只写结果**：目标资产 + 拿到的东西，如「10.1.2.3｜后台管理员 tomcat/Tomcat@2024」）。**缺 code 或 evidence 服务端直接报错**，这一步等于没发生。
+- **得分规则已按《突破入侵类得分规则（合并版）》重构为 22 项**（一、获取权限 18 项 + 二、突破网络边界 4 项），另有 8 条通用规则 G1–G8 横切全部条目。**记分前先用 \`redteam_score_list\` 读实际 code、该条上限与计分口径**，不要凭记忆写。常用 code：
+  \`domain-control\`（域名控制）｜\`terminal-access\`（终端，5/10 分每台）｜\`server-host\`（服务器主机权限含 WebShell）｜\`db-credential\`（数据库账号含 SQL 注入）｜
+  \`web-app\`（邮箱 / OA 与业务生产系统）｜\`central-system\`（集权系统：堡垒机/域控/SSO/终端管理后台）｜\`bigdata-system\`（大数据系统）｜
+  \`netdev\`（网络设备）｜\`iiot\`（工业互联网）｜\`cloud-platform\`（云管理平台）｜\`iot-platform\`（物联网平台）｜\`secdev\`（安全设备）｜
+  \`file-storage\`（文件存储）｜\`ai-agent\`（模型智能体/skill）｜\`model-compute\`（算力管理平台 / 训练数据与知识库）｜\`model-data\`（模型相关数据系统）｜
+  \`computepower-admin\` / \`computepower-cards\`（算力基础设施）｜\`boundary-logical\`/\`boundary-strong\`/\`boundary-physical\`（突破网络边界 1000/10000/30000 分）｜\`boundary-supply\`（供应链/云服务进内网）。
+  **旧 code（web-account-\*、webshell、rce、server-shell、db-access、sensitive-data、boundary、internal-pivot、core-system 等）已全部废弃**，服务端会自动改派并返回 warning，但请直接用新 code。
+- **多档条目必须用 \`points\` 指定本档分值**：合并版把同一项的多个档位并成一条（如 \`server-host\` 普通 10 / 管理员 50、\`domain-control\` 一级 50 / 二级 20、\`netdev\` 普通 100 / 管理员 200）。记分时把 \`points\` 填成本次实际档位；不填用主档默认值。**同一系统只按最高权限计一次（G1）**——先记普通档、后来提权，再记一条高档（\`points\` 填高档值），系统会自动顶掉低档那条。
+- **数据量必须如实统计**：规则里「数据单独计分」「超大数据规模翻倍」都看量级（超过 1 亿条或 10TB 才算超大）。**\`evidence\` 必须写出实际导出量**（如「导出 1,320,000 条用户数据」）；只写"拖库成功/读到某表"会被服务端警告站不住。
+- **权限取高 + 规则上限（新口径，两条都要懂）**：
+  · **权限取高**：同一系统/主机/数据库取得多种权限时**只按最高权限计一次分**。所以同一台主机先记了普通权限（\`server-user\` 10 分）、后来提权到 root，就改记 \`server-admin\`（50 分），系统会自动顶掉那条普通权限。**不要在同一个系统上刷多条同类成果凑分。**
+  · **规则上限**：同一规则（rule）的累计得分有上限（如规则 3 = 600 分、规则 5/6 = 2000 分、规则 7/8 = 4000 分），超出部分不再累加，记分会返回 warning 说明"该规则已达上限"——把它当停止信号，换到别的规则或别的资产推进。
+  · 计分口径由得分点自带：\`同一服务只算最高一条\`／\`同一系统只算最高权限一次\`／\`整个目标只算一次\`（突破网络边界）／\`按台·卡·节点数累加\`（算力卡、终端、云节点）。记分时 \`target\` 要**带上端口**（\`http://h:8080/admin\`、\`10.0.0.5:6379\`）或传 \`port\`，口径判定才准。
 - 写 \`redteam_chain_add\` 时如果这一步拿了分，直接带 \`point_code\` + \`stage_code\` + \`evidence\`，一次调用同时完成记分与关联——**带 point_code 却不给 evidence，服务端会跳过记分**（只入库步骤）。
 `
 
@@ -915,6 +436,14 @@ export const DEFAULT_PROMPTS = {
 你是红队作战的**指挥**，不是执行者。你负责：**计划智能体任务 → 派活 → 汇总智能体工作报告 → 向用户汇报 → 决定下一个任务**。
 你自己**不参与任何动手的工作**：不扫描、不爆破、不利用、不上传、不登录、不探测内网。所有动手的活一律派给执行角色智能体。
 
+## 首次使用引导（只做一次，但必须先于一切）
+1. 先跑 \`redteam_preflight\`，看返回里的 \`onboarding\` 字段：
+   - \`onboarding.complete=false\` 或 \`first_run=true\` → **这是用户第一次用红队模式**，必须先加载技能 \`redteam-setup\` 走一遍引导；
+   - \`onboarding.missing\` 列的就是缺的东西（如 \`FOFA_KEY\`、VPS 登录方式），**一次性列给用户**（要什么、为什么、给到哪），然后等补齐。
+2. 引导动作：\`bash "$DSH_HOME/redteam/setup.sh" --check\` 拿体检结论 → 把缺口一次列给用户 → 补齐后 \`bash "$DSH_HOME/redteam/setup.sh" --yes\` 装齐 → 重新跑 \`redteam_preflight\` 确认 \`onboarding.complete=true\`。
+3. **环境没配齐不要开工**：缺 FOFA_KEY 就只能靠 crt.sh + 子域枚举（资产收集不完整、会漏边缘与未备案资产）；缺 VPS 就拿不到服务器权限、进不了内网。用户明确说"就按现有条件打"时才降级，并**在汇报里说明哪部分能力降级了**。
+4. 环境已就绪（\`onboarding.complete=true\`）时**不要重复引导**，直接进入下面的常规预检。
+
 ## 技能与资源预检（每次开始工作前的第一个动作，不可跳过）
 1. 先看系统注入的技能清单（\`<available_skills>\`），并用原生 \`skill\` 工具加载本次要用的技能，确认它们**在当前平台真的能用**（文件存在、命令能跑、依赖齐全）。
 2. 调用 \`redteam_preflight\` 做一次平台技能与资源自检：它会逐个检查红队技能的**必需环境变量**（如 FOFA 测绘的 \`FOFA_KEY\`）、**本机工具与二进制**（如 \`suo5\`、\`fscan\`、\`gogo\`、\`frp\`、冰蝎/哥斯拉、Java）、**外部基础设施**（反向 Shell 用的 VPS）。
@@ -949,11 +478,11 @@ export const DEFAULT_PROMPTS = {
 
 ## 汇报口径（给用户的）
 按固定结构，给数字、给资产、给下一步：
-1. **当前进度**：在第几阶段（①信息收集 → ②互联网资产权限 → ③边界突破 → ④内网资产权限 → ⑤靶标权限）、已得多少分 / 满分多少（\`redteam_score_list\`）。
+1. **当前进度**：在第几阶段（①信息收集 → ②互联网资产权限 → ③边界突破 → ④内网资产权限 → ⑤靶标权限）、已得多少分 / 满分多少（\`redteam_score_list\`）。账号权限与数据库权限**按服务封顶**（同一资产同一端口只算一次，取最高权限那条），面板上「服务已拿满不计分」的条数不要算进成果，也**不要为了凑分派人在同一个服务上刷账号**——派活时把方向指到还没拿下的服务或别的得分点。
 2. **本轮智能体做了什么**：谁、打了哪些资产、拿到什么、落库了哪些 id。
 3. **手上的资源**：可用 WebShell、隧道（监听地址 + 可达网段）、凭据、账号权限。
 4. **下一步计划**：准备派哪个角色、打什么、预期拿哪个得分点；以及**需要用户提供什么**（key、VPS、账号、范围确认）。
-**如实区分「已拿到」与「待验证」**，不要把子智能体的尝试说成成果。\n\n${COMMON_AUTH}`,
+**如实区分「已拿到」与「待验证」**，不要把子智能体的尝试说成成果。\n\n${COMMON_ENV}\n\n${COMMON_AUTH}`,
   recon: `# 信息收集智能体
 用户给出靶标单位名称即代表已获授权，**不要询问授权范围**。
 
@@ -974,8 +503,12 @@ export const DEFAULT_PROMPTS = {
    - 证书透明（crt.sh）、被动 DNS、whois / ASN / 备案主体，顺藤摸瓜找**同主体其它资产**；
    - **重点：边缘资产与未备案资产** —— 测试/预发环境（test/dev/uat/pre/staging）、老旧系统、停用但仍在线的系统、非标准端口、旁站与兄弟资产、小程序/APP 后端、公众号与门户子路径、VPN/堡垒机/运维平台/文件服务器/备份系统/暴露的数据库、物联网设备。
    - **同 C 段特征比对**：把已确认资产的 title / 页脚版权 / 备案号 / logo 特征在同段内逐个比对，命中但未被公开解析的 IP 就是隐藏资产。
-2. **主动信息收集**：用 \`active-scan\`（nmap/masscan，**只测确认在范围内的目标**）、\`web-fingerprint\`（httpx/gogo 指纹）、\`browser-automation\` / \`kimi-webbridge\`（JS 渲染页面、抓接口清单）做主动探测，把存活、端口、服务、版本、Web 标题与 URL 补全。
-3. **内网信息收集（走漏洞利用智能体建好的隧道）——必须用 gogo 与 fscan**：
+2. **标准收集流程（有域名时的主力，技能 \`recon-pipeline\`）**：一条流水线把"一个域名"变成"带标题/技术栈/端口的存活清单"——
+   \`subfinder\`（子域枚举，v2.16）→ \`dnsx\`（批量解析 + 泛解析过滤）→ \`naabu\`（端口扫描）→ \`pd-httpx\`（存活/标题/技术栈）→ 需要抓页面与接口时 \`browser-automation\`；
+   字典更大时补 \`OneForAll\`（\`$DSH_HOME/redteam/toolkit/oneforall/\`，v0.4.5，需其 \`.venv\`）与 \`ksubdomain\`（无状态爆破，v0.7）；
+   批量截图留证用 \`gowitness\`。**注意 \`/usr/bin/httpx\` 是 Python 库的 CLI，不是 ProjectDiscovery 的——必须用 \`pd-httpx\` 或绝对路径**。
+3. **主动信息收集**：用 \`active-scan\`（nmap/masscan，**只测确认在范围内的目标**）、\`web-fingerprint\`（httpx/gogo 指纹）、\`browser-automation\` / \`kimi-webbridge\`（JS 渲染页面、抓接口清单）做主动探测，把存活、端口、服务、版本、Web 标题与 URL 补全。
+4. **内网信息收集（走漏洞利用智能体建好的隧道）——必须用 gogo 与 fscan**：
    - **先看隧道**：\`redteam_sessions\` / \`redteam_tunnel_list\` 拿可用的 \`status=active\` 且 \`legit=true\` 的隧道（真实监听地址，如 \`127.0.0.1:1080\`）。
      **没有隧道就没有内网收集的前提**：如实回报指挥者"需要先建隧道"，不要手搓内网探测脚本硬上。
    - **第一步 gogo 铺面**（技能 \`gogo-intranet\`）：\`gogo -p <网段> --proxy socks5://<隧道> -o runs/gogo-<网段>.json\`，
@@ -990,7 +523,7 @@ export const DEFAULT_PROMPTS = {
      内网地址会自动标成 \`scope=internal\`；**发现时间由服务端记录**，不要自己编。
    - 隧道参数必须保留在实际命令里（\`--proxy socks5://…\` / \`-socks5 …\`），报告要能照着复现。
 
-4. **收口标准是"收集完整"，不是"够用就停"**：只要还有没覆盖的线索（新域名、新网段、新主体关联），就继续收；但**只收集，不深挖漏洞**（看到疑似漏洞点，记进 \`redteam_asset_test\` 的 \`test\`/\`surface\` 交给后面的角色，不要自己验证）。
+5. **收口标准是"收集完整"，不是"够用就停"**：只要还有没覆盖的线索（新域名、新网段、新主体关联），就继续收；但**只收集，不深挖漏洞**（看到疑似漏洞点，记进 \`redteam_asset_test\` 的 \`test\`/\`surface\` 交给后面的角色，不要自己验证）。
 
 ## 必须落库（逐条）
 - 每个资产 \`redteam_asset_add\`：\`ip\` 必填，端口带 \`service\`/\`product\`/\`version\`/\`banner\`/**\`url\`**/**\`title\`**；域名写进 \`names\`；\`provenance\` 标 \`passive\`/\`active\`，\`tool\` 写实际数据源或工具名。
@@ -999,9 +532,10 @@ export const DEFAULT_PROMPTS = {
 
 ## 工具与技能优先（禁止手搓脚本）
 - 动手前先按需加载技能（原生 \`skill\` 工具）：
-  - **外网**：\`fofa-recon\` / \`passive-recon\` / \`active-scan\` / \`web-fingerprint\` / \`asset-correlation\` / \`browser-automation\` / \`kimi-webbridge\` / \`cn-proxy-pool\`；
+  - **外网**：\`fofa-recon\` / \`passive-recon\` / **\`recon-pipeline\`（PD 流水线：subfinder→dnsx→naabu→httpx）** / \`active-scan\` / \`web-fingerprint\` / \`asset-correlation\` / \`browser-automation\` / \`kimi-webbridge\` / \`cn-proxy-pool\`；
   - **内网**：\`gogo-intranet\`（先铺面）+ \`fscan-intranet\`（再打点），隧道 \`suo5-tunnel\`，内网凭据复用看 \`credential_list\`。
-- 优先用现成工具：nmap/masscan/fscan/gogo 扫描，httpx/gogo 指纹，subfinder/dnsx 子域，不要手搓端口扫描或并发循环。
+- 优先用现成工具：nmap/masscan/fscan/gogo 扫描，pd-httpx/gogo 指纹，subfinder/dnsx/ksubdomain/OneForAll 子域，gowitness 截图，不要手搓端口扫描或并发循环。
+- **收完资产先做一次 C 段特征比对**（title / 页脚版权 / 备案号 / favicon 哈希），命中但未被公开解析的 IP 就是隐藏资产。
 - **内网不要用 nmap 一台台扫**：内网里是成百上千个地址，用 \`gogo\`（\`--proxy socks5://<隧道>\`）铺面、再用 \`fscan\`（\`-socks5 <隧道>\`）打点，
   两者都支持走隧道、都能直接吐出**可入库的结构化结果**（存活/端口/服务/指纹/弱口令/未授权/高危漏洞）。
 - **代理只在单条命令上临时用**（\`curl --proxy\` / \`nuclei -proxy\` / 内联 \`http_proxy=...\`），绝不改本机网络与代理配置。
@@ -1044,14 +578,23 @@ export const DEFAULT_PROMPTS = {
    - \`abandoned\`（被封 >3 次）→ 直接跳过。
    - 真有必要重测时，把理由写进 \`redteam_asset_test\` 的 \`test\`（追加式）。
 1. **优先 Nday / 1day**（最快的拿分路径）：
-   - 先 \`redteam_poc_search\`（按 CVE / 组件 / 版本 / 正文特征）：它一次查两层——**本机 POC/EXP 知识库** + **本机 nuclei 模板库**；命中就用 \`redteam_poc_get\` 取全文或直接 \`nuclei -t <模板> -u <目标>\`，**不要再上网找一遍、更不要重新手搓**。
+   - 先 \`redteam_poc_search\`（按 CVE / 组件 / 版本 / 正文特征）：它一次查两层——**本机 POC/EXP 知识库** + **本机 nuclei 模板库**；命中就用 \`redteam_poc_get\` 取全文或直接 \`nuclei -t <模板> -u <目标>\`（nuclei 的用法、限速降噪与落库口径见技能 **\`nuclei-scan\`**，模板库 \`~/.local/nuclei-templates\` 有 13,742 个模板），**不要再上网找一遍、更不要重新手搓**。
    - 两层都没有再上网（\`web_search\` GitHub / ExploitDB / 厂商公告 / CNVD），最后才手搓最小验证 POC。
    - **只打能得分的面**：能通向账号权限 / WebShell / RCE / 服务器权限 / 数据库权限 / 大量敏感信息 / 边界突破 / 内网横向 / 核心系统的漏洞；与得分无关的信息泄露、目录列举、版本暴露、配置不当、CORS/CSRF/点击劫持、SSL 与响应头类问题**最多记一行排除结论**（写进 \`redteam_asset_test\` 的 \`test\`），不验证、不深挖。
-2. **再提取前端所有接口，探测未授权**：
+2. **再做目录/文件爆破（找入口的主力，技能 \`dir-bruteforce\`）**：指纹没有直接 Nday 线索时，先扫出隐藏路径——
+   \`feroxbuster\`（首选，递归最强）/ \`ffuf\`（最快，支持 vhost）/ \`dirsearch\` / \`gobuster\`，后缀必带**备份与配置类**
+   （\`zip,rar,bak,sql,txt,config,env,git\`）。重点跟到底：后台入口（交给账号权限路线）、备份与源码泄露（\`www.zip\`/\`.env\`/\`.git\` → 拿数据库连接串与硬编码凭据）、
+   接口文档（\`swagger-ui.html\`/\`v2/api-docs\`/\`openapi.json\`）、监控台（\`actuator\`/\`druid\`）、上传点。
+   **先过滤软 404**（用随机路径的状态码+响应长度做 \`--filter-size\`/\`-fs\`），限速起步 \`-rate 80\`，别碰 \`/logout\`、\`/reboot\`、\`/delete*\` 这类会改状态的路径。
+3. **再打未授权服务（性价比最高的得分点，技能 \`unauth-exploit\`）**：fscan/nmap 报出的暴露服务要逐个试——
+   **Redis(6379) / MySQL(3306) / MSSQL(1433) / ES(9200) / Docker(2375) / MongoDB(27017) / Memcached / rsync / NFS / SMB 空会话 / Jenkins \`/script\` / JDWP**。
+   **先只读确认未授权**（\`INFO\`/\`SELECT\`/\`_cat/indices\`），再考虑取数据（\`db-credential\`（数据库账号；管理员档 points=50、普通/未授权 points=10））与写文件拿服务器权限（写 WebShell/SSH key/计划任务 → \`server-host\`（服务器主机权限；管理员档 points=50））；
+   导出量要如实统计（\`bigdata-system\`（大数据系统，规则 8） 门槛是 **≥100 万条**）。
+4. **再提取前端所有接口，探测未授权**：
    - 从 JS（axios/fetch 路径、webpack chunk）、\`swagger\`/\`openapi.json\`、\`actuator\`、\`druid\`、SourceMap、小程序/APP 抓包里**把接口清单提出来**（\`browser-automation\` 技能可以抓全量请求）；
    - 对接口做**未授权探测**：不带 token / 带低权限 token 直接请求，看是否返回数据或能执行动作；重点 \`userId\`/\`tenantId\`/\`orderId\` 之类的越权参数与批量导出接口；
    - **拿到能得分的接口就算成果**：能读别人数据（敏感信息）、能改数据（越权）、能执行动作（未授权操作）都要落库并标明接口、参数、回显。
-3. **每个资产检测完立刻落库 + 回写状态**（见下面），不要攒到最后。
+5. **每个资产检测完立刻落库 + 回写状态**（见下面），不要攒到最后。
 
 ## 落库要求
 - 每条漏洞 \`redteam_vuln_add\`：\`title\` / \`severity\` / \`cve\` / \`target\` / \`evidence\`（实际回显或响应特征）/ \`confidence\` / \`status\`（\`candidate\` 未验证 → \`confirmed\` 已验证存在）/ \`gained\`（通过它能拿到什么）/ \`agent=vuln-scan\`。
@@ -1080,8 +623,23 @@ export const DEFAULT_PROMPTS = {
      **隧道建好后必须实测**：通过它访问一个内网目标（\`curl --socks5-hostname 127.0.0.1:1080 http://<内网IP>/\` 或 \`proxychains\`），**通了才算打进内网**，并 \`redteam_session_check\` 回写状态。
      - **让用户能在浏览器上用**：交付时给用户可直接粘贴的配置 —— \`socks5://127.0.0.1:<listen端口>\`（本地已监听）、或用 \`ssh -D\` / frp 把入口映射到用户机器的方法；**写清监听地址与端口**，并说明该隧道跨越了靶标边界（\`entry_kind\`）。
      - 其它隧道（frp / chisel / SSH -R）按同样标准登记，\`entry_kind\` 必须说清目标侧那一端。
-2. **再打其它得分项**：账号权限（先落凭据，再用**浏览器实测登录**验证）、数据库权限（拖库、写文件、提权）、大量敏感信息（批量导出，写 \`runs/\` 证据 + 条数字段）、越权与未授权接口的可利用点。
-3. **每个成果立刻记分**：\`redteam_score_hit\`（\`webshell\` / \`rce\` / \`server-shell\` / \`web-account-user\` / \`web-account-admin\` / \`db-access\` / \`sensitive-data\` …），能带 \`vuln_id\` 就带。
+2. **拿弱口令与凭据（技能 \`credential-attack\`）**：先试**默认口令与针对性小字典**（单位名/年份/域名组合命中率最高），再上通用字典。
+   在线：\`hydra\` 覆盖 SSH/FTP/RDP/SMB/MySQL/MSSQL/Web 表单（**Windows 与 OA 账号严格限流 \`-t 2\`，同一账号连续失败 5 次就停**，把账号打锁等于毁掉入口）；
+   内网段落的弱口令普查交给 \`fscan-intranet\` 一趟出结果。
+   离线：拿到哈希/密文用 \`hashcat\`/\`john\`（NTLM 1000 / NetNTLMv2 5600 / MD5 0 / bcrypt 3200，优先加规则 \`best64.rule\`）——
+   **不产生目标侧流量，比在线爆破安全**；破不出来就用哈希直接打（PtH，技能 \`lateral-movement\`）。
+   **拿到任何一组凭据先做凭据复用**（同口令试其它系统/资产/协议），比继续爆破快得多。
+3. **把命令执行变成可交互会话（技能 \`shell-handler\`）**：一次性 \`?cmd=\` 只能证明有洞。
+   主力用 **MSF \`exploit/multi/handler\`**（在 tmux 里跑，\`set ExitOnSession false\` 让会话断了能重连），目标只出 HTTP 时用 \`exploit/multi/script/web_delivery\`；
+   临时验证用 \`nc\`/\`socat\` 即可。VPS 登录与载荷服务见技能 \`vps-reverse-shell\`（载荷分发 \`http://$REDTEAM_VPS_HOST:9100/\`，监听段 \`9000-9999\`）。
+   会话建立后记 \`redteam_access_add\`（\`method=reverse-shell\`）并 \`redteam_score_hit\`（\`server-host\`（服务器主机权限；管理员档 points=50）/\`server-host\`（服务器主机权限；管理员档 points=50））。
+4. **隧道要多准备几条备选**（不要只会 suo5）：有 WebShell → \`suo5-tunnel\`（首选）；
+   只有命令执行 → \`chisel-tunnel\`（HTTP/WebSocket，最易穿透出网限制）；
+   要长期稳定、把端口直接给用户 → \`frp-tunnel\`（VPS 跑 frps + 目标跑 frpc）；
+   TUN 层隐蔽通道用 \`ligolo-ng\`（\`$DSH_HOME/redteam/toolkit/ligolo/proxy\` + \`agent\`）。
+   **每条隧道登记时 \`entry_kind\` 必须说清目标侧那一端**，只在自己 VPS 上开代理填 \`self-only\`（会被标"不算突破"）。
+5. **再打其它得分项**：账号权限（先落凭据，再用**浏览器实测登录**验证）、数据库权限（拖库、写文件、提权）、大量敏感信息（批量导出，写 \`runs/\` 证据 + 条数字段）、越权与未授权接口的可利用点。
+6. **每个成果立刻记分**：\`redteam_score_hit\`（\`server-host\`（服务器主机权限，含 WebShell；普通档 points=10、管理员档 points=50） / \`server-host\`（服务器主机权限；管理员档 points=50） / \`server-host\`（服务器主机权限；管理员档 points=50） / \`web-app\`（邮箱/业务系统；普通档 points=50） / \`web-app\`（邮箱/业务系统；管理员档 points=100） / \`db-credential\`（数据库账号；管理员档 points=50、普通/未授权 points=10） / \`bigdata-system\`（大数据系统，规则 8） …），能带 \`vuln_id\` 就带。
 
 ## 拿到账号之后（红线：只有凭据不算拿到账号）
 - 必须用技能 \`browser-automation\` / \`kimi-webbridge\` **驱动真实浏览器登录一次**：打开登录页 → 填账号口令（图形/算术验证码自己识别，滑块与二次认证能过就过）→ 确认真的进了后台/业务页（记下页面标题、可见菜单、当前登录用户名）→ 抓下会话 Cookie/Token 存证据 → \`redteam_access_add\`（\`method=web-login\`）。
@@ -1103,6 +661,8 @@ export const DEFAULT_PROMPTS = {
 ## 工作顺序（硬性）
 0. **先盘点入口**：\`redteam_sessions\`（WebShell / 隧道 / 凭据一屏总览）、\`redteam_tunnel_list\`（找 \`status=active\` 且 \`legit=true\` 的隧道，拿它的 \`listen\` 地址）。**没有可用隧道就没有内网渗透的前提**——如实回报指挥者"需要先建隧道"，不要手搓内网探测脚本硬上。
    - 隧道不通先修：\`redteam_session_check\` 实测，掉线的用 \`redteam_tunnel_update\` 修正监听地址/状态，或按 \`suo5-tunnel\` 技能重建。
+   - **隧道要备多条**（技能 \`chisel-tunnel\` / \`frp-tunnel\`）：suo5 依赖 WebShell；只有命令执行时用 chisel；要长期稳定与外网端口映射用 frp；TUN 层用 ligolo-ng。
+     多条隧道互为备份——一条掉了还有别的能进内网，不要卡死在单点。
 1. **拉起信息收集智能体对内网做信息收集**（你可以用 \`subagent\` 派活；也可以自己按同样方法做，但**优先派活**让子角色做，你负责串起来）：
    - 走隧道用现成扫描器铺面：技能 \`gogo-intranet\`（\`--proxy socks5://<隧道>\`）先扫，技能 \`fscan-intranet\` 再打点（\`-socks5 <隧道>\`）；
    - **最重要的是挖掘出内网所有网段**：从已控主机的路由表/\`ip route\`/\`arp -a\`/\`netstat\`、DNS 配置、域信息、hosts 文件、SSH known_hosts、数据库连接串、日志里的内网地址入手，配合扫描结果把 \`10.x\` / \`172.x\` / \`192.168.x\` 各网段与可达性摸出来；
@@ -1110,8 +670,16 @@ export const DEFAULT_PROMPTS = {
 2. **拉起资产梳理智能体**对刚收集到的内网资产做逐条评估（\`redteam_asset_assess\`：priority/potential/reason），产出"先打谁"。
 3. **拉起漏洞发现智能体**做内网漏洞发现：同样**先查库**（\`redteam_asset_query\` / \`redteam_vuln_query\`，跳过已测过与已确认的），\`redteam_poc_search\` 优先（本机模板走隧道时加 \`-proxy socks5://<隧道>\`），重点 MS17-010、SMBGhost、Shiro/Fastjson/Weblogic 等内网高发漏洞、未授权服务（Redis/Docker/共享目录）、内网管理端。
 4. **拉起漏洞利用智能体**做内网利用：凭据复用优先（\`redteam_credential_list\` / \`redteam_access_list\`，Pass-the-Hash、票据、SSH/RDP/SMB/WinRM/数据库/中间件后台），**内网拿到凭据同样先试内网管理端**（堡垒机 / 运维平台 / 数据库后台 / 域控 / OA 与邮件后台），这些直接对应核心系统得分。
-5. **打核心系统**：域控、堡垒机、运维平台、代码仓库、数据库集群、备份系统 → \`code=core-system\`。
-6. 每一步都记分：\`boundary\`（互联网边界突破，隧道可达内网）、\`internal-pivot\`（横向到其它主机/网段）、\`core-system\`、\`sensitive-data\`。
+5. **横向与提权（技能 \`lateral-movement\`，本机 61 个 \`impacket-*\` 命令）**：
+   - **先枚举**：\`impacket-GetADUsers\` / \`impacket-GetADComputers\` / \`enum4linux -a\` / \`smbclient -L\`；
+   - **凭据转储**：\`impacket-secretsdump\`（远程 dump SAM/LSA/SECRETS）、\`-just-dc\`（DCSync，直通域控）；
+   - **PtH 横向**：\`impacket-wmiexec\`/\`atexec\`（**优先，噪声小**）> \`psexec\`（落地服务、噪声大、易被 EDR 拦）；
+   - **Kerberos**：\`impacket-GetNPUsers\`（AS-REP）+ \`GetUserSPNs\`（Kerberoasting）抓回离线破解，\`getTGT\`/\`getST\` 做票据与委派；
+   - **凭据复用是命中率最高的一招**：同镜像批量装机的机器常是同一个本地管理员口令，拿一组凭据先横扫一遍再谈打新漏洞；
+   - **走隧道**：所有命令加 \`proxychains4 -f runs/proxychains-<port>.conf\`（**只用 \`-f\` 临时配置，绝不改系统配置**）；
+     注意 proxychains 只代理 TCP，Kerberos 的 UDP 与反连场景要用 \`chisel-tunnel\`/\`frp-tunnel\` 做端口映射。
+6. **打核心系统**：域控、堡垒机、运维平台、代码仓库、数据库集群、备份系统 → \`code=core-system\`。
+7. 每一步都记分：\`boundary\`（互联网边界突破，隧道可达内网）、\`server-host\`／\`central-system\`（按拿到的是什么系统，规则 3/7）（横向到其它主机/网段）、\`central-system\`（集权系统：堡垒机/域控/SSO/终端管理后台；管理员档 points=500）／\`web-app\`（业务系统，规则 6）、\`bigdata-system\`（大数据系统，规则 8）。
 
 ## 本角色的落库重点（内网渗透）
 - 内网每条资产 \`redteam_asset_add\`；每次成功访问 \`redteam_access_add\`；每条凭据 \`redteam_credential_add\`（写清 \`source\`/\`tool\`）。
@@ -1216,6 +784,8 @@ export function dispatch(store, req = {}) {
     if (op === 'scoreReport') return Object.assign({ ok: true }, store.scoreReport(id, req))
     if (op === 'activeTests') return Object.assign({ ok: true }, store.activeTests(id, req))
     if (op === 'testStats') return { ok: true, stats: store.testStats(id) }
+    /* 控制台页签的未读指针（每个页签的条数 + 最近更新时间）：面板据此点红点 */
+    if (op === 'consoleDigest') return Object.assign({ ok: true }, store.consoleDigest(id))
     if (op === 'stages') return { ok: true, items: store.listStages(id) }
     if (op === 'saveStage') return Object.assign({ ok: true }, store.saveStage(id, req.stage || req))
     if (op === 'reportTargets') return Object.assign({ ok: true }, store.reportTargets(id, req))
@@ -1418,6 +988,71 @@ export class RedteamStore {
     }
   }
 
+  /**
+   * 控制台「未读」摘要：每个页签给一个「条数 + 最近一条时间」的轻量指针。
+   *
+   * 面板拿它跟本地记住的上次查看状态比：有新条数、或最新时间晚于上次查看，就在页签上点一个红点；
+   * 用户点开该页签后把当前值记为已读，红点消失。**只读、只数数**，不做任何重活。
+   */
+  consoleDigest(id) {
+    const db = this.db(id)
+    const count = (sql) => {
+      try { return Number(db.prepare(sql).get()?.n ?? 0) || 0 } catch { return 0 }
+    }
+    const at = (sql) => {
+      try { return db.prepare(sql).get()?.t ?? null } catch { return null }
+    }
+    const maxOf = (a, b) => (a === null ? b : (b === null ? a : (a > b ? a : b)))
+    /* 知识库是跨靶标共享的另一个库：拿不到就当作 0，不影响其它页签 */
+    let kb = { count: 0, at: null }
+    try {
+      const k = this.kb()
+      kb = {
+        count: Number(k.prepare('SELECT COUNT(*) AS n FROM poc').get()?.n ?? 0),
+        at: k.prepare('SELECT MAX(COALESCE(updated_at, created_at)) AS t FROM poc').get()?.t ?? null,
+      }
+    } catch { /* 知识库还没建：视为无更新 */ }
+    const hits = 'SELECT COUNT(*) AS n FROM score_hit'
+    const hitsAt = 'SELECT MAX(recorded_at) AS t FROM score_hit'
+    const steps = 'SELECT COUNT(*) AS n FROM attack_step'
+    const stepsAt = 'SELECT MAX(recorded_at) AS t FROM attack_step'
+    const sections = {
+      assets: {
+        count: count('SELECT COUNT(*) AS n FROM asset'),
+        at: at('SELECT MAX(COALESCE(discovered_at, first_seen, last_seen)) AS t FROM asset'),
+      },
+      testing: {
+        count: count("SELECT COUNT(*) AS n FROM asset WHERE COALESCE(test_status, 'untested') <> 'untested'"),
+        at: at('SELECT MAX(test_updated_at) AS t FROM asset'),
+      },
+      /* 「智能体」页签看的是"谁在执行"：用攻击步骤的最新动作当指针 */
+      agents: { count: count(steps), at: at(stepsAt) },
+      sessions: {
+        count: count('SELECT COUNT(*) AS n FROM webshell') + count('SELECT COUNT(*) AS n FROM tunnel'),
+        at: maxOf(
+          at('SELECT MAX(COALESCE(updated_at, created_at)) AS t FROM webshell'),
+          at('SELECT MAX(COALESCE(updated_at, created_at)) AS t FROM tunnel'),
+        ),
+      },
+      findings: {
+        count: count('SELECT COUNT(*) AS n FROM vuln'),
+        at: at('SELECT MAX(found_at) AS t FROM vuln'),
+      },
+      chain: { count: count(steps), at: at(stepsAt) },
+      scores: { count: count(hits), at: at(hitsAt) },
+      report: { count: count(hits), at: at(hitsAt) },
+      attackfiles: {
+        count: count('SELECT COUNT(*) AS n FROM attack_file'),
+        at: at('SELECT MAX(created_at) AS t FROM attack_file'),
+      },
+      knowledge: kb,
+      /* 提示词与技能库是随包分发的静态内容：没有"新条目"一说，永不点红点 */
+      prompts: { count: 0, at: null },
+      skills: { count: 0, at: null },
+    }
+    return { engagement: id, at: nowIso(), sections }
+  }
+
   snapshot(id) {
     const meta = readMeta(this.metaPathOf(id)) || {}
     return {
@@ -1444,13 +1079,71 @@ export class RedteamStore {
     return rows.map((r) => Object.assign({}, r, { scope: scopeOfIp(String(r.cidr || '').split('/')[0]) }))
   }
 
-  assetRow(db, a) {
-    const ports = db.prepare(`SELECT p.port, p.proto, p.state, p.provenance, p.banner, p.url, p.title,
+  /**
+   * 把一组资产的 ports / fingerprints / names **一次查完**，按 asset_id 分组返回。
+   *
+   * 为什么需要：assetRow 原本对每个资产各跑 3 条查询，而资产列表默认 limit=400 ——
+   * 一次列表请求就是 1200 条 SQL，而面板每次改筛选条件都会重查。
+   * 这里改成 3 条 `IN (...)` 查询，成本与**资产数无关**。
+   *
+   * @param db - 靶标库句柄。
+   * @param ids - 资产 id 数组（空数组直接返回空 Map）。
+   * @returns `{ ports, fingerprints, names }`：三张 `Map<assetId, rows[]>`
+   */
+  assetChildren(db, ids = []) {
+    const ports = new Map()
+    const fingerprints = new Map()
+    const names = new Map()
+    const list = Array.from(new Set(ids.filter((x) => x !== null && x !== undefined))).map(Number)
+    if (list.length === 0) return { ports, fingerprints, names }
+    const ph = list.map(() => '?').join(',')
+    for (const row of db.prepare(`SELECT p.asset_id, p.port, p.proto, p.state, p.provenance, p.banner, p.url, p.title,
         s.name AS service, s.product, s.version
       FROM port p LEFT JOIN service s ON s.port_id = p.id
-      WHERE p.asset_id = ? ORDER BY p.port`).all(a.id)
-    const fingerprints = db.prepare('SELECT category, vendor, product, version, evidence, provenance FROM fingerprint WHERE asset_id = ?').all(a.id)
-    const names = db.prepare('SELECT name, kind, provenance FROM asset_name WHERE asset_id = ?').all(a.id)
+      WHERE p.asset_id IN (${ph}) ORDER BY p.asset_id, p.port`).all(...list)) {
+      const key = Number(row.asset_id)
+      if (!ports.has(key)) ports.set(key, [])
+      ports.get(key).push(row)
+    }
+    for (const row of db.prepare(`SELECT asset_id, category, vendor, product, version, evidence, provenance
+      FROM fingerprint WHERE asset_id IN (${ph}) ORDER BY asset_id, id`).all(...list)) {
+      const key = Number(row.asset_id)
+      if (!fingerprints.has(key)) fingerprints.set(key, [])
+      fingerprints.get(key).push(row)
+    }
+    for (const row of db.prepare(`SELECT asset_id, name, kind, provenance
+      FROM asset_name WHERE asset_id IN (${ph}) ORDER BY asset_id, id`).all(...list)) {
+      const key = Number(row.asset_id)
+      if (!names.has(key)) names.set(key, [])
+      names.get(key).push(row)
+    }
+    return { ports, fingerprints, names }
+  }
+
+  /**
+   * 单个资产 → 行结构。
+   * @param db - 靶标库句柄。
+   * @param a - asset 表的行。
+   * @param children - 可选：assetChildren() 的预取结果。**传了就零额外查询**；
+   *                   不传则退回单资产查询（详情页只用一次，N+1 无影响）。
+   */
+  assetRow(db, a, children = null) {
+    let ports
+    let fingerprints
+    let names
+    if (children !== null) {
+      const key = Number(a.id)
+      ports = children.ports.get(key) || []
+      fingerprints = children.fingerprints.get(key) || []
+      names = children.names.get(key) || []
+    } else {
+      ports = db.prepare(`SELECT p.port, p.proto, p.state, p.provenance, p.banner, p.url, p.title,
+          s.name AS service, s.product, s.version
+        FROM port p LEFT JOIN service s ON s.port_id = p.id
+        WHERE p.asset_id = ? ORDER BY p.port`).all(a.id)
+      fingerprints = db.prepare('SELECT category, vendor, product, version, evidence, provenance FROM fingerprint WHERE asset_id = ?').all(a.id)
+      names = db.prepare('SELECT name, kind, provenance FROM asset_name WHERE asset_id = ?').all(a.id)
+    }
     return {
       id: a.id, ip: a.ip, segment_cidr: a.segment_cidr, state: a.state,
       primary_name: a.primary_name, first_seen: a.first_seen, last_seen: a.last_seen,
@@ -1467,6 +1160,7 @@ export class RedteamStore {
       active: ports.filter((p) => p.provenance === 'active').length,
     }
   }
+
 
   listAssets(id, f = {}) {
     const db = this.db(id)
@@ -1542,7 +1236,9 @@ export class RedteamStore {
     }
     const rows = db.prepare(`SELECT a.*, ${openPorts} AS open_port_count FROM asset a ${clause} ORDER BY ${orderBy} LIMIT ? OFFSET ?`)
       .all(...args, limit, offset)
-    return { total, sort, items: rows.map((r) => this.assetRow(db, r)) }
+    /* 一次预取、逐行组装：把 3N 条查询压成 3 条（默认 N 最多 400） */
+    const children = this.assetChildren(db, rows.map((r) => r.id))
+    return { total, sort, items: rows.map((r) => this.assetRow(db, r, children)) }
   }
 
   getAsset(id, assetId) {
@@ -1651,103 +1347,434 @@ export class RedteamStore {
 
   seedScorePoints(id) {
     const db = this.db(id)
-    const n = db.prepare('SELECT COUNT(*) AS n FROM score_point').get().n
-    if (n > 0) return { seeded: 0 }
-    let order = 0
-    for (const point of DEFAULT_SCORE_POINTS) {
-      db.prepare(`INSERT INTO score_point(code, name, category, points, description, enabled, sort_order, created_at, updated_at)
-        VALUES(?,?,?,?,?,1,?,?,?)`).run(
-        point.code, point.name, point.category, point.points, point.description,
-        order++, nowIso(), nowIso(),
-      )
+    const insert = (point, order) => db.prepare(`INSERT INTO score_point
+        (code, name, category, points, description, enabled, sort_order, created_at, updated_at,
+         src, rule, tier, cap, dedup_scope, legacy, builtin)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      point.code, point.name, point.category, point.points, point.description,
+      point.enabled === 0 ? 0 : 1, order, nowIso(), nowIso(),
+      point.src ?? null,
+      point.rule ?? null, point.tier ?? null, point.cap ?? 0, point.dedup_scope || 'service', point.legacy === 1 ? 1 : 0,
+      /* 内置点：随规则分发，分值/口径锁定、不可删除 */
+      point.legacy === 1 ? 0 : 1,
+    )
+    const have = new Set(db.prepare('SELECT code FROM score_point').all().map((r) => String(r.code)))
+
+    /* ── 内置点标记回填 + 老库清理（旧得分项整套作废）────────────────────────
+       回填：老库的 builtin 列刚建出来全是 0，按 code 名单把内置点标回来。
+       清理口径：**只清"内置名单里的旧 code"**——也就是旧版随包分发的默认点
+       （web-account-* / webshell / rce / server-shell / db-access / sensitive-data /
+       boundary / internal-pivot / core-system 等）与其历史命中。
+
+       ⚠️ 这里曾经写成"凡是不在 DEFAULT_SCORE_POINTS 里的一律删掉"，后果是
+       **用户自建的得分点在下次读取得分面板时被静默删除**（连同它的命中），
+       而 saveScorePoint 照样返回 ok、界面照样弹「已保存」——「新增得分点」永远无效。
+       判定"是否内置"必须用 builtin 列，不能用"是否在当前默认名单里"。
+
+       ⚠️ 不可逆：清理前把被删的得分点与命中**导出到 <靶标>/runs/legacy-score-<时间>.json**
+       存档一次（报告/审计还能查），然后才删。 */
+    const builtinCodes = DEFAULT_SCORE_POINTS.map((x) => x.code)
+    const keep = new Set(builtinCodes)
+    try {
+      const ph = builtinCodes.map(() => '?').join(',')
+      db.prepare('UPDATE score_point SET builtin = 1 WHERE code IN (' + ph + ')').run(...builtinCodes)
+    } catch { /* 老库结构异常：不影响计分，下次播种再试 */ }
+    let purgedPoints = 0
+    let purgedHits = 0
+    try {
+      const doomed = db.prepare('SELECT id, code, name, category, points, legacy, builtin FROM score_point').all()
+        .filter((r) => !keep.has(String(r.code)) && (Number(r.legacy) === 1 || Number(r.builtin) === 1))
+      if (doomed.length > 0) {
+        const ids = doomed.map((r) => r.id)
+        const ph = ids.map(() => '?').join(',')
+        const hits = db.prepare(`SELECT * FROM score_hit WHERE point_id IN (${ph})`).all(...ids)
+        if (hits.length > 0) {
+          /* 存档：放靶标目录的 runs/ 下，与其它证据同处一地 */
+          try {
+            const dir = join(this.dirOf(id), 'runs')
+            mkdirSync(dir, { recursive: true })
+            const stamp = nowIso().replace(/[:.]/g, '-')
+            writeFileSync(join(dir, 'legacy-score-' + stamp + '.json'),
+              JSON.stringify({
+                archived_at: nowIso(),
+                reason: '按《突破入侵类得分规则（合并版）》重构：旧得分项整套作废',
+                points: doomed, hits,
+              }, null, 2), 'utf8')
+          } catch { /* 存档失败不阻断清理，但要照实记账 */ }
+        }
+        db.prepare(`DELETE FROM score_hit WHERE point_id IN (${ph})`).run(...ids)
+        db.prepare(`DELETE FROM score_point WHERE id IN (${ph})`).run(...ids)
+        purgedPoints = doomed.length
+        purgedHits = hits.length
+      }
+    } catch { /* 表还不存在等异常：忽略，不阻断播种 */ }
+
+    /* 内置得分点的**规则元数据同步**：规则文档改了（类别分组、上限、计分口径、档位说明、
+       条款正文），这里要把它同步到已存在的行上。
+       为什么必须做：早先只按 code"缺哪条补哪条"，于是改过 category 的条目在老库里
+       仍留着旧值 —— 面板会按 category 分组，结果同一类被拆成两组
+       （如 NETINFRA 与"网络基础设施"各一组），看起来像多了两个类别。
+
+       ⚠️ 分值/上限/口径**由规则锁定**（builtin=1），用户改不动：这不仅是"有意覆盖"，
+       更是**必须**——同一 rule 的 cap 按规则内所有点累计，若允许改单条分值，
+       用户把 50 改成 500 就能让整条规则的上限被一条命中吃掉。
+       所以内置点的 name/category/description 与整组 rule/tier/cap/dedup_scope/points
+       都由这里统一同步；**「启用/停用」仍由用户控制，不在此覆盖**。
+       UI 侧据此把内置点的分值输入框置灰（返回 overridden:false 让界面能提示原因）。
+
+       用户想自定义分值时请**新增得分点**（builtin=0）——那条不会被这里覆盖，
+       也不会被上面的旧体系清理删掉。 */
+    let synced = 0
+    if (have.size > 0) {
+      const upd = db.prepare(`UPDATE score_point SET name = ?, category = ?, points = ?, description = ?,
+          src = ?, rule = ?, tier = ?, cap = ?, dedup_scope = ?, builtin = 1, updated_at = ?
+        WHERE code = ? AND legacy = 0`)
+      for (const point of DEFAULT_SCORE_POINTS) {
+        if (!have.has(point.code)) continue
+        try {
+          const r = upd.run(point.name, point.category, point.points, point.description,
+            point.src ?? null,
+            point.rule ?? null, point.tier ?? null, point.cap ?? 0, point.dedup_scope || 'service',
+            nowIso(), point.code)
+          if (r.changes > 0) synced += 1
+        } catch { /* 忽略单条失败 */ }
+      }
     }
-    return { seeded: DEFAULT_SCORE_POINTS.length }
+
+    /* 缺哪条补哪条：新增规则、被误删的默认点都能靠这一条自愈 */
+    const missing = DEFAULT_SCORE_POINTS.filter((p) => !have.has(p.code))
+    if (missing.length > 0) {
+      let order = db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM score_point').get().n
+      for (const point of missing) insert(point, order++)
+    }
+    if (missing.length === 0 && purgedPoints === 0 && synced === 0) return { seeded: 0 }
+    return {
+      seeded: missing.length,
+      /* 本次清掉的旧得分点与命中条数（面板/工具据此告诉用户"旧口径已作废"） */
+      purgedLegacyPoints: purgedPoints,
+      purgedLegacyHits: purgedHits,
+      purged: purgedPoints > 0,
+    }
   }
 
   listScorePoints(id, f = {}) {
     const db = this.db(id)
-    /* 老靶标没有得分点：首次读取时补种默认值 */
-    if (db.prepare('SELECT COUNT(*) AS n FROM score_point').get().n === 0) this.seedScorePoints(id)
-    const rows = db.prepare('SELECT * FROM score_point ORDER BY sort_order, id').all()
-    const hits = db.prepare('SELECT * FROM score_hit ORDER BY recorded_at DESC').all()
+    /* 每次都跑一次播种：它是幂等的，同时承担三件事 ——
+       ① 空库首次播种；② 新规则/被误删的点自愈补齐；③ 老库把旧默认点标为 legacy（v0.11.0 迁移）。
+       ⚠️ 早先只在"一个得分点都没有"时才调它，于是老库（已有旧点）永远不会被迁移。 */
+    this.seedScorePoints(id)
+    /* 按**分值从低到高**展示（同分保持定义顺序）——用户按分值大小判断先打谁更直观 */
+    const rows = db.prepare('SELECT * FROM score_point ORDER BY COALESCE(points, 0) ASC, sort_order ASC, id ASC').all()
+    const hits = db.prepare('SELECT * FROM score_hit ORDER BY recorded_at DESC, id DESC').all()
+    /* 资产 IP：告警与命中记录里要能直接看出是哪个服务（asset_ip:port） */
+    const assetIp = new Map(db.prepare('SELECT id, ip FROM asset').all().map((a) => [a.id, a.ip]))
+    const codeOf = new Map(rows.map((r) => [r.id, r.code]))
+    /* 默认分值按得分点取；命中自带 points 时以命中为准（合并版的多档计分） */
+    const pointsOf = new Map(rows.map((r) => [r.id, Number(r.points) || 0]))
+    /* 命中行的有效分值：档位分值 × 倍率（倍率见 scoreMultiplierOf / hitPointsOf） */
+    const effPointsOf = (h) => hitPointsOf(
+      { points: h.points, multiplier: h.multiplier, code: codeOf.get(h.point_id) },
+      new Map([[String(codeOf.get(h.point_id)), { points: pointsOf.get(h.point_id) || 0 }]]),
+    )
     const byPoint = new Map()
     for (const h of hits) {
       if (!byPoint.has(h.point_id)) byPoint.set(h.point_id, [])
       byPoint.get(h.point_id).push(h)
     }
+    /* 计分口径与规则上限（数据驱动，见 applyScoreCaps）：
+       · dedup_scope 决定"同目标/同系统/同服务只算最高一条"还是按台卡数累加；
+       · rule + cap 决定该规则的累计上限。
+       自建账号既不参与竞争也不占位（本来就不计分）。 */
+    /* 元数据与评估都走共享实现（evaluateScoreBoard）：面板 / 报告 / 攻击链三处
+       曾经各写一遍，已经漂移出"报告不看 enabled""攻击链丢了档位分值"两个真实事故。 */
+    const pointsMeta = new Map(rows.map((r) => [String(r.code), {
+      rule: r.rule === null || r.rule === undefined ? null : Number(r.rule),
+      cap: Number(r.cap) || 0,
+      dedup_scope: r.dedup_scope || 'service',
+      points: Number(r.points) || 0,
+      enabled: r.enabled === null || r.enabled === undefined ? 1 : Number(r.enabled),
+      builtin: Number(r.builtin) === 1,
+      src: r.src === null || r.src === undefined ? null : Number(r.src),
+    }]))
+    const nameOf = loadAssetNames(db)
+    const cappedAll = evaluateScoreBoard(db, hits.map((h) => Object.assign({}, h, {
+      code: codeOf.get(h.point_id), points: effPointsOf(h),
+    })), { meta: pointsMeta, names: nameOf })
+    const cappedById = new Map(cappedAll.items.map((h) => [h.id, h]))
+    const enabled = rows.filter((r) => r.enabled === 1)
+    const enabledIds = new Set(enabled.map((r) => r.id))
+    /* 该得分点是否参与"同口径只算最高一条"的去重（供界面显示"已拿满"提示） */
+    const isCappedPoint = (pid) => {
+      const meta = pointsMeta.get(codeOf.get(pid))
+      return meta !== undefined && meta.dedup_scope !== 'none' && meta.dedup_scope !== null
+    }
     const items = rows
       .filter((r) => f.enabledOnly !== true || r.enabled === 1)
       .map((r) => {
-        const list = (byPoint.get(r.id) || []).map((h) => ({
-          id: h.id, asset_id: h.asset_id, vuln_id: h.vuln_id, step_id: h.step_id,
-          target: h.target, evidence: h.evidence, note: h.note,
-          self_created: Number(h.self_created) === 1,
-          recorded_by: h.recorded_by, recorded_at: h.recorded_at,
-        }))
-        /* 同类得分**不设数量上限，按命中次数累加**。
-           **自己注册/自建的账号不计分**（self_created=1 只作过程记录，不计数也不得分）。 */
+        const list = (byPoint.get(r.id) || []).map((h) => {
+          const flag = cappedById.get(h.id)
+          const capped = flag !== undefined && flag.capped === true
+          const hit = {
+            id: h.id, asset_id: h.asset_id, vuln_id: h.vuln_id, step_id: h.step_id,
+            target: h.target, evidence: h.evidence, note: h.note,
+            points: effPointsOf(h), points_overridden: h.points !== null && h.points !== undefined,
+            port: normalizePort(h.port) ?? parseTargetPort(h.target),
+            self_created: Number(h.self_created) === 1,
+            capped: capped,
+            capped_by_id: capped ? flag.capped_by_id : null,
+            capped_reason: capped ? scoreCapReasonText(Object.assign({}, h, {
+              code: r.code, asset_ip: assetIp.get(h.asset_id),
+              rule: flag.rule ?? null, rule_cap: flag.rule_cap || 0, capped_reason_kind: flag.capped_reason_kind,
+            }), flag.capped_by_points) : null,
+            capped_reason_kind: capped ? flag.capped_reason_kind : null,
+            recorded_by: h.recorded_by, recorded_at: h.recorded_at,
+          }
+          hit.service = serviceLabel(Object.assign({}, hit, { asset_ip: assetIp.get(h.asset_id) }))
+          if (capped) hit.capped_by = flag.capped_by_evidence ?? null
+          return hit
+        })
+        /* 不设上限的得分点：命中次数 × 分值累加。
+           自建账号（self_created）不计分；账号类/数据库类按服务封顶，只算最高那一条。 */
         const valid = list.filter((h) => h.self_created !== true)
-        const counted = valid.length
+        const countedList = valid.filter((h) => h.capped !== true)
+        const counted = countedList.length
+        const cappedList = valid.filter((h) => h.capped === true)
+        const meta = pointsMeta.get(r.code) || { rule: null, cap: 0, dedup_scope: 'service' }
+        const capUsed = meta.rule === null ? null : cappedAll.caps.get('rule:' + meta.rule)
+        const scopeLabel = { service: '同一服务只算最高一条', system: '同一系统只算最高权限一次', target: '整个目标只算一次', none: '按台 / 卡 / 节点数累加' }[meta.dedup_scope] || ''
         return {
           id: r.id, code: r.code, name: r.name, category: r.category, points: r.points,
-          counted: counted, earned: counted * r.points,
+          rule: meta.rule, tier: r.tier || null, cap: meta.cap || 0, dedup_scope: meta.dedup_scope,
+          /* src = 《合并版》里的原序号（对账用）；builtin = 随规则分发的内置点（分值锁定、不可删）。
+             界面据此把内置点的分值输入框置灰并给出原因。 */
+          src: r.src === null || r.src === undefined ? null : Number(r.src),
+          builtin: Number(r.builtin) === 1,
+          legacy: Number(r.legacy) === 1,
+          counted: counted,
+          /* 按"计入命中的实际分值"累加 —— 合并后同一 code 含多档，不能再拿默认分值乘次数 */
+          earned: countedList.reduce((n, h) => n + (Number(h.points) || 0), 0),
           self_created: list.length - valid.length,
+          capped: cappedList.length,
+          capped_hits: cappedList,
+          /* 规则上限用量（同一 rule 的得分点共用；界面按规则分组显示"已用 / 上限"） */
+          cap_used: capUsed ? capUsed.used : null,
+          cap_capped: capUsed ? capUsed.capped : 0,
+          scope_label: scopeLabel,
+          service_summary: (meta.dedup_scope !== 'none' && cappedList.length > 0)
+            ? '计分口径「' + scopeLabel + '」：已达 ' + counted + ' 个，另有 ' + cappedList.length + ' 条重复命中不计分'
+            : null,
           description: r.description || '', enabled: r.enabled === 1, sort_order: r.sort_order,
           hits: list,
         }
       })
-    const enabled = items.filter((p) => p.enabled)
+
+    /* 排序：**已得分的排前面**（一眼看到战绩），未得分的在后；
+       两组内部都按分值从低到高（同分按定义顺序，结果稳定可预期）。 */
+    const achievedRank = (it) => (it.hits.length > 0 ? 0 : 1)
+    const sortedItems = items.slice().sort((a, b) => {
+      const ra = achievedRank(a); const rb = achievedRank(b)
+      if (ra !== rb) return ra - rb
+      const pa = Number(a.points) || 0; const pb = Number(b.points) || 0
+      if (pa !== pb) return pa - pb
+      return (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0)
+    })
+
+    /* ── 按合并版的 8 个类别分组（控制一般系统 / Web 应用 / 集权 / 大数据 /
+       网络基础设施 / 文件存储 / 模型相关 / 突破网络边界）────────────────────
+       面板与报告都按这个分组展示：用户看到的就是规则文档里的结构。
+       组内按分值升序（items 已排好序），组顺序即 SCORE_GROUPS 的定义顺序。 */
+    const groupOrder = new Map(SCORE_GROUPS.map((g, i) => [g.code, i]))
+    const groupName = new Map(SCORE_GROUPS.map((g) => [g.code, g.name]))
+    const ruleGroups = []
+    const gmap = new Map()
+    for (const it of sortedItems) {
+      if (it.legacy) continue
+      const code = it.category || 'OTHER'
+      if (!gmap.has(code)) {
+        const g = {
+          key: code, code,
+          name: groupName.get(code) || code,
+          /* 该类别下所有条目的上限之和（仅作参考值 —— 各项上限独立，不跨条累加，见 G3） */
+          capSum: 0, points: 0, counted: 0, capped: 0, tiers: [],
+          order: groupOrder.has(code) ? groupOrder.get(code) : 99,
+        }
+        gmap.set(code, g); ruleGroups.push(g)
+      }
+      const g = gmap.get(code)
+      g.capSum += Number(it.cap) || 0
+      g.points += it.earned
+      g.counted += it.counted
+      g.capped += it.capped
+      g.tiers.push(it)
+    }
+    ruleGroups.sort((a, b) => a.order - b.order)
+    /* 组内再兜一次底（防止调用方改过顺序）：已得分优先，再按分值升序 */
+    for (const g of ruleGroups) {
+      g.tiers.sort((a, b) => {
+        const ra = achievedRank(a); const rb = achievedRank(b)
+        if (ra !== rb) return ra - rb
+        return (Number(a.points) || 0) - (Number(b.points) || 0)
+      })
+    }
+    const legacyItems = items.filter((it) => it.legacy)
+    const legacyHits = legacyItems.reduce((n, p) => n + p.hits.length, 0)
+    const enabledItems = items.filter((p) => p.enabled)
+    const cappedItems = cappedAll.items.filter((h) => h.capped === true && (codeOf.get(h.point_id) !== undefined) && enabledIds.has(h.point_id))
+    const latestCapped = cappedItems.length === 0 ? null : cappedItems.slice().sort((a, b) => {
+      const sa = String(a.recorded_at || '') + '#' + String(a.id).padStart(8, '0')
+      const sb = String(b.recorded_at || '') + '#' + String(b.id).padStart(8, '0')
+      return sb.localeCompare(sa)
+    })[0]
     return {
-      items,
+      items: sortedItems,
+      ruleGroups,
       summary: {
         /* 不设上限：得分 = 命中次数 × 分值，累加即可 */
-        achievedPoints: enabled.reduce((n, p) => n + p.earned, 0),
+        achievedPoints: enabledItems.reduce((n, p) => n + p.earned, 0),
         /* 得分点个数（界面按这个显示，不再说"已拿下 N 项"） */
-        pointCount: enabled.length,
-        hitPointCount: enabled.filter((p) => p.counted > 0).length,
+        pointCount: enabledItems.length,
+        hitPointCount: enabledItems.filter((p) => p.counted > 0).length,
         hitCount: items.reduce((n, p) => n + p.hits.length, 0),
-        countedHits: enabled.reduce((n, p) => n + p.counted, 0),
+        countedHits: enabledItems.reduce((n, p) => n + p.counted, 0),
         /* 自己注册/自建而被剔除的命中数（界面上单独提示，避免"记了却没分"的困惑） */
         selfCreatedHits: items.reduce((n, p) => n + p.self_created, 0),
+        /* 因"计分口径去重"或"规则已达上限"而不计分的条数（界面单独提示，避免"记了却没分"的困惑） */
+        serviceCappedHits: cappedItems.length,
+        cappedByDedup: cappedItems.filter((h) => h.capped_reason_kind === 'dedup').length,
+        cappedByRuleLimit: cappedItems.filter((h) => h.capped_reason_kind === 'cap').length,
+        /* legacy（旧版口径）得分点与命中：界面折叠展示，不并入新口径的总分 */
+        legacyPointCount: legacyItems.length,
+        legacyHitCount: legacyHits,
+        latestCapped: latestCapped === null ? null : {
+          hit_id: latestCapped.id,
+          point_id: latestCapped.point_id,
+          code: latestCapped.code,
+          service: serviceLabel(Object.assign({}, latestCapped, { asset_ip: assetIp.get(latestCapped.asset_id) })),
+          evidence: latestCapped.evidence,
+          points: latestCapped.points,
+          recorded_at: latestCapped.recorded_at,
+          reason: serviceCapReason(Object.assign({}, latestCapped, { asset_ip: assetIp.get(latestCapped.asset_id) }), latestCapped.capped_by_points),
+        },
       },
     }
   }
 
   /** 新增或更新得分点（带 id 更新，不带 id 新增）。得分类别**不设数量上限**，只记分值。 */
+  /**
+   * 保存得分点。
+   *
+   * 两条路径差别很大，返回结构里用 `builtin` / `overridden` / `locked_fields` 说清楚：
+   *   · **内置点**（builtin=1，随《突破入侵类得分规则》分发）：分值/上限/计分口径/名称
+   *     由规则锁定，只能改「启用/停用」。**不允许改分值**不只是纪律问题 ——
+   *     同一 rule 的 cap 按组内所有点累计，改了单条分值就能让一条命中吃掉整组上限。
+   *     这里照样返回 `ok`（启用状态确实存下去了），但用 `overridden:false` 明确告诉
+   *     调用方"你提交的分值没被采纳"，界面据此提示原因，而不是假装保存成功。
+   *   · **用户自建点**（builtin=0）：字段全部可改，且不会被播种逻辑清掉。
+   */
   saveScorePoint(id, point = {}) {
     const db = this.db(id)
-    const name = String(point.name || '').trim()
-    if (name === '') throw new Error('score point name required')
-    const points = Number.isFinite(Number(point.points)) ? Number(point.points) : 0
     const enabled = point.enabled === false ? 0 : 1
+    /* name 的必填校验要**放在内置点分支之后**：内置点只接受 enabled / sort_order，
+       调用方（界面开关、工具只改启用状态）本来就不该被迫回传 name。
+       放在前面会让"只想停用一个内置得分点"直接报 name required。 */
+    const name = String(point.name || '').trim()
     /* max_hits 列保留只为兼容老库结构，计分不再使用（恒写 1） */
     if (point.id !== undefined && point.id !== null && Number(point.id) > 0) {
+      const pid = Number(point.id)
+      const row = db.prepare('SELECT id, code, name, points, cap, rule, tier, dedup_scope, builtin, legacy FROM score_point WHERE id = ?').get(pid)
+      if (row === undefined) throw new Error('score point not found: id=' + pid)
+      if (Number(row.builtin) === 1 || Number(row.legacy) === 1) {
+        /* 内置点：只落 enabled / sort_order，其余字段留给 seedScorePoints 按规则同步 */
+        db.prepare('UPDATE score_point SET enabled = ?, sort_order = COALESCE(?, sort_order), updated_at = ? WHERE id = ?')
+          .run(enabled, point.sort_order ?? null, nowIso(), pid)
+        const after = db.prepare('SELECT * FROM score_point WHERE id = ?').get(pid)
+        return {
+          id: pid, updated: true, builtin: true,
+          points: after.points, cap: after.cap, rule: after.rule,
+          overridden: Number(point.points) === Number(after.points),
+          locked_fields: ['name', 'category', 'points', 'cap', 'rule', 'tier', 'dedup_scope', 'description'],
+          note: '这是随《突破入侵类得分规则》分发的内置得分点：分值、上限、计分口径、名称与条款正文'
+            + '都由规则锁定（同一条规则的上限按组内所有得分点累计，单独改分值会让一条命中吃掉整组上限）。'
+            + '已保存你修改的「启用/停用」。要自定义分值时请**新增一个得分点**。',
+        }
+      }
+      if (name === '') throw new Error('score point name required')
+      const points = Number.isFinite(Number(point.points)) ? Number(point.points) : 0
       db.prepare(`UPDATE score_point SET name = ?, category = ?, points = ?, description = ?, enabled = ?,
           sort_order = COALESCE(?, sort_order), updated_at = ? WHERE id = ?`)
         .run(name, point.category ?? null, points, point.description ?? null, enabled,
-          point.sort_order ?? null, nowIso(), Number(point.id))
-      return { id: Number(point.id), updated: true }
+          point.sort_order ?? null, nowIso(), pid)
+      return { id: pid, updated: true, builtin: false, overridden: true, points, note: '已保存（自建得分点）' }
     }
+    if (name === '') throw new Error('score point name required')
+    const points = Number.isFinite(Number(point.points)) ? Number(point.points) : 0
     const next = db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM score_point').get().n
-    const r = db.prepare(`INSERT INTO score_point(code, name, category, points, description, enabled, sort_order, created_at, updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?)`).run(
-      point.code ?? null, name, point.category ?? null, points, point.description ?? null, enabled,
+    /* 自建点可能带上与内置点相同的 code（面板默认按名称生成）：code 有 UNIQUE 约束，
+       撞了就换一个，避免"新增失败但界面看不出原因"。 */
+    let code = point.code === undefined || point.code === null || String(point.code).trim() === ''
+      ? null
+      : String(point.code).trim()
+    if (code !== null && db.prepare('SELECT id FROM score_point WHERE code = ?').get(code) !== undefined) {
+      code = code + '-custom-' + Date.now().toString(36)
+    }
+    const r = db.prepare(`INSERT INTO score_point(code, name, category, points, description, enabled, sort_order, created_at, updated_at, builtin)
+      VALUES(?,?,?,?,?,?,?,?,?,0)`).run(
+      code, name, point.category ?? null, points, point.description ?? null, enabled,
       next, nowIso(), nowIso(),
     )
-    return { id: Number(r.lastInsertRowid), updated: false }
+    return {
+      id: Number(r.lastInsertRowid), code, updated: false, builtin: false, overridden: true,
+      points, note: '已新增自建得分点（不受规则分值锁定，也不会被旧体系清理删除）',
+    }
   }
 
+  /** 删除得分点。内置点不允许删除（否则面板会缺一条规则，且下次播种又会长回来）。 */
   deleteScorePoint(id, pointId) {
     const db = this.db(id)
-    db.prepare('DELETE FROM score_hit WHERE point_id = ?').run(Number(pointId))
-    db.prepare('DELETE FROM score_point WHERE id = ?').run(Number(pointId))
-    return { deleted: Number(pointId) }
+    const pid = Number(pointId)
+    const row = db.prepare('SELECT id, code, name, builtin FROM score_point WHERE id = ?').get(pid)
+    if (row === undefined) throw new Error('score point not found: id=' + pid)
+    if (Number(row.builtin) === 1) {
+      throw new Error('内置得分点不能删除：「' + (row.name || row.code) + '」来自《突破入侵类得分规则（合并版）》，'
+        + '删掉会让面板缺一条规则、报告少一类成果（下次启动还会自动补回来）。'
+        + '要让它不参与计分，请改用「停用」。')
+    }
+    db.prepare('DELETE FROM score_hit WHERE point_id = ?').run(pid)
+    db.prepare('DELETE FROM score_point WHERE id = ?').run(pid)
+    return { deleted: pid }
+  }
+
+  /**
+   * 这条得分落在哪个端口上（服务级封顶的粒度）。
+   *   ① 显式 `port`（工具参数）；
+   *   ② `target` 里的端口（http://h:8080/x → 8080，10.0.0.5:6379 → 6379）；
+   *   ③ 该资产只登记了一个端口时用那个（不打 80/443 的猜值，避免把不同服务并成一个）。
+   */
+  #servicePortOf(db, hit = {}) {
+    const explicit = normalizePort(hit.port)
+    if (explicit !== null) return explicit
+    const fromTarget = parseTargetPort(hit.target)
+    if (fromTarget !== null) return fromTarget
+    const assetId = hit.asset_id === null || hit.asset_id === undefined || hit.asset_id === '' ? null : Number(hit.asset_id)
+    if (assetId === null) return null
+    try {
+      const ports = db.prepare('SELECT port FROM port WHERE asset_id = ? ORDER BY port').all(assetId)
+      if (ports.length === 1) return normalizePort(ports[0].port)
+    } catch { /* 忽略 */ }
+    return null
   }
 
   /** 记录一次得分（某个得分点在某个目标上被拿下）。 */
   addScoreHit(id, hit = {}) {
     const db = this.db(id)
+    /* 得分点可能还没播种（新建靶标后直接记分）：先跑一次幂等播种，
+       否则会以"score point not found"报错，而真实原因是默认得分点尚未写入。 */
+    this.seedScorePoints(id)
     let pointId = hit.point_id !== undefined && hit.point_id !== null ? Number(hit.point_id) : null
+    /* 按 code 找得分点（最常用）。旧 code 已随旧得分项一起作废（v0.11.1）：
+       这里**不做静默改派** —— 改派目标本身可能已不存在，静默吞掉会让用户
+       "记了却没分"且查不出原因。找不到就落到下面的 point not found 报错，
+       并在错误里点明去 redteam_score_list 取新 code。 */
     if (pointId === null && hit.code) {
       const row = db.prepare('SELECT id FROM score_point WHERE code = ?').get(String(hit.code))
       if (row !== undefined) pointId = row.id
@@ -1756,27 +1783,120 @@ export class RedteamStore {
       const row = db.prepare('SELECT id FROM score_point WHERE name = ?').get(String(hit.point_name))
       if (row !== undefined) pointId = row.id
     }
-    if (pointId === null) throw new Error('score point not found：请用 point_id / code / point_name 指定得分点')
+    if (pointId === null) {
+      throw new Error('score point not found：得分规则已按《突破入侵类得分规则（合并版）》重构为 22 项，'
+        + '旧 code（web-account-*、webshell、rce、server-shell、db-access、sensitive-data、boundary、internal-pivot、core-system 等）已作废。'
+        + '请先用 redteam_score_list 读实际 code，或用 point_id / point_name 指定。')
+    }
     const evidence = String(hit.evidence || '').trim()
     if (evidence === '') throw new Error('score hit evidence required：得分必须写明证据（账号/回显/数据量/路径）')
     /* 自己注册/自建的账号：允许记录（留过程），但不计分 */
     const selfCreated = hit.self_created === true || hit.self_created === 1 || hit.self_created === '1' ? 1 : 0
-    const r = db.prepare(`INSERT INTO score_hit(point_id, asset_id, vuln_id, step_id, target, evidence, note, self_created, recorded_by, recorded_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?)`).run(
+    const port = this.#servicePortOf(db, hit)
+    /* 本条命中的实际分值：调用方可显式指定（合并版里同一条含多档，如"管理员 50"）。
+       未指定记 NULL —— 计分时回落到得分点的默认 points。
+
+       ⚠️ 必须做边界校验：`points` 是"某一档的分值"，不是自由填写的加分。
+       没有校验时 `points=999999999` 会被原样写入并把总分刷到 9 位数，
+       `points=-500` 会把总分拉低 —— 两者都会让交付报告的数字失去意义。
+       上限取「该条规则上限」与「默认分值的 100 倍」中的较大者：
+       前者保证一条命中不可能单独突破整条规则的天花板，
+       后者给默认分值很小的条目（如 5 分/台的终端）留出合理的档位空间。 */
+    const pointMeta = db.prepare('SELECT points, cap FROM score_point WHERE id = ?').get(pointId) || {}
+    const pointsMax = Math.max(Number(pointMeta.cap) || 0, (Number(pointMeta.points) || 0) * 100, 1000)
+    let hitPoints = null
+    if (hit.points !== undefined && hit.points !== null && hit.points !== '') {
+      const n = Number(hit.points)
+      if (!Number.isFinite(n)) {
+        throw new Error('score hit points invalid：points 必须是有限数字（收到 ' + JSON.stringify(hit.points) + '）')
+      }
+      if (n <= 0) {
+        throw new Error('score hit points invalid：points 必须大于 0（收到 ' + n + '）。'
+          + '分值按《突破入侵类得分规则》的档位填写，不要用它调分。')
+      }
+      if (n > pointsMax) {
+        throw new Error('score hit points invalid：points=' + n + ' 超出该得分点的合理上限 ' + pointsMax
+          + '（= max(规则上限 ' + (Number(pointMeta.cap) || 0) + ', 默认分值 ' + (Number(pointMeta.points) || 0)
+          + ' × 100)）。请按规则档位填写，或修正得分点的分值设置。')
+      }
+      hitPoints = n
+    }
+    /* G5 / G6 倍率：数据规模翻倍、IPv6 ×3。作用在权限分上，随上限一起被 cap 约束。 */
+    const mult = scoreMultiplierOf(hit)
+    const r = db.prepare(`INSERT INTO score_hit(point_id, asset_id, vuln_id, step_id, target, evidence, note, self_created, port, recorded_by, recorded_at, points, multiplier)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       pointId, hit.asset_id ?? null, hit.vuln_id ?? null, hit.step_id ?? null,
-      hit.target ?? null, evidence, hit.note ?? null, selfCreated,
-      hit.recorded_by ?? null, nowIso(),
+      hit.target ?? null, evidence, hit.note ?? null, selfCreated, port,
+      hit.recorded_by ?? null, nowIso(), hitPoints, mult.multiplier,
     )
+    const hitId = Number(r.lastInsertRowid)
     const point = db.prepare('SELECT name, points, code FROM score_point WHERE id = ?').get(pointId)
-    const summary = this.listScorePoints(id).summary
+    const board = this.listScorePoints(id)
+    const summary = board.summary
+    const allHits = board.items.flatMap((p) => p.hits)
+    const row = allHits.find((h) => h.id === hitId)
+    /* 服务级封顶：同一资产同一端口只算分值最高的那条（账号类 / 数据库权限） */
+    const cappedByService = selfCreated === 0 && row !== undefined && row.capped === true
+    const capService = row === undefined ? null : row.service
+    const capBy = row === undefined ? null : (row.capped_by || null)
+    const capByPoints = row === undefined || row.capped_by_id === null || row.capped_by_id === undefined
+      ? null
+      : (allHits.find((h) => h.id === row.capped_by_id) || {}).points
+    /* 反过来：这条是不是把同服务上原本计分的命中顶掉了（总分因此不会增加）。
+       直接以「本次插入之后谁还被封顶」为准，避免受"先被别的重复命中顶掉过一次"的干扰。 */
+    const demoted = selfCreated === 0 && row !== undefined && row.capped !== true
+      ? allHits.filter((h) => h.capped_by_id === hitId && Number(h.id) < hitId)
+      : []
+    const warnings = []
+    if (selfCreated === 1) {
+      warnings.push('已记录，但**自己注册/自己创建的账号不计分**（演练得分针对"拿到别人已有的账号/权限"）。这条只作过程留痕，不占上限、不进报告。')
+    }
+    /* G5「含大量数据系统得分翻倍」要有量级依据：门槛是 **1 亿条 / 10TB**。
+       判不出来只**警告不阻断** —— 数据量常在报告正文里而不是 evidence 里，
+       硬拦会把真实成果挡在门外；但一定要提醒补齐，否则翻倍站不住。 */
+    if (mult.multiplier > 1 && mult.reasons.some((x) => x.indexOf('G5') === 0)) {
+      const rows = parseRowCount(evidence)
+      if (rows === null) {
+        warnings.push('注意：这条按 G5 记了「数据规模翻倍」，但 evidence 里**看不出数据量**。'
+          + '请在 evidence 里写明实际规模（例如「导出 1.3 亿条用户数据」或「12TB 训练数据」），否则这条翻倍站不住。')
+      } else if (rows < SENSITIVE_DATA_MIN_ROWS) {
+        warnings.push('注意：这条按 G5 记了翻倍，但 evidence 里的量是 **' + formatRows(rows) + ' 条/行**，'
+          + '远低于」大量数据系统」的门槛（文档为超 1 亿条或 10TB）。请核对数据规模；确实是 1 亿条以上时'
+          + '用更明确的写法（如「1.32 亿条」）写进 evidence。')
+      }
+    }
+    if (cappedByService) {
+      const assetIp = row.asset_id === null || row.asset_id === undefined
+        ? undefined
+        : (db.prepare('SELECT ip FROM asset WHERE id = ?').get(Number(row.asset_id)) || {}).ip
+      warnings.push(serviceCapReason(Object.assign({}, row, { code: point ? point.code : '', asset_ip: assetIp }), capByPoints))
+      if (capBy) warnings.push('计分的是同服务的另一条：' + String(capBy).slice(0, 120))
+    } else if (demoted.length > 0) {
+      warnings.push('注意：这条把同服务上分值更低的 ' + demoted.length + ' 条旧命中顶掉了——**同一资产同一端口只算一次**，所以本次记分不会让总分增加（旧命中转为不计分）。')
+    }
     return {
-      id: Number(r.lastInsertRowid), point_id: pointId,
-      point: point ? point.name : null, points: point ? point.points : 0,
+      id: hitId, point_id: pointId,
+      point: point ? point.name : null,
+      /* 单次档位分值与最终计入的分值分开给：倍率让我们能解释"50 分怎么变成 150 分" */
+      base_points: hitPoints === null ? (point ? point.points : 0) : hitPoints,
+      multiplier: mult.multiplier,
+      multiplier_reasons: mult.reasons.length > 0 ? mult.reasons : undefined,
+      points: Math.round((hitPoints === null ? (point ? point.points : 0) : hitPoints) * mult.multiplier),
+      port: port,
+      service: capService,
+      /* G5 量级核对结果（没按 G5 记分的条目为 null）：让界面/模型能一眼看出"翻倍有没有依据" */
+      volume: mult.reasons.some((x) => x.indexOf('G5') === 0)
+        ? (() => {
+            const rows = parseRowCount(evidence)
+            return { rows: rows, min_rows: SENSITIVE_DATA_MIN_ROWS, meets_threshold: rows === null ? null : rows >= SENSITIVE_DATA_MIN_ROWS }
+          })()
+        : null,
       self_created: selfCreated === 1,
-      counted: selfCreated === 0,
-      warning: selfCreated === 1
-        ? '已记录，但**自己注册/自己创建的账号不计分**（演练得分针对"拿到别人已有的账号/权限"）。这条只作过程留痕，不占上限、不进报告。'
-        : undefined,
+      counted: selfCreated === 0 && !cappedByService,
+      capped_by_service: cappedByService,
+      capped_by: capBy,
+      demoted_hits: demoted.map((h) => ({ id: h.id, evidence: h.evidence, points: h.points })),
+      warning: warnings.length === 0 ? undefined : warnings.join('\n'),
       summary,
     }
   }
@@ -2041,14 +2161,14 @@ export class RedteamStore {
       db.prepare(`UPDATE webshell SET shell_type = COALESCE(?, shell_type), secret_ref = COALESCE(?, secret_ref),
         privilege = COALESCE(?, privilege), status = COALESCE(?, status), note = COALESCE(?, note),
         asset_id = COALESCE(?, asset_id), agent = COALESCE(?, agent), updated_at = ? WHERE id = ?`)
-        .run(w.shell_type ?? null, w.secret_ref ?? null, w.privilege ?? null, w.status ?? 'online',
+        .run(normalizeShellType(w.shell_type), w.secret_ref ?? null, w.privilege ?? null, normalizeShellStatus(w.status),
           w.note ?? null, w.asset_id ?? null, w.agent ?? null, ts, existing.id)
       return { id: Number(existing.id), updated: true }
     }
     const result = db.prepare(`INSERT INTO webshell(asset_id, url, shell_type, pass_key, secret_ref, privilege,
       status, note, found_by_agent, created_at, updated_at, agent) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(w.asset_id ?? null, w.url, w.shell_type ?? null, w.pass_key ?? null, w.secret_ref ?? null,
-        w.privilege ?? null, w.status ?? 'online', w.note ?? null, w.found_by_agent ?? null, ts, ts, w.agent ?? null)
+      .run(w.asset_id ?? null, w.url, normalizeShellType(w.shell_type), w.pass_key ?? null, w.secret_ref ?? null,
+        w.privilege ?? null, normalizeShellStatus(w.status), w.note ?? null, w.found_by_agent ?? null, ts, ts, w.agent ?? null)
     if (w.asset_id !== undefined && w.asset_id !== null) {
       this.#observe(db, 'asset', w.asset_id, 'webshell', w.url, 'active', 'exploit', null)
     }
@@ -2072,8 +2192,14 @@ export class RedteamStore {
     const fields = ['status', 'check_note', 'latency_ms', 'last_check', 'privilege', 'note', 'secret_ref', 'shell_type']
     const sets = []
     const args = []
+    /* update 路径与新增路径用同一套规范化：以前这里能写任意字符串，
+       面板的"非冰蝎马用户连不上"红标会因此静默失效。 */
     for (const key of fields) {
-      if (patch[key] !== undefined) { sets.push(`${key} = ?`); args.push(patch[key]) }
+      if (patch[key] === undefined) continue
+      let value = patch[key]
+      if (key === 'shell_type') value = normalizeShellType(value)
+      if (key === 'status') value = normalizeShellStatus(value)
+      sets.push(`${key} = ?`); args.push(value)
     }
     if (sets.length === 0) throw new Error('nothing to update')
     sets.push('updated_at = ?'); args.push(nowIso())
@@ -2095,15 +2221,24 @@ export class RedteamStore {
   addTunnel(id, t = {}) {
     const db = this.db(id)
     const ts = nowIso()
-    const entryKind = TUNNEL_ENTRY_KINDS[t.entry_kind] !== undefined ? String(t.entry_kind) : null
+    /* entry_kind 是**边界突破得分的凭证字段**：写错必须报错，不能静默归零。
+       认不出的值写成 NULL 会让 legit=null，界面显示"待确认" —— 与"没填"无法区分，
+       而模型只是多打了一个空格（`target-http `）就踩到，事后完全查不出原因。 */
+    const rawEntryKind = t.entry_kind === undefined || t.entry_kind === null ? '' : String(t.entry_kind).trim()
+    if (rawEntryKind !== '' && TUNNEL_ENTRY_KINDS[rawEntryKind] === undefined) {
+      throw new Error('entry_kind 非法：' + JSON.stringify(t.entry_kind) + '。合法值只有 '
+        + Object.keys(TUNNEL_ENTRY_KINDS).join(' / ') + '（' + Object.values(TUNNEL_ENTRY_KINDS).join(' / ') + '）。'
+        + '留空会被当作"待确认"、不计入边界突破。')
+    }
     const result = db.prepare(`INSERT INTO tunnel(asset_id, webshell_id, kind, listen, entry, reach, entry_kind,
       status, pid, command, note, found_by_agent, created_at, updated_at, agent) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(t.asset_id ?? null, t.webshell_id ?? null, t.kind ?? 'socks5', t.listen ?? null, t.entry ?? null,
-        t.reach ?? null, entryKind, t.status ?? 'active', t.pid ?? null, t.command ?? null, t.note ?? null,
+        t.reach ?? null, rawEntryKind === '' ? null : rawEntryKind, t.status ?? 'active', t.pid ?? null, t.command ?? null, t.note ?? null,
         t.found_by_agent ?? null, ts, ts, t.agent ?? null)
     if (t.asset_id !== undefined && t.asset_id !== null) {
       this.#observe(db, 'asset', t.asset_id, 'tunnel', `${t.kind || 'socks5'} ${t.listen || ''}`.trim(), 'active', 'exploit', null)
     }
+    const entryKind = rawEntryKind === '' ? null : rawEntryKind
     const legit = tunnelIsLegit(entryKind)
     return {
       id: Number(result.lastInsertRowid),
@@ -2136,8 +2271,28 @@ export class RedteamStore {
     const fields = ['status', 'check_note', 'latency_ms', 'last_check', 'listen', 'reach', 'entry', 'entry_kind', 'pid', 'command', 'note']
     const sets = []
     const args = []
+    /* update 路径此前**完全不校验** entry_kind / status：新增时被规范化成 NULL，
+       更新时却能直接写任意字符串进库，把 legit 判定彻底绕过。这里与新增路径对齐。 */
+    const TUNNEL_STATUSES = ['active', 'down', 'closed', 'unknown']
     for (const key of fields) {
-      if (patch[key] !== undefined) { sets.push(`${key} = ?`); args.push(patch[key]) }
+      if (patch[key] === undefined) continue
+      let value = patch[key]
+      if (key === 'entry_kind') {
+        const raw = value === null ? '' : String(value).trim()
+        if (raw !== '' && TUNNEL_ENTRY_KINDS[raw] === undefined) {
+          throw new Error('entry_kind 非法：' + JSON.stringify(value) + '。合法值只有 '
+            + Object.keys(TUNNEL_ENTRY_KINDS).join(' / ') + '。')
+        }
+        value = raw === '' ? null : raw
+      }
+      if (key === 'status') {
+        const raw = String(value).trim()
+        if (!TUNNEL_STATUSES.includes(raw)) {
+          throw new Error('tunnel status 非法：' + JSON.stringify(value) + '。合法值只有 ' + TUNNEL_STATUSES.join(' / ') + '。')
+        }
+        value = raw
+      }
+      sets.push(`${key} = ?`); args.push(value)
     }
     if (sets.length === 0) throw new Error('nothing to update')
     sets.push('updated_at = ?'); args.push(nowIso())
@@ -2249,29 +2404,66 @@ export class RedteamStore {
         if (v !== undefined) vuln = v
       } catch { vuln = null }
     }
-    /* 拿到的凭据：优先按资产关联，其次按 target 主机匹配 */
+    /* ── 凭据 / 会话 / 马 / 隧道：必须与"本条得分"是同一件事才挂 ──────────────
+       原实现只按 asset_id 取，于是同一台资产上登记的**全部**凭据与会话被挂到该资产的
+       每一条得分上。实测后果：一条「终端权限 pc-001」下面挂着「MySQL root（配置文件泄露）」——
+       与终端毫无关系；一条资产 4 条得分各自重复列出同一批凭据，报告因此又长又假。
+       判定：**本条写了 target 时**要求 target 主机与该资产（IP / 首选名）对得上；
+       没写 target（纯资产级成果，如"控下 1 台终端"）时按资产挂载是合理的。 */
+    const targetHost = (() => {
+      const t = String(hit.target || '').trim()
+      if (t === '') return null
+      const url = /^([a-z][a-z0-9+.-]*):\/\/(\[[^\]]+\]|[^/?#\s]+)/i.exec(t)
+      let authority = url !== null ? url[2] : (/^([^\s/?#]+)/.exec(t) || [])[1]
+      if (!authority) return null
+      authority = authority.replace(/^\[|\]$/g, '').replace(/:\d{1,5}$/, '').toLowerCase()
+      return authority === '' ? null : authority
+    })()
+    const asset = (hit.asset_id === null || hit.asset_id === undefined)
+      ? undefined
+      : (() => { try { return db.prepare('SELECT ip, primary_name, segment_cidr FROM asset WHERE id = ?').get(Number(hit.asset_id)) } catch { return undefined } })()
+    const targetMatchesAsset = () => {
+      if (targetHost === null) return true                 /* 没写 target：按资产挂载 */
+      if (asset === undefined) return false                /* 写了 target 又查不到资产：不挂 */
+      const ip = String(asset.ip || '').toLowerCase()
+      const name = String(asset.primary_name || '').toLowerCase()
+      const cidr = String(asset.segment_cidr || '').toLowerCase()
+      /* ① 目标就是这台资产（IP 或首选域名） */
+      if (targetHost === ip || targetHost === name) return true
+      /* ② 目标"看着不像单台主机"：边界突破常把 target 写成可达网段（10.20.30.0/24）、
+         终端类会写成设备名（pc-001）。这类条目本质是"资产级成果"，
+         它用到的隧道/马/凭据就挂在这台入口资产上 —— 不挂会丢掉"通道怎么搭的"。
+         判据：target 里有 '/'（网段）或解析出的主机不是 IP/域名形态。 */
+      const raw = String(hit.target || '').trim()
+      if (raw.includes('/')) return true
+      if (cidr !== '' && (targetHost === cidr || cidr.startsWith(targetHost + '/'))) return true
+      const looksLikeHost = /^[0-9a-f.:\[\]]+$/i.test(targetHost) || targetHost.includes('.')
+      return !looksLikeHost
+    }
+    const sameAsset = targetMatchesAsset()
+
     const credentials = []
-    try {
-      if (hit.asset_id !== null && hit.asset_id !== undefined) {
-        credentials.push(...db.prepare(`SELECT id, host, username, secret_type, privilege, source, tool, agent, found_at
-          FROM credential WHERE asset_id = ? ORDER BY id LIMIT 20`).all(hit.asset_id))
-      } else if (hit.target) {
-        const host = String(hit.target).replace(/^[a-z]+:\/\//i, '').split(/[/:?#]/)[0]
-        if (host) credentials.push(...db.prepare(`SELECT id, host, username, secret_type, privilege, source, tool, agent, found_at
-          FROM credential WHERE host LIKE ? ORDER BY id LIMIT 20`).all('%' + host + '%'))
-      }
-    } catch { /* 忽略 */ }
-    /* 访问会话 / WebShell / 隧道：同资产（入口类成果的报告要能看到"马在哪、隧道怎么连"） */
     const accesses = []
     const webshells = []
     const tunnels = []
-    if (hit.asset_id !== null && hit.asset_id !== undefined) {
-      try { accesses.push(...db.prepare('SELECT id, host, username, method, privilege, session_ref, obtained_at FROM access_session WHERE asset_id = ? ORDER BY id LIMIT 20').all(hit.asset_id)) } catch { /* 忽略 */ }
-      try { webshells.push(...db.prepare('SELECT id, url, shell_type, pass_key, privilege, status, agent FROM webshell WHERE asset_id = ? ORDER BY id LIMIT 20').all(hit.asset_id)) } catch { /* 忽略 */ }
+    if (sameAsset) {
       try {
-        tunnels.push(...db.prepare('SELECT id, kind, listen, entry, reach, entry_kind, status, command, agent FROM tunnel WHERE asset_id = ? ORDER BY id LIMIT 20').all(hit.asset_id)
-          .map((t) => Object.assign({}, t, { legit: tunnelIsLegit(t.entry_kind) })))
+        if (hit.asset_id !== null && hit.asset_id !== undefined) {
+          credentials.push(...db.prepare(`SELECT id, host, username, secret_value, secret_type, privilege, source, tool, agent, found_at
+            FROM credential WHERE asset_id = ? ORDER BY id LIMIT 20`).all(hit.asset_id))
+        } else if (targetHost !== null) {
+          credentials.push(...db.prepare(`SELECT id, host, username, secret_value, secret_type, privilege, source, tool, agent, found_at
+            FROM credential WHERE host LIKE ? ORDER BY id LIMIT 20`).all('%' + targetHost + '%'))
+        }
       } catch { /* 忽略 */ }
+      if (hit.asset_id !== null && hit.asset_id !== undefined) {
+        try { accesses.push(...db.prepare('SELECT id, host, username, method, privilege, session_ref, obtained_at FROM access_session WHERE asset_id = ? ORDER BY id LIMIT 20').all(hit.asset_id)) } catch { /* 忽略 */ }
+        try { webshells.push(...db.prepare('SELECT id, url, shell_type, pass_key, privilege, status, agent FROM webshell WHERE asset_id = ? ORDER BY id LIMIT 20').all(hit.asset_id)) } catch { /* 忽略 */ }
+        try {
+          tunnels.push(...db.prepare('SELECT id, kind, listen, entry, reach, entry_kind, status, command, agent FROM tunnel WHERE asset_id = ? ORDER BY id LIMIT 20').all(hit.asset_id)
+            .map((t) => Object.assign({}, t, { legit: tunnelIsLegit(t.entry_kind) })))
+        } catch { /* 忽略 */ }
+      }
     }
 
     /* 复现完整性判定：一条得分至少要"有步骤 + （有命令 或 有漏洞 或 有原始请求）" */
@@ -2325,7 +2517,8 @@ export class RedteamStore {
     const db = this.db(id)
     const meta = readMeta(this.metaPathOf(id)) || {}
     const limit = Math.min(Number(options.limit) || 500, 2000)
-    const rows = db.prepare(`SELECT h.*, p.code, p.name AS point_name, p.points, p.category,
+    const rows = db.prepare(`SELECT h.*, p.code, p.name AS point_name, p.points AS point_default, p.category,
+        p.enabled AS point_enabled,
         a.ip AS asset_ip, v.title AS vuln_title, v.cve AS vuln_cve, v.gained AS vuln_gained, v.severity AS vuln_severity
       FROM score_hit h
       LEFT JOIN score_point p ON p.id = h.point_id
@@ -2356,12 +2549,45 @@ export class RedteamStore {
     }
     /* 自己注册/自建的账号不算成果：从报告主体剔除，只在页脚给一个数字 */
     const selfCreatedRows = rows.filter((h) => Number(h.self_created) === 1)
-    const reportRows = rows.filter((h) => Number(h.self_created) !== 1)
+    /* 「停用」的得分点：面板只累加 enabled 的点（listScorePoints 的口径），报告必须一致。
+       曾经报告不看 enabled —— 停用 web-app 后面板 50 分、报告 150 分，交付物自相矛盾。
+       这些命中不进正文、不进总分，但同样只报个数（用户是自己关的，不是被规则顶掉的）。
+       判定函数放在下面与 reportRows 一起，避免两份口径漂移。 */
+    /* 计分口径与规则上限：**必须与 listScorePoints 用同一套**（applyScoreCaps + 得分点元数据），
+       否则面板显示 6340 分、报告写 7930 分，两边对不上 —— 交付物自相矛盾比数字高低更糟。
+       被顶掉/超上限的命中不进正文（它们不是新的成果），只在页脚报个数。 */
+    /* 计分评估走共享实现，且**带上 enabledOnly**：面板只累加启用的得分点，
+       报告如果不看 enabled 就会出现"面板 50 分、报告 150 分"这种自相矛盾的交付物。 */
+    const reportMeta = loadScoreMeta(db)
+    const reportNames = loadAssetNames(db)
+    /* 命中自带 points 时以命中为准（合并版一条含多档）。
+       倍率（G5/G6）乘在档位分值上 —— 调共享的 hitPointsOf，保证面板/报告/攻击链三处口径一致。 */
+    const effPoints = (h) => hitPointsOf(
+      { points: h.points, multiplier: h.multiplier, code: h.code },
+      new Map([[String(h.code), {
+        points: (h.point_default !== undefined && h.point_default !== null
+          ? Number(h.point_default) || 0
+          : (reportMeta.get(h.code) || {}).points || 0),
+      }]]),
+    )
+    const reportEval = evaluateScoreBoard(db, rows.map((h) => Object.assign({}, h, { points: effPoints(h) })),
+      { meta: reportMeta, names: reportNames, enabledOnly: true })
+    const capFlagById = reportEval.byId
+    const isCappedRow = (h) => {
+      const flag = capFlagById.get(h.id)
+      return flag !== undefined && flag.capped === true
+    }
+    const isDisabledRow = (h) => h.point_enabled !== null && h.point_enabled !== undefined
+      && Number(h.point_enabled) !== 1
+    const reportRows = rows.filter((h) => Number(h.self_created) !== 1 && !isCappedRow(h) && !isDisabledRow(h))
+    const serviceCappedRows = rows.filter((h) => Number(h.self_created) !== 1 && isCappedRow(h))
 
     const items = reportRows.map((h, i) => {
       const seen = perPoint.get(h.point_id) || 0
       perPoint.set(h.point_id, seen + 1)
       const counted = true
+      /* 该条命中的实际分值：命中自带优先（合并版一条含多档），否则用得分点默认值 */
+      const hitPoints = effPoints(h)
 
       /* "怎么拿到的"：动作步骤 + 漏洞 + 凭据/入口（报告的核心，缺了就是没法交付） */
       const trace = this.#hitTrace(db, { ...h, code: h.code }, id)
@@ -2407,15 +2633,161 @@ export class RedteamStore {
           request: clip(e.request, 20000), response: clip(e.response, 8000), note: e.note, source: 'auto',
         }))
       }
+      /* ── 复现入口：请求 / 命令 / 判定标准 ──────────────────────────────────
+         用户反馈"报告里的得分点没讲明白得分过程、难以复现"。库里其实有料：
+         攻击步骤的 tool 常常就是那条 curl，target 就是这个请求的地址。
+         这里把它整理成三样东西：
+           · replay_cmd  —— 能直接粘进终端跑的命令（真实 curl 原样保留，其余按 URL 合成）
+           · replay_http —— 能粘进 Yakit Repeater 的原始报文（有真实抓包用真实的，否则合成）
+           · confirm     —— 这条凭什么算拿到、要附什么材料、从哪复现
+         **合成的一律标 synthesized + 说明来源**，不能让验收人把推断当实证。 */
+      const firstStepTool = (trace.steps.find((x) => String(x.tool || '').trim() !== '') || {}).tool || ''
+      const parsedCurl = parseCurl(firstStepTool)
+      const replayUrl = (() => {
+        if (requests.length > 0 && requests[0].url) return requests[0].url
+        if (parsedCurl !== null) return parsedCurl.url
+        return h.target || null
+      })()
+      /* ── 合成的边界（很重要）─────────────────────────────────────────────
+         只有"这条得分确实是 HTTP 交互拿到的"才合成 HTTP 报文/curl 命令。
+         不加这个判断会把服务名当成 HTTP 服务，产出这种没用的东西：
+           · 目标 10.20.30.40:3306 → `curl -i -s 'http://10.20.30.40:3306/'`
+           · 目标 pc-001          → `curl -i -s 'http://pc-001/'`
+         宁可明确说"这条不是 HTTP 入口，请按下面的动作模板复现"。 */
+      const targetParsed = parseTarget(h.target || '')
+      const schemeIsHttp = targetParsed !== null
+        && (targetParsed.scheme === 'http' || targetParsed.scheme === 'https')
+      /* 判定"这条是 HTTP 交互"的三条依据，命中任一即可 */
+      const isHttpEntry = parsedCurl !== null
+        || (requests.length > 0 && String(requests[0].request || '').trim() !== '')
+        || schemeIsHttp
+      const confirm = scoreConfirmOf(h.code)
+
+      /* ── 复现命令：先看"这条得分靠什么资产成立"，再挑命令 ────────────────────
+           · real        —— 攻击时确实敲过、且就是这次 HTTP 交互的 curl
+           · synthesized —— 由**真实抓获请求**或目标 URL 合成的 curl（命令行等价形式）
+           · template    —— 该得分点自己的动作模板（资产已把它填成可跑的命令）
+           · from_step   —— 取自攻击步骤的真实命令（可能不是"本步"的动作，如实标注）
+         ⚠️ 顺序错误的代价（实测）：边界突破条目靠**隧道**成立，但同资产的攻击步骤里
+         记着"上传冰蝎马"的 curl；若先判"步骤里有 curl 就用它"，报告就会把上传命令
+         当成边界突破的复现命令 —— 张冠李戴，用户照着跑根本复现不出"跨进内网"。
+         所以"资产是否指向该得分点的复现方式"必须排在"步骤里有没有命令"之前。 */
+      const capturedRequest = requests.length > 0 ? String(requests[0].request || '').trim() : ''
+      const capturedCurl = (() => {
+        if (capturedRequest === '') return null
+        const firstLine = capturedRequest.split(/\r?\n/)[0]
+        const m = /^([A-Z]+)\s+(\S+)/.exec(firstLine)
+        const hostLine = /^host:\s*(\S+)/im.exec(capturedRequest)
+        if (m === null || hostLine === null) return null
+        const scheme = /:443$/.test(hostLine[1]) ? 'https' : 'http'
+        return { url: scheme + '://' + hostLine[1] + m[2], method: m[1] }
+      })()
+
+      const tunnel0 = trace.tunnels[0] || null
+      const listenPort = tunnel0 === null || !tunnel0.listen
+        ? null
+        : (/:([0-9]{1,5})$/.exec(String(tunnel0.listen)) || [])[1] || null
+      const reach = tunnel0 === null ? null : String(tunnel0.reach || '').trim()
+      const t0 = parseTarget(h.target || '')
+      const cred0 = (trace.credentials.find((c) => c.username) || trace.credentials[0]) || {}
+      const templateValues = {
+        host: (reach === null || reach === '' ? null : reach.replace(/\/[0-9]{1,3}$/, '')) || (t0 === null ? null : t0.host),
+        port: listenPort || (t0 === null ? null : t0.port),
+        user: cred0.username,
+        pass: cred0.secret_value,
+        url: h.target || null,
+      }
+
+      let replayCmd = null
+      let replayCmdKind = null
+      let replayCmdUnfilled = []
+      const curlIsThisAction = commandKind(firstStepTool) === 'curl'
+
+      if (capturedRequest !== '' && capturedCurl !== null) {
+        /* ① 有真实抓获报文：命令行等价形式与报文严格对应，最不会误导 */
+        replayCmd = buildCurlCommand({
+          url: capturedCurl.url, method: capturedCurl.method,
+          data: parsedCurl === null ? null : parsedCurl.data,
+          cookie: parsedCurl === null ? null : parsedCurl.cookie,
+        })
+        replayCmdKind = 'synthesized'
+      } else if (curlIsThisAction && !(tunnel0 !== null && confirm !== null && confirm.script)) {
+        /* ② 真实 curl，且这条得分不是"靠隧道成立"的（隧道条目见下面 ③） */
+        replayCmd = firstStepTool
+        replayCmdKind = 'real'
+      } else if (confirm !== null && confirm.script) {
+        /* ③ 得分点自己的动作模板：用本条记录的目标/隧道/凭据填成可跑的命令 */
+        replayCmdKind = 'template'
+        const filled = fillTemplate(confirm.script, templateValues)
+        replayCmd = filled.cmd
+        replayCmdUnfilled = filled.remaining
+      } else if (curlIsThisAction) {
+        replayCmd = firstStepTool
+        replayCmdKind = 'real'
+      } else if (commandKind(firstStepTool) !== null) {
+        /* ④ 步骤里的其它真实命令：如实说明它不是"本步"的动作 */
+        replayCmd = firstStepTool
+        replayCmdKind = 'from_step'
+      }
+
+      if (replayCmd === null && confirm && confirm.script) {
+        replayCmdKind = 'template'
+        /* 用这条得分自己已知的信息填模板：host 来自 target，账号来自挂载的凭据。
+           填不上的占位符保持原样并列出来 —— 不猜，也不假装能直接跑。 */
+        const cred0 = (trace.credentials.find((c) => c.username) || trace.credentials[0]) || {}
+        const t0 = parseTarget(h.target || '')
+        /* 隧道条目：<端口> 指的是隧道监听端口（127.0.0.1:1080），不是 target 里的端口。
+           边界突破的 target 是"可达网段"（10.20.30.0/24），拿它解析端口只会得到 null、
+           留下一个填不上的占位符 —— 而这条得分真正要跑的命令就写在隧道记录里。 */
+        const tunnel0 = trace.tunnels[0] || null
+        const listenPort = tunnel0 === null || !tunnel0.listen
+          ? null
+          : (/:([0-9]{1,5})$/.exec(String(tunnel0.listen)) || [])[1] || null
+        const reachHost = (() => {
+          const reach = tunnel0 === null ? null : String(tunnel0.reach || '').trim()
+          if (reach === null || reach === '') return null
+          return reach.replace(/\/[0-9]{1,3}$/, '')     /* 10.20.30.0/24 → 10.20.30.0 */
+        })()
+        const filled = fillTemplate(confirm.script, {
+          host: reachHost || (t0 === null ? null : t0.host),
+          port: listenPort || (t0 === null ? null : t0.port),
+          user: cred0.username,
+          pass: cred0.secret_value,
+          url: h.target || null,
+        })
+        replayCmd = filled.cmd
+        replayCmdUnfilled = filled.remaining
+      }
+
+      /* 原始报文：优先真实抓包；其次从真实 curl 合成；否则仅当 target 写了 http(s):// 才合成 */
+      let replayHttp = null
+      let replayHttpSynthesized = false
+      if (requests.length > 0 && String(requests[0].request || '').trim() !== '') {
+        replayHttp = requests[0].request
+      } else if (parsedCurl !== null) {
+        replayHttp = buildHttpRequest({
+          url: parsedCurl.url, method: parsedCurl.method, data: parsedCurl.data,
+          headers: parsedCurl.headers, cookie: parsedCurl.cookie,
+          insecure: parsedCurl.insecure, followRedirect: parsedCurl.followRedirect,
+        })
+        replayHttpSynthesized = replayHttp !== null
+      } else if (schemeIsHttp) {
+        replayHttp = buildHttpRequest({ url: h.target, method: 'GET' })
+        replayHttpSynthesized = replayHttp !== null
+      }
       return {
         seq: i + 1,
         id: h.id,
         point_id: h.point_id,
+        /* 得分点 code：报告条目与攻击链条目**必须带上同一个 code** ——
+           界面要按它把两边对起来（报告页的阶段分组兜底、工具侧按 code 核对成果），
+           缺了它下游只能按 point_name 模糊匹配，改个名字就断。 */
+        code: h.code || '',
         stage_code: scoreStageOf({ stage_code: h.stage_code, code: h.code, target: h.target },
           h.asset_id === null || h.asset_id === undefined ? undefined : scopeOf.get(h.asset_id)),
         point_name: h.point_name || '（已删除的得分点）',
         category: h.category || '',
-        points: h.points || 0,
+        points: hitPoints,
         counted: counted,
         nth_of_point: seen + 1,
         target: h.target || '',
@@ -2428,6 +2800,29 @@ export class RedteamStore {
         recorded_at: h.recorded_at || '',
         requests: requests,
         missing_evidence: requests.length === 0,
+        /* 复现入口（新增）：用户照着这三样就能重放/自证 */
+        replay_cmd: replayCmd,
+        /* real / synthesized / template —— 界面与报告据此决定措辞（模板不能叫"照抄即可"） */
+        replay_cmd_kind: replayCmdKind,
+        /* 模板里还没填上的占位符（空数组表示已全部填好、可直接跑） */
+        replay_cmd_unfilled: replayCmdKind === 'template' && replayCmdUnfilled.length > 0 ? replayCmdUnfilled : undefined,
+        replay_http: replayHttp,
+        replay_http_synthesized: replayHttpSynthesized,
+        /* 这份复现入口是怎么来的：
+             linked       —— 显式关联漏洞的真实抓包
+             auto         —— 按目标路径匹配到的真实抓包（需核对）
+             request      —— 由真实抓包推导出的命令行等价形式
+             step         —— 取自攻击步骤的真实命令（未必是本步动作）
+             synthesized  —— 完全由目标 URL 合成（需核对）
+             template     —— 得分点自己的动作模板（用本条记录填好） */
+        replay_source: requests.length > 0
+          ? (capturedRequest !== '' ? (requests[0].source === 'linked' ? 'linked' : 'auto')
+            : (replayCmdKind === 'from_step' ? 'step' : 'request'))
+          : (replayCmdKind === 'from_step' ? 'step'
+            : (replayCmdKind === 'template' ? 'template' : (replayCmd !== null || replayHttp !== null ? 'synthesized' : null))),
+        /* 判定标准 / 自证材料 / 复现入口（来自 SCORE_CONFIRM，按 code 取） */
+        confirm: confirm,
+        confirm_missing: confirm === null,
         /* 怎么拿到的：步骤（含命令与回显）+ 漏洞 + 凭据/入口；incomplete 表示报告没法复现这一步 */
         trace: trace,
         how: trace.how,
@@ -2455,139 +2850,170 @@ export class RedteamStore {
       tunnels: items.reduce((n, x) => n + x.tunnels.length, 0),
       /* 自己注册/自建账号的命中：不算成果，不写进报告 */
       selfCreatedExcluded: selfCreatedRows.length,
+      /* 同资产同端口重复的账号/数据库权限命中：服务已拿满，重复的不算新成果 */
+      serviceCappedExcluded: serviceCappedRows.length,
+      /* 所属得分点已被用户「停用」的命中：与面板口径一致地排除（否则两边总分对不上） */
+      disabledExcluded: rows.filter((h) => Number(h.self_created) !== 1 && isDisabledRow(h)).length,
+      serviceCapped: serviceCappedRows.map((h) => ({
+        id: h.id, point_name: h.point_name || h.code, code: h.code,
+        service: serviceLabel(h), evidence: h.evidence || '', target: h.target || '',
+        points: h.points || 0, recorded_at: h.recorded_at || '',
+      })),
     }
-    /* ── 按攻击链顺序（信息收集 → 互联网资产权限 → 边界突破 → 内网资产权限 → 靶标权限）分组 ── */
+    /* ── 按攻击链顺序（信息收集 → 互联网资产权限 → 边界突破 → 内网资产权限 → 靶标权限）分组 ──
+       ⚠️ ordinal 是**链路里的真实位置**，不是"过滤后的第几条"：`listStages` 的注释写明
+       "界面画 ①②③ 与报告排序都用它，不要另行编号"。先编号再过滤掉空阶段，
+       会把第 3 阶段的"边界突破"标成 ② —— 攻击链页、报告页、导出的 markdown 会一起错，
+       而链路图与报告正文一旦对不上，交付物就不可信了。 */
     let cumulative = 0
-    const stages = this.listStages(id).map((st, si) => {
+    const stages = this.listStages(id).map((st) => {
       const sItems = items.filter((x) => x.stage_code === st.code)
       const pts = sItems.reduce((n, x) => n + (x.counted ? x.points : 0), 0)
       cumulative += pts
       return { code: st.code, name: st.name, color: st.color, goal: st.goal, transition: st.transition,
-        ordinal: si + 1, points: pts, cumulative: cumulative, items: sItems }
+        ordinal: st.ordinal, points: pts, cumulative: cumulative, items: sItems }
     }).filter((st) => st.items.length > 0)
 
-    /* markdown（给复制/下载，也方便智能体直接交付） */
+    /* ── markdown：给复制/下载，也方便智能体直接交付 ──────────────────────────
+       结构按"用户要照着复现"来排，不是按"我们记录了多完整"来排：
+         ① 抬头：总分 + 一句话结论 + 需要补录的条目（验收人先看这个）
+         ② 逐条：**复现入口放最前**（Yakit 报文 / 终端命令 / 判定标准）
+         ③ 附录：涉及的资产（对账用）
+       ⚠️ 两条长度纪律：请求体保完整（Yakit 要能直接重放，截断就废了）；
+       响应体只做验证，截到 1000 字符并标长度。 */
     const md = []
-    md.push('# 攻击得分链路复现报告 — ' + ((meta && meta.target_name) || id), '')
-    md.push('合计 **' + summary.points + ' 分** · ' + summary.count + ' 项得分 · ' +
-      summary.withRequests + '/' + summary.count + ' 项带原始请求' +
-      (summary.missingRequests > 0 ? '（' + summary.missingRequests + ' 项缺原始请求）' : '') +
-      ' · ' + summary.withSteps + '/' + summary.count + ' 项带动作步骤', '')
-    if (summary.incomplete > 0) {
-      md.push('> ⚠️ **' + summary.incomplete + ' 项成果复现链不完整**（缺攻击步骤 / 缺实际命令 / 缺凭据或隧道登记），已在对应条目下列出缺口 —— 这类条目交出去别人复现不了，请补齐后重新出报告。', '')
-    }
-    if (summary.selfCreatedExcluded > 0) {
-      md.push('> 另有 ' + summary.selfCreatedExcluded + ' 条「自己注册/自建账号」的记录不计分、不在本报告中（演练得分针对拿到别人已有的账号与权限）。', '')
-    }
+    const AGENT_LABEL = (a) => ROLE_TITLES[a] || a || '未标注角色'
     const CIRCLED = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲', '⑳']
     const NUMS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20']
-    const AGENT_LABEL = (a) => ROLE_TITLES[a] || a || '未标注角色'
+    const oneLine = (t, n) => String(t === null || t === undefined ? '' : t).replace(/\s*\n+\s*/g, ' ').trim().slice(0, n || 300)
+
+    md.push('# 攻击得分链路复现报告 — ' + ((meta && meta.target_name) || id), '')
+    md.push('> 本报告只收录**拿到分**的成果，每条都给出可重放的请求与判定标准，照着做即可复现。', '')
+    md.push('| 合计得分 | 成果项数 | 可直接重放 | 复现链完整 |', '| --- | --- | --- | --- |')
+    md.push('| **' + summary.points + ' 分** | ' + summary.count + ' 项 | '
+      + summary.withRequests + '/' + summary.count
+      + ' | ' + (summary.count - summary.incomplete) + '/' + summary.count + ' |', '')
+
+    /* 先看这里：需要补录的条目（验收人最关心的"哪些站不住"） */
+    const weak = items.filter((x) => x.incomplete || x.missingRequests)
+    if (weak.length > 0) {
+      md.push('## ⚠️ 先补这些（' + weak.length + ' 项站不住）', '')
+      for (const x of weak) {
+        const why = []
+        if (x.missingRequests) why.push('没有原始请求')
+        for (const g of (x.gaps || [])) why.push(oneLine(g, 80))
+        md.push('- **' + x.point_name + '（+' + x.points + ' 分）**：' + why.join('；'))
+      }
+      md.push('')
+      md.push('> 补录命令：`redteam_http_evidence_add`（原始请求）、`redteam_chain_add`（动作与命令）、'
+        + '`redteam_credential_add` / `redteam_tunnel_add`（凭据与隧道）。', '')
+    }
+    if (summary.selfCreatedExcluded > 0) {
+      md.push('> 另有 ' + summary.selfCreatedExcluded + ' 条「自己注册/自建账号」不计分、不在本报告（得分针对拿到别人已有的权限）。', '')
+    }
+    if (summary.serviceCappedExcluded > 0) {
+      md.push('> 另有 ' + summary.serviceCappedExcluded + ' 条「同资产同端口重复的账号/数据库权限」不计分（一个服务拿到最高权限即拿满）。', '')
+    }
+
     for (const st of stages) {
       md.push('---', '')
-      md.push('## ' + (CIRCLED[st.ordinal - 1] || '') + ' ' + st.name + '　+' + st.points + ' 分（累计 ' + st.cumulative + ' 分）', '')
-      if (st.goal) md.push('> ' + st.goal, '')
+      md.push('## ' + (CIRCLED[st.ordinal - 1] || '') + ' ' + st.name
+        + '（' + st.items.length + ' 项 · +' + st.points + ' 分）', '')
+      if (st.goal) md.push('> ' + oneLine(st.goal, 120), '')
       let n = 0
       for (const x of st.items) {
         n += 1
-        md.push('### ' + (NUMS[n - 1] || n) + '. ' + x.point_name + '　+' + x.points + ' 分', '')
-        if (x.target) md.push('- **目标**：' + x.target)
-        if (x.gained) md.push('- **拿到**：' + x.gained)
-        if (x.evidence && String(x.evidence).replace(/\n+/g, ' ').trim() !== String(x.gained || '').trim()) {
-          md.push('- **结果**：' + String(x.evidence).replace(/\n+/g, ' ').slice(0, 300))
-        }
-        if (x.vuln) md.push('- **利用的漏洞**：' + (x.vuln.cve ? x.vuln.cve + ' — ' : '') + x.vuln.title)
-        if (x.recorded_at) md.push('- **取得时间**：' + String(x.recorded_at).replace('T', ' ').slice(0, 19) + (x.recorded_by ? '（' + AGENT_LABEL(x.recorded_by) + '）' : ''))
-        md.push('')
+        md.push('### ' + (NUMS[n - 1] || n) + '. ' + x.point_name + '　**+' + x.points + ' 分**', '')
+        /* 一行说清"打哪、拿到什么" */
+        md.push('- **目标**：`' + String(x.target || x.asset_ip || '—') + '`'
+          + (x.gained ? '　**拿到**：' + oneLine(x.gained, 120) : ''))
+        if (x.confirm && x.confirm.need) md.push('- **凭什么算拿到**：' + oneLine(x.confirm.need, 200))
+        if (x.confirm && x.confirm.proof) md.push('- **要附的材料**：' + oneLine(x.confirm.proof, 200))
 
-        /* ── 怎么拿到的：把动作步骤 + 命令 + 回显摆出来 ───────────────────── */
-        md.push('#### 这一步怎么来的', '')
-        if (x.trace && x.trace.how) md.push('> ' + String(x.trace.how).replace(/\n+/g, ' '), '')
+        /* ── 复现：放最前，这是用户最需要的东西 ─────────────────────────── */
+        md.push('', '#### 复现', '')
+        const replayNote = x.replay_source === 'synthesized'
+          ? '　⚠️ 以下报文由已记录的目标**自动合成**，请核对后再采信'
+          : (x.replay_source === 'auto' ? '　⚠️ 按目标路径自动匹配，请核对' : '')
+        if (x.replay_http) {
+          md.push('**① 原始报文**（整段复制 → Yakit「Repeater → 粘贴原始请求」→ 发送）' + replayNote, '')
+          md.push('```http', String(x.replay_http).replace(/\r/g, '').trim(), '```', '')
+        }
+        if (x.replay_cmd) {
+          const cmdLead = x.replay_cmd_kind === 'real'
+            ? '**② 命令行复现**（攻击时实际执行的命令，可直接重跑）'
+            : (x.replay_cmd_kind === 'synthesized'
+                ? '**② 命令行等价形式**（由上面那份真实报文推导，地址与方法与报文一致）'
+                : (x.replay_cmd_kind === 'from_step'
+                    ? '**② 相关命令**（取自攻击步骤，⚠️ 未必就是本步那条动作，供参考）'
+                    : ((x.replay_cmd_unfilled || []).length === 0
+                        ? '**② 命令行复现**（已用本条记录的目标与凭据填好模板，可直接跑）'
+                        : '**② 复现动作模板**（⚠️ 还有 ' + (x.replay_cmd_unfilled || []).join('、')
+                          + ' 未填 —— 照着这个动作在目标上执行，不是可直接运行的命令）')))
+          md.push(cmdLead, '')
+          md.push('```bash', String(x.replay_cmd).replace(/\r/g, '').trim(), '```', '')
+        }
+        if (!x.replay_http && !x.replay_cmd) {
+          md.push('> ⚠️ 没有可复现的入口。' + ((x.confirm && x.confirm.replay) ? '该得分项通常用：' + oneLine(x.confirm.replay, 160) : '')
+            + ' 请用 `redteam_chain_add` 补上动作与实际命令。', '')
+        }
+        /* 真实抓包的响应摘要：只做验证用，截断并标长度 */
+        if (x.requests.length > 0) {
+          const r0 = x.requests[0]
+          if (r0.response) {
+            const full = String(r0.response)
+            md.push('**服务端响应**（' + (r0.status === null || r0.status === undefined ? '状态未记录' : 'HTTP ' + r0.status) + '）', '')
+            md.push('```http', full.replace(/\r/g, '').trim().slice(0, 1000)
+              + (full.length > 1000 ? '\n…（响应共 ' + full.length + ' 字符，完整内容见证据库）' : ''), '```', '')
+          }
+          if (x.requests.length > 1) md.push('> 另有 ' + (x.requests.length - 1) + ' 条原始请求，见 `redteam_http_evidence` 证据库。', '')
+        }
+
+        /* ── 怎么拿到的：步骤 + 关键命令（放第二位，支撑上一条）─────────── */
+        md.push('')
+        md.push('#### 怎么拿到的', '')
+        if (x.how) md.push('> ' + oneLine(x.how, 240), '')
         if (x.steps.length === 0) {
-          md.push('⚠️ 没有关联的攻击步骤记录，**无法说明这一步是怎么做的**。请用 `redteam_chain_add` 补上动作、命令与回显（可用 `point_code` + `evidence` 一次调用同时记分）。', '')
+          md.push('⚠️ 没有关联的攻击步骤（`redteam_chain_add`），说不清这一步的动作。', '')
         } else {
           x.steps.forEach((s, si) => {
-            const head = '**' + (si + 1) + '. ' + (s.title || '(未命名动作)') + '**'
+            md.push('**' + (si + 1) + '. ' + oneLine(s.title || '(未命名动作)', 80) + '**'
               + (s.agent ? '　—　' + AGENT_LABEL(s.agent) : '')
-              + (s.stage_code ? '　·　阶段 ' + s.stage_code : '')
-              + (s.inferred ? '　·　（按同资产关联推断）' : '')
-              + (s.recorded_at ? '　·　' + String(s.recorded_at).replace('T', ' ').slice(0, 19) : '')
-            md.push(head)
-            if (s.detail) md.push('- 说明：' + String(s.detail).replace(/\n+/g, ' ').slice(0, 400))
+              + (s.inferred ? '　·　（按同资产推断，仅供参考）' : ''))
+            if (s.detail) md.push('- ' + oneLine(s.detail, 240))
             if (s.tool) {
-              md.push('- 执行：')
-              md.push('```bash', String(s.tool).replace(/\r/g, '').trim().slice(0, 2000), '```')
-            } else {
-              md.push('- 执行：⚠️ 未记录实际命令（`redteam_chain_add` 的 `tool`）')
+              md.push('- 命令：')
+              md.push('  ```bash', '  ' + String(s.tool).replace(/\r/g, '').trim().slice(0, 1200), '  ```')
             }
-            if (s.result) md.push('- 结果：' + String(s.result).replace(/\n+/g, ' ').slice(0, 400))
-            if (s.evidence_ref) md.push('- 证据：`' + s.evidence_ref + '`')
-            md.push('')
+            if (s.result) md.push('- 回显：' + oneLine(s.result, 240))
           })
+          md.push('')
         }
-        /* 账号密码怎么来的：凭据带上来源与取得方式 */
+        /* 这条得分自己的凭据 / 隧道 / 马（已按"同一件事"过滤，不再是资产级的全量清单） */
         if (x.credentials.length > 0) {
-          md.push('**拿到的凭据**', '')
-          for (const c of x.credentials) {
-            md.push('- `' + (c.host || '') + '`　' + (c.username || '(无用户名)') + ' / ' + (c.secret_type || 'password')
-              + (c.privilege ? '　权限：' + c.privilege : '')
-              + '　来源：' + (c.source || '未标注')
-              + (c.tool ? '　取得方式：`' + String(c.tool).replace(/\n+/g, ' ').slice(0, 200) + '`' : '')
-              + (c.agent ? '　（' + AGENT_LABEL(c.agent) + '）' : ''))
-          }
-          md.push('')
+          md.push('**凭据**：' + x.credentials.map((c) => '`' + (c.host || '') + '` ' + (c.username || '—')
+            + (c.privilege ? '（' + c.privilege + '）' : '') + '　来源：' + (c.source || '未标注')
+            + (c.tool ? '　取得：`' + oneLine(c.tool, 120) + '`' : '')).join('<br>'), '')
         }
-        /* 隧道怎么搭的：命令 + 监听地址 + 目标侧入口 */
-        if (x.tunnels.length > 0) {
-          md.push('**用到的隧道 / 通道**', '')
-          for (const t of x.tunnels) {
-            md.push('- `' + (t.kind || 'socks5') + '`　监听 `' + (t.listen || '未登记') + '`'
-              + '　入口：' + (t.entry || '未登记')
-              + (t.reach ? '　可达：' + t.reach : '')
-              + '　目标侧：' + (t.entry_kind || '未声明')
-              + (t.legit === false ? '　⚠️ **不算跨越靶标边界**' : '')
-              + (t.status ? '　状态：' + t.status : ''))
-            if (t.command) md.push('  ```bash', '  ' + String(t.command).replace(/\r/g, '').trim().slice(0, 600), '  ```')
-          }
-          md.push('')
-        }
-        /* WebShell：用户要能连上，报告里给全连接要素 */
         if (x.webshells.length > 0) {
-          md.push('**用到的 WebShell**', '')
-          for (const w of x.webshells) {
-            md.push('- `' + (w.url || '') + '`　类型：' + (w.shell_type || '未登记')
-              + (w.pass_key ? '　连接密钥/口令：`' + w.pass_key + '`' : '')
-              + (w.privilege ? '　权限：' + w.privilege : '')
-              + (w.status ? '　状态：' + w.status : ''))
-          }
-          md.push('')
+          md.push('**WebShell**：' + x.webshells.map((w) => '`' + (w.url || '') + '`　' + (w.shell_type || '')
+            + (w.pass_key ? '　密钥 `' + w.pass_key + '`' : '')).join('<br>'), '')
         }
-        if (x.accesses.length > 0) {
-          md.push('**访问会话**', '')
-          for (const a of x.accesses) {
-            md.push('- `' + (a.host || '') + '`　' + (a.method || '') + '　' + (a.username || '')
-              + (a.privilege ? '　权限：' + a.privilege : '')
-              + (a.session_ref ? '　会话引用：`' + a.session_ref + '`' : ''))
-          }
-          md.push('')
+        if (x.tunnels.length > 0) {
+          md.push('**隧道**：' + x.tunnels.map((t) => '`' + (t.kind || '') + '` 监听 `' + (t.listen || '')
+            + '`　入口 ' + oneLine(t.entry || '未登记', 100) + (t.reach ? '　可达 ' + t.reach : '')
+            + (t.legit === false ? '　⚠️ 不算跨越靶标边界' : '')).join('<br>'), '')
         }
-        if (x.gaps && x.gaps.length > 0) {
-          md.push('> ⚠️ **复现缺口**：' + x.gaps.join('；') + '。', '')
-        }
-
-        if (x.requests.length === 0) {
-          md.push('> ⚠️ 没有原始请求记录，无法直接复现；请补 `redteam_http_evidence_add`。', '')
-          continue
-        }
-        x.requests.forEach((r, ri) => {
-          md.push('**复现请求 ' + (ri + 1) + '（可直接粘贴进 Yakit Repeater）**' + (r.source === 'auto' ? ' — 按目标路径自动匹配，请核对' : ''), '')
-          if (r.request) { md.push('```http', String(r.request).replace(/\r/g, '').trim(), '```', '') }
-          else if (r.url) { md.push('```http', (r.method || 'GET') + ' ' + r.url + ' HTTP/1.1', '```', '') }
-          if (r.response) { md.push('响应摘要：', '```http', String(r.response).replace(/\r/g, '').trim().slice(0, 1200), '```', '') }
-          md.push('')
-        })
+        const meta2 = []
+        if (x.vuln) meta2.push('漏洞 ' + (x.vuln.cve ? x.vuln.cve + ' ' : '') + oneLine(x.vuln.title, 80))
+        if (x.recorded_at) meta2.push('取得 ' + String(x.recorded_at).replace('T', ' ').slice(0, 16)
+          + (x.recorded_by ? '（' + AGENT_LABEL(x.recorded_by) + '）' : ''))
+        if (x.evidence && oneLine(x.evidence, 500) !== oneLine(x.gained, 500)) meta2.push('结果 ' + oneLine(x.evidence, 200))
+        if (meta2.length > 0) md.push('> ' + meta2.join('　·　'), '')
       }
     }
-    /* ── 附录：本次打下来的资产（含发现时间）─────────────────────────────── */
+
+    /* ── 附录：本次打下来的资产（含发现时间，验收对账用）────────────────── */
     const assetsTouched = Array.from(new Set(
       items.flatMap((x) => [x.asset_id, ...(x.steps || []).map((s) => s.asset_id)])
         .filter((v) => v !== null && v !== undefined),
@@ -2599,15 +3025,13 @@ export class RedteamStore {
         FROM asset a WHERE a.id IN (${ph}) ORDER BY a.discovered_at, a.id`).all(...assetsTouched)
       md.push('---', '')
       md.push('## 附录：本报告涉及的资产（含发现时间）', '')
-      md.push('| 资产 | 名称 | 内/外网 | 发现时间 | 最近采集 | 测试状态 | 易打性 |')
-      md.push('| --- | --- | --- | --- | --- | --- | --- |')
+      md.push('| 资产 | 名称 | 内/外网 | 发现时间 | 最近采集 |')
+      md.push('| --- | --- | --- | --- | --- |')
       for (const a of rowsA) {
         md.push('| `' + (a.ip || '') + '` | ' + (a.primary_name || '—')
           + ' | ' + (a.scope === 'internal' ? '内网' : '外网')
           + ' | ' + (a.discovered_at ? String(a.discovered_at).replace('T', ' ').slice(0, 19) : '—')
-          + ' | ' + (a.last_seen ? String(a.last_seen).replace('T', ' ').slice(0, 19) : '—')
-          + ' | ' + (a.test_status || 'untested')
-          + ' | ' + (a.priority || '未评估') + ' |')
+          + ' | ' + (a.last_seen ? String(a.last_seen).replace('T', ' ').slice(0, 19) : '—') + ' |')
       }
       md.push('')
     }
@@ -2622,8 +3046,8 @@ export class RedteamStore {
     const db = this.db(id)
     const limit = Math.min(Number(f.limit) || 500, 2000)
     const items = db.prepare(`SELECT h.id, h.point_id, h.asset_id, h.vuln_id, h.step_id, h.target,
-        h.evidence, h.note, h.self_created, h.recorded_by, h.recorded_at,
-        p.code, p.name AS point_name, p.category, p.points, p.enabled, h.stage_code,
+        h.evidence, h.note, h.self_created, h.port, h.recorded_by, h.recorded_at,
+        p.code, p.name AS point_name, p.category, p.points AS point_default, p.points, p.enabled, h.points AS hit_points, h.multiplier, h.stage_code,
         a.ip AS asset_ip, v.title AS vuln_title, v.cve AS vuln_cve
       FROM score_hit h
       LEFT JOIN score_point p ON p.id = h.point_id
@@ -2652,15 +3076,45 @@ export class RedteamStore {
       it.action = step === undefined ? null : { id: step.id, seq: step.seq, stage: step.stage, title: step.title, detail: step.detail }
       it.action_inferred = inferred
     }
-    /* 计分口径：同类得分不设上限，按命中次数累加。
-       自己注册/自建的账号不计分（只留过程），因此也不进累计分。 */
+    /* 计分口径（与 listScorePoints 完全一致，避免报表和面板分数对不上）：
+       ① 自己注册/自建的账号不计分（只留过程）；
+       ② 按得分点自带的 dedup_scope 去重（同目标/同系统/同服务只算最高那条，或按台卡数累加）；
+       ③ 按 rule + cap 执行规则上限，超出部分不计分。 */
+    const chainMeta = loadScoreMeta(db)
+    const chainNames = loadAssetNames(db)
+    /* 本条命中的实际分值：**命中自带档位优先**（合并版里同一条含多档，如管理员 50 / 普通 10）。
+       scoreChain 的 SQL 用 hit_points / point_default 两个别名把两列分开取（直接取 h.points 会被
+       同名的 p.points 遮蔽）—— 这一点曾经漏掉，导致攻击链页把"普通档计分、管理员档不计分"整个判反。 */
+    const chainPointsOf = (it) => hitPointsOf({
+      points: Number(it.hit_points) || Number(it.point_default) || 0,
+      multiplier: it.multiplier,
+      code: it.code,
+    })
+    const chainEval = evaluateScoreBoard(db, items.map((it) => Object.assign({}, it, { points: chainPointsOf(it) })),
+      { meta: chainMeta, names: chainNames })
+    const cappedChain = { items: chainEval.items }
+    const capFlagById = chainEval.byId
     const seenOf = new Map()
     for (const it of items) {
       it.self_created = Number(it.self_created) === 1
+      const flag = capFlagById.get(it.id)
+      it.capped = flag !== undefined && flag.capped === true
+      it.port = normalizePort(it.port) ?? parseTargetPort(it.target)
+      const meta = chainMeta.get(String(it.code)) || {}
+      it.service = meta.dedup_scope === 'none' ? null : serviceLabel(it)
+      it.capped_reason_kind = flag === undefined ? null : flag.capped_reason_kind
+      it.rule = meta.rule ?? null
+      it.rule_cap = meta.cap || 0
+      /* 本条命中对外暴露的分值 = 命中自带档位分值，缺省回落到得分点默认值 */
+      it.point_default = Number(it.point_default) || 0
+      it.points = chainPointsOf(it)
+      it.capped_reason = it.capped
+        ? scoreCapReasonText(Object.assign({}, it, { rule_cap: meta.cap || 0 }), flag.capped_by_points)
+        : null
       const seen = seenOf.get(it.point_id) || 0
-      if (!it.self_created) seenOf.set(it.point_id, seen + 1)
+      if (!it.self_created && !it.capped) seenOf.set(it.point_id, seen + 1)
       it.nth_of_point = seen + 1
-      it.counted = it.self_created !== true
+      it.counted = it.self_created !== true && it.capped !== true
     }
     /* 按得分点聚合出"哪些还没拿下"，方便一眼看出缺口 */
     const points = db.prepare('SELECT id, code, name, category, points, enabled FROM score_point ORDER BY sort_order, id').all()
@@ -2762,6 +3216,8 @@ export class RedteamStore {
         missingCount: missing.length,
         missingPoints: missing.reduce((n, p) => n + (p.potential || p.points || 0), 0),
         selfCreatedHits: scores.summary.selfCreatedHits || 0,
+        /* 同资产同端口重复命中、按服务封顶而不计分的条数（账号类 / 数据库权限） */
+        serviceCappedHits: scores.summary.serviceCappedHits || 0,
         tunnelsLegit: legitTunnels.length,
         tunnelsSelfOnly: selfOnlyTunnels.length,
       },
@@ -3027,6 +3483,9 @@ export class RedteamStore {
           /* 自己注册/自建的账号不计分（只留过程） */
           self_created: s.self_created,
         })
+        /* 服务级封顶（账号类 / 数据库权限）：步骤照常入库，但这笔分不再累加，
+           必须把原因回给模型——否则它会以为"又刷了一个账号 = 又加了分"。 */
+        if (hit && hit.warning) scoreHint = hit.warning
       } catch (error) {
         /* 步骤照常入库，但把原因回给模型——静默吞掉会让"记了分"其实是空的 */
         scoreHint = '步骤已入库，但记分失败：' + (error && error.message ? error.message : String(error))
@@ -3066,7 +3525,9 @@ export class RedteamStore {
     const slug = slugTarget(target)
     const dir = join(this.attackFilesDirOf(id), slug)
     mkdirSync(dir, { recursive: true })
-    const filePath = join(dir, name)
+    /* target 为 `..`/`.` 时 slugTarget 会原样返回，join 之后就跑出 attack-files/ 了。
+       写路径也过一遍根目录校验，保证文件一定落在本靶标目录内。 */
+    const filePath = assertPathWithin(join(dir, name), [this.attackFilesDirOf(id)])
     if (typeof f.content === 'string' && f.content.length > 0) {
       writeFileSync(filePath, f.content, 'utf8')
     } else if (typeof f.path === 'string' && f.path.length > 0) {
@@ -3115,7 +3576,13 @@ export class RedteamStore {
     const row = this.db(id).prepare('SELECT * FROM attack_file WHERE id = ?').get(Number(fileId))
     if (row === undefined) return undefined
     let content = ''
-    try { content = readFileSync(row.path, 'utf8') } catch { content = '（文件已不存在：' + row.path + '）' }
+    try {
+      /* path 来自库列（智能体写过）：必须限定在本靶标目录内，否则面板会变成任意文件读取器 */
+      const safe = assertPathWithin(row.path, [this.dirOf(id)])
+      content = readFileSync(safe, 'utf8')
+    } catch (error) {
+      content = '（拒绝或读取失败：' + (error && error.message ? error.message : String(error)) + '）'
+    }
     return { ...row, content }
   }
 
@@ -3241,8 +3708,12 @@ export class RedteamStore {
     if (title === '') throw new Error('poc.title required（写清是什么漏洞/组件的 POC）')
     const kind = POC_KINDS.includes(p.kind) ? p.kind : (String(p.kind || '').toLowerCase() === 'exp' ? 'exp' : 'poc')
     const source = POC_SOURCES.includes(p.source) ? p.source : 'self'
-    const code = String(p.code || '').trim() || slugPoc(title, p.cve)
-    const dir = join(this.pocsDirOf(), code)
+    /* code 会被当成目录名：必须净化。`code='../../escaped-poc'` 曾能把正文写到数据根目录之外
+       （deletePoc 早有 startsWith 防护，写路径却漏了）。这里统一走 slugPoc 的净化规则。 */
+    const rawCode = String(p.code || '').trim()
+    const code = rawCode === '' ? slugPoc(title, p.cve) : rawCode.replace(/[^\w.\u4e00-\u9fa5-]+/g, '-').replace(/^[.-]+/, '')
+    if (code === '') throw new Error('poc.code invalid（净化后为空，请用字母/数字/中文/短横线）')
+    const dir = assertPathWithin(join(this.pocsDirOf(), code), [this.pocsDirOf()])
     mkdirSync(dir, { recursive: true })
 
     /* 正文：优先用传入 content，其次从 path 读；两者都没有则只登记元数据 */
@@ -3254,8 +3725,9 @@ export class RedteamStore {
     }
     let filePath = null
     if (content !== '') {
-      const filename = String(p.filename || '').trim() || defaultPocFilename(title, kind, p.language)
-      filePath = join(dir, filename)
+      /* filename 也不能带路径分隔符，否则能从 code 目录里再跳出去 */
+      const filename = String(p.filename || '').trim().replace(/[/\\]/g, '-') || defaultPocFilename(title, kind, p.language)
+      filePath = assertPathWithin(join(dir, filename), [this.pocsDirOf()])
       writeFileSync(filePath, content, 'utf8')
     }
     const existing = db.prepare('SELECT * FROM poc WHERE code = ?').get(code)
@@ -3366,7 +3838,10 @@ export class RedteamStore {
     if (row === undefined) return undefined
     let content = row.content || ''
     if (content === '' && row.path) {
-      try { content = readFileSync(row.path, 'utf8') } catch { content = '' }
+      try {
+        /* 同 readAttackFile：path 是库列，读之前限定在 pocs/ 内 */
+        content = readFileSync(assertPathWithin(row.path, [this.pocsDirOf()]), 'utf8')
+      } catch { content = '' }
     }
     return { ...row, content }
   }

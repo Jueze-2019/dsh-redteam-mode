@@ -23,13 +23,13 @@ const rolesPath = join(libDir, 'prompts.roles.md')
 
 /** core.js 里提示词区段的哨兵标记：生成器只认它，重复生成因此天然幂等。 */
 const SENTINEL = '// __REDTEAM_PROMPTS_BLOCK__'
-/** 首次接管时的区段边界（此后区段由哨兵标记定位）。 */
-const START_RE = /^const COMMON_SCORE_RULES = /
+/** 首次接管时的区段边界（第一个 COMMON_* 常量起）（此后区段由哨兵标记定位）。 */
+const START_RE = /^const COMMON_[A-Z_]+ = /
 const END_RE = /^\/\* -+ 统一操作分发 \*\/$/
 
 /** 每个角色拼接哪些公共段落。顺序即正文里的出现顺序。 */
 const ROLE_COMMONS = {
-  plan: ['AUTH'],
+  plan: ['ENV', 'AUTH'],
   recon: ['AUTH', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF'],
   assess: ['AUTH', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF'],
   'vuln-scan': ['AUTH', 'SCORE_RULES', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF'],
@@ -113,7 +113,7 @@ function main() {
     return -1
   }
   let startIdx = lastIndexOf((l) => l.trim() === SENTINEL)
-  if (startIdx < 0) startIdx = lastIndexOf((l) => l.startsWith('const COMMON_AUTH = '))
+  if (startIdx < 0) startIdx = lastIndexOf((l) => /^const COMMON_[A-Z_]+ = /.test(l))
   if (startIdx < 0) startIdx = lastIndexOf((l) => l.includes('角色公共段落'))
   if (startIdx < 0) {
     throw new Error('既找不到 ' + SENTINEL + '，也找不到 COMMON_AUTH / 「角色公共段落」注释头')
@@ -136,13 +136,18 @@ function main() {
   }
 
   const parts = []
+  /* 把哨兵写进产物：下一次生成靠它精确定位区段起点。
+     只在 core.js 里留"最后一处 COMMON_* 常量"来兜底是不可靠的 ——
+     新加一个排在 COMMON_AUTH 之前的公共段落（如 COMMON_ENV）就会漏掉它。 */
+  parts.push(SENTINEL)
   parts.push('/* ------------------------------------------------------------------ 角色公共段落')
   parts.push('')
   parts.push('   由 packages/redteam-store/tools/gen-prompts.mjs 生成，**不要直接改这一段**：')
   parts.push('   改 prompts.src.js（公共段落）与 prompts.roles.md（角色正文）后重新生成。')
   parts.push('   现在 core.js 是唯一运行时产物，运行时不读那两个源文件。 */')
   parts.push('')
-  for (const key of ['AUTH', 'SCORE_RULES', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF']) {
+  /* 公共段落的输出顺序 = 这里的顺序（也是 core.js 里 const 的声明顺序，必须在使用之前） */
+  for (const key of ['ENV', 'AUTH', 'SCORE_RULES', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF']) {
     const section = commons[key]
     if (section === undefined) continue
     parts.push('const ' + section.key + ' = `' + section.raw + '`')

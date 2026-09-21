@@ -11,7 +11,7 @@
  *   ③ 泄密：技能与预设里不能有本机路径、VPS 地址、API key（要公开的包）。
  */
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync, mkdirSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -154,7 +154,7 @@ console.log('— 浏览器半侧的注册 id')
 
 console.log('— 技能随包分发')
 const skills = readdirSync(join(root, 'skills')).filter((f) => f.endsWith('.md'))
-ok(skills.length === 13, `打包技能 ${skills.length} 个`)
+ok(skills.length === 23, `打包技能 ${skills.length} 个`)
 const badSkill = skills.find((f) => {
   const text = readFileSync(join(root, 'skills', f), 'utf8')
   return !/^---\n[\s\S]*?name:\s*\S+/m.test(text) || !/description:/.test(text)
@@ -212,6 +212,23 @@ try {
   ok(second.action === 'kept' && readFileSync(installed, 'utf8').includes('用户自己改过'), '已存在时不覆盖用户预设')
   const forced = installPreset({ force: true, log: () => {} })
   ok(forced.action === 'installed' && !readFileSync(installed, 'utf8').includes('用户自己改过'), 'REDTEAM_PRESET_REFRESH=1 时强制覆盖')
+
+  /* ── 环境安装脚本随包分发（v0.10.0）──────────────────────────────────────
+     为什么必须随包：市场包用户装完只有 node_modules，仓库不在盘上。
+     预检若只说"从仓库取 scripts/redteam-setup.sh"，用户根本拿不到脚本、首次引导就断了。
+     所以启动时要把它落到 $DSH_HOME/redteam/setup.sh（可执行）。 */
+  const { installSetupScript, redteamDataDir } = await import('../lib/index.js')
+  const setupTarget = join(redteamDataDir(), 'setup.sh')
+  const s1 = installSetupScript()
+  ok(s1.action === 'installed' && existsSync(setupTarget), '首次启动把安装脚本落到 $DSH_HOME/redteam/setup.sh')
+  ok((statSync(setupTarget).mode & 0o111) !== 0, '落地的安装脚本带可执行位（能直接 bash 跑）')
+  const setupText = readFileSync(setupTarget, 'utf8')
+  ok(setupText.startsWith('#!/usr/bin/env bash'), '落地的是一份真正的 bash 脚本')
+  ok(/--check/.test(setupText) && /--yes/.test(setupText), '脚本含 --check / --yes 两种模式')
+  ok(installSetupScript().action === 'kept', '内容一致时不重复写盘（幂等）')
+  writeFileSync(setupTarget, '#!/bin/bash\n# 被改坏了\n', 'utf8')
+  ok(installSetupScript().action === 'updated', '内容与包内不一致时自动对齐（脚本无用户可改状态）')
+  ok(readFileSync(setupTarget, 'utf8') === setupText, '对齐后内容与包内完全一致')
 
   /* ── 坏预设自愈（v0.9.0 真实事故回归）────────────────────────────────────
      事故：部署时把**打包模板**直接 cp 进用户预设目录，占位符没被替换 → YAML 把它解析成

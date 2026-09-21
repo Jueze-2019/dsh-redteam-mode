@@ -1,7 +1,7 @@
 {
   "name": "dsh-redteam-mode",
-  "version": "0.9.2",
-  "description": "DSH RedTeam 模式：一句话拉起红队作战智能体（资产测绘 / 攻击链 / 得分目标 / 报告 / POC 知识库），含六个角色、13 个原生技能、常驻右侧控制台与一键自动更新",
+  "version": "0.11.0",
+  "description": "DSH RedTeam 模式：一句话拉起红队作战智能体（资产测绘 / 攻击链 / 得分目标 / 报告 / POC 知识库），含六个角色、23 个原生技能、常驻右侧控制台与一键自动更新",
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
@@ -17,6 +17,7 @@
     "lib",
     "presets",
     "skills",
+    "scripts",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
@@ -45,7 +46,8 @@
   },
   "scripts": {
     "build": "node tools/build.mjs",
-    "prepublishOnly": "node tools/build.mjs --check && node test/bundle.test.mjs"
+    "prepublishOnly": "node tools/build.mjs --check && node tools/test-all.mjs",
+    "test": "node tools/test-all.mjs"
   },
   "repository": {
     "type": "git",
