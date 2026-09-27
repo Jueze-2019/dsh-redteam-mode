@@ -1,34 +1,27 @@
-## Updated to v0.9.0 — the numbers in this entry were stale
+## Updated to v0.11.5 — one line added to the scoring description
 
-Thanks for keeping the list — sorry for the noise. The entry file was written when the plugin was
-`v0.7.0`; it has since been reworked, so **every number in the current description is wrong**
-(four roles / 48 tools). Corrected facts, all verifiable in the repo and on npm:
+The entry is unchanged in shape; one capability note was missing. The numbers already in the
+current description are still exact for this revision:
 
-| | was (v0.7.0) | now (v0.9.0) |
+| | value | how to check in the repo |
 | --- | --- | --- |
-| npm | `dsh-redteam-mode@0.7.0` | [`dsh-redteam-mode@0.9.0`](https://www.npmjs.com/package/dsh-redteam-mode) |
-| agent roles | 4 | **5 executors + 1 planner session** (recon / asset triage / vulnerability discovery / exploitation / internal pivot) |
-| `redteam_*` tools | 48 | **53** (adds `redteam_preflight`, `redteam_agent_slot`, `redteam_session_bind`, `redteam_session_info`, `redteam_asset_timeline`) |
-| console tabs | 11 | **12** (adds the agent-roster tab; assets gained a discovery timeline view) |
-| concurrency | unlimited | planner session hard-capped at **3 concurrent agents** (`redteam_agent_slot` reads the real `ctx.subagents` count) |
-| sessions | one global target pointer | **per-session target binding** (root-session keyed, subagents inherit via `session.header.parentSession`) |
+| npm | [`dsh-redteam-mode@0.11.5`](https://www.npmjs.com/package/dsh-redteam-mode) | `npm view dsh-redteam-mode version` |
+| agent roles | 5 executors + 1 planner session | `presets/redteam/` prompt sections, `redteam_role_prompt` enum |
+| `redteam_*` tools | **53** | `grep -c "name: 'redteam_" packages/redteam-bundle/lib/tools.js` |
+| native skills | **23** | `ls packages/redteam-bundle/skills \| wc -l` |
+| console tabs | **12** | `packages/redteam-bundle/lib/client.js`, `const tabs = [...]` |
+| scoring | **8 categories / 25 points** | `packages/redteam-bundle/lib/score-rules.js`, `DEFAULT_SCORE_POINTS` (25 entries) |
 
-New in 0.9.0, in case it matters for the category call: preflight skill/resource check that asks the
-user for a missing key or VPS instead of silently failing; asset **discovery timestamps**; a
-**category-organised** POC/EXP knowledge base that records creation time and the asset each entry was
-found on; and a report where every score item spells out *how it was obtained* (actions, exact
-commands, credential provenance, tunnel build commands) instead of only the result.
+**What changed in the description:** the scoring clause now says that a login which fits no more
+specific category is scored as controlling a web application system instead of being dropped. In
+practice the most common real-world finding is "a credential that logs into a web console nobody
+labelled" — email/OA it is not, so it used to fall through the cracks. `web-app` now explicitly
+covers it (admin 100 / user 50, cap 2000 unchanged), and the same clarification went into the
+scoring-rules document the plugin ships with.
 
-Verification I ran for this PR originally still holds — `dsh plugin --profile web add dsh-redteam-mode`
-on a clean `DSH_HOME` and a fresh profile, then restart and (a) the preset mounts, (b) the right-side
-console loads, (c) the sidebar/console tabs render. The 0.9.0 build additionally passed the repo's
-zero-dependency regression suite (10 files, 297 assertions, including a client-bundle load check and a
-preset self-heal check). `prepublishOnly` runs `build --check` + the bundle contract test.
+Nothing else in the entry moved: same repository, same subdirectory, same category, same install
+command. If the added clause makes the description too long for the list, I'm happy to shorten it —
+just say which part to cut.
 
-Pushed as `123fab7b` (entry file only, no README edits) — and I synced the fork to `main` first, which
-also cleared the earlier `check` failure (it was the fork sitting behind `main`, not the entry).
-
-Both gates are green on the new head: `Submission gate` — *entries look good*, and `check` — success.
-
-Happy to change the category, shorten the description, or split anything out if you'd prefer it filed
-differently.
+Regression before publishing: the repo's zero-dependency suite (14 files, 530 assertions) plus
+`build --check`, which also runs as `prepublishOnly`.
