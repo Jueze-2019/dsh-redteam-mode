@@ -67,8 +67,10 @@ dsh plugin --profile web add ./dsh-redteam-mode-<版本>.tgz
    查法：<https://nodejs.org/dist/index.json> 里每条记录的 `npm` 字段）。npm 10 没有 OIDC
    交换逻辑，`npm publish` 只会拿 `.npmrc` 里的占位 token 去发 —— registry 看到的是一个未授权
    PUT，报错是**极具误导性的 `404 Not Found - PUT https://registry.npmjs.org/<pkg>`**，
-   看起来像"包没绑定"，其实是"客户端太老"。workflow 里已加显式 `npm install -g npm@12`
-   （也可以用 `node-version: '24'`，它自带 npm 11.19）。
+   看起来像"包没绑定"，其实是"客户端太老"。
+   **修法用 `node-version: '24'`（自带 npm 11.19），不要用 `npm install -g npm@12`** ——
+   npm@12 自己要求 `node ^22.22.2 || ^24.15.0 || >=26`，在 Node 22.14 上直接
+   `EBADENGINE: Unsupported engine`（实测踩过，workflow 被卡在升级那一步）。
 2. **workflow 文件名/仓库/用户必须与 npm 网页上绑定的完全一致**（大小写敏感，`publish.yml`
    要带后缀、只写文件名不写路径），并且 `permissions: id-token: write` 不能少，
    还必须跑在 GitHub 托管的 runner 上（自建 runner 不支持）。
