@@ -61,6 +61,23 @@ dsh plugin --profile web add ./dsh-redteam-mode-<版本>.tgz
 | 受信发布（推荐长期） | 账号开 2FA + npm 包设置里绑定本仓库 GitHub Actions | CI 里 `npm publish`，走 OIDC，无需长期 token |
 | 暂存后批准 | 账号开 2FA | `npx npm@12 stage publish` → `npx npm@12 stage approve <stage-id>` |
 
+### 受信发布（OIDC）的三个坑，少一个都发不出去（2026-09-27 核实）
+
+1. **npm CLI 必须 ≥ 11.5.1，而 Node 22.14 自带的是 npm 10.9.2**（22.23.x 也只带 10.9.8，
+   查法：<https://nodejs.org/dist/index.json> 里每条记录的 `npm` 字段）。npm 10 没有 OIDC
+   交换逻辑，`npm publish` 只会拿 `.npmrc` 里的占位 token 去发 —— registry 看到的是一个未授权
+   PUT，报错是**极具误导性的 `404 Not Found - PUT https://registry.npmjs.org/<pkg>`**，
+   看起来像"包没绑定"，其实是"客户端太老"。workflow 里已加显式 `npm install -g npm@12`
+   （也可以用 `node-version: '24'`，它自带 npm 11.19）。
+2. **workflow 文件名/仓库/用户必须与 npm 网页上绑定的完全一致**（大小写敏感，`publish.yml`
+   要带后缀、只写文件名不写路径），并且 `permissions: id-token: write` 不能少，
+   还必须跑在 GitHub 托管的 runner 上（自建 runner 不支持）。
+3. **"Allowed actions" 决定能不能直接 `npm publish`**：官方原文是「`npm stage publish` 始终允许；
+   另外可选是否允许该受信发布者直接用 `npm publish`」，且**2026-09-03 之后新建的配置默认只允许
+   暂存发布**。也就是说：只填三个字段、不勾"允许直接发布"的话，CI 里的 `npm publish` 会被拒
+   （症状是认证类错误 ENEEDAUTH，而不是 404）——要么在 npm 网页补勾，要么把 workflow 改成
+   `stage publish` + 人工批准（后者等于没解决按键问题）。
+
 > **本账号目前 `npmjs.com → Profile` 里是 `Enable 2FA`（等于没开）**——
 > 没有 2FA 就既批准不了暂存、也过不了双用途的强制 2FA 要求，这是当前唯一的卡点。
 

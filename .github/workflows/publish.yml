@@ -39,11 +39,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 受信发布要求 npm CLI >= 11.5.1、Node >= 22.14
+      # 受信发布（OIDC）要求 npm CLI >= 11.5.1、Node >= 22.14。
+      # 注意：Node 22.14 **自带的是 npm 10.9.2**（22.23.x 也只带 10.9.8），
+      # npm 10 没有 OIDC 交换逻辑 —— 它只会拿 .npmrc 里的占位 token 去发，
+      # registry 只看到一个未授权的 PUT，报出来就是那个很有误导性的
+      # `404 Not Found - PUT https://registry.npmjs.org/<pkg>`。
+      # 所以必须显式升 npm，否则受信发布绑了也白绑。
       - uses: actions/setup-node@v4
         with:
           node-version: '22.14'
           registry-url: 'https://registry.npmjs.org'
+
+      - name: 升级 npm 到满足受信发布要求的版本
+        run: |
+          npm install -g npm@12
+          echo "npm: $(npm --version)（受信发布要求 >= 11.5.1）"
 
       - name: 检查绑定开关
         id: gate
