@@ -112,6 +112,26 @@ dsh plugin --profile web add ./dsh-redteam-mode-<版本>.tgz
 （packument / `npm view` / `npm pack`）查不到、也装不了，等于烧掉一个版本号。
 正确姿势：先 `scripts/stage-watch.mjs <stage-id>` 等 `validating` 结束，拿到提示再 `stage-approve`。
 
+### ⚠️ 更糟的一种情况：条目会自己消失，根本没等到人批准（2026-09-28 三次实测）
+
+0.11.5 / 0.11.6 / 0.11.7 三次暂存，全部在 `validating` 状态停留 **15–18 分钟**后
+**条目自行消失**（`stage view` → 404），版本号被占用、public 端始终查不到。
+其中 **0.11.7 全程无人发起过任何 approve 请求**（`scripts/stage-diag.mjs` 记录了完整状态机：
+`validating` → `http-404`，registry 上 0.11.x 一直为空），所以这**不是"批准晚了"**，
+而是 npm 侧把暂存条目丢弃了 —— 表现为"暂存能成功、审查跑一会儿、然后静默丢弃"。
+
+对照组：**发布历史上最后一次成功发布是 2026-09-21T07:18Z 的 `0.11.2-probe-b`**，
+那之后（同日 08:20 启用 2FA 起）的所有发布尝试（0.11.3 / 0.11.4 / 0.11.5 / 0.11.6 / 0.11.7）
+无一成功。所以嫌疑集中在**账号侧状态**（npm 的预防性安全冻结 / 双用途复核队列），
+而不是包内容 —— 待查证据：
+
+- `npmjs.com` → 右上角 **Notifications** 有没有安全冻结、复核或政策通知；
+- 账号是否仍处于只读/受限状态（staging 允许、实际落库被拒）；
+- 需要时向 npm 提工单（<https://www.npmjs.com/support>），把上面的时间线直接贴过去。
+
+**版本号会被烧掉**：`0.11.5`/`0.11.6`/`0.11.7` 已不可复用（`409 Cannot stage previously
+published version`），下一个可用号从 `0.11.8` 起。
+
 ### 顺带记录：绕过 2FA 的 token 还有两个副作用
 
 - 这类 token 调的 `npm publish` 可能被降级为**暂存**，命令照样打印 `+ pkg@x.y.z`；
