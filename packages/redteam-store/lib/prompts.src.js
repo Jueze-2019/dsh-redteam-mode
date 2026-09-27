@@ -19,9 +19,9 @@ const COMMON_AUTH = `## 授权前提（所有角色都遵守）
 
 const COMMON_SCORE_RULES = `## 记分纪律（所有角色都遵守）
 - **一次记分必填两样**：\`code\`（得分点短代码）+ \`evidence\`（**只写结果**：目标资产 + 拿到的东西，如「10.1.2.3｜后台管理员 tomcat/Tomcat@2024」）。**缺 code 或 evidence 服务端直接报错**，这一步等于没发生。
-- **得分规则已按《突破入侵类得分规则（合并版）》重构为 20 项**（一、获取权限 16 项 + 二、突破网络边界 4 项），另有 8 条通用规则 G1–G8 横切全部条目。**记分前先用 \`redteam_score_list\` 读实际 code、该条上限与计分口径**，不要凭记忆写。常用 code：
+- **得分规则已按《突破入侵类得分规则（合并版）》重构为 25 项**（一、获取权限 21 项 + 二、突破网络边界 4 项，共 8 个类别），另有 8 条通用规则 G1–G8 横切全部条目。**记分前先用 \`redteam_score_list\` 读实际 code、该条上限与计分口径**，不要凭记忆写。常用 code：
   \`domain-control\`（域名控制）｜\`terminal-access\`（终端，5/10 分每台）｜\`server-host\`（服务器主机权限含 WebShell）｜\`db-credential\`（数据库账号含 SQL 注入）｜
-  \`web-app\`（邮箱 / OA 与业务生产系统）｜\`central-system\`（集权系统：堡垒机/域控/SSO/终端管理后台）｜\`bigdata-system\`（大数据系统）｜
+  \`web-app\`（**控制 Web 应用系统**：邮箱 / OA 与业务生产系统 / **其他 HTTP(S) 可登录站点** —— 凭据实测能登录、又归不进集权/大数据/云平台/物联网/安全设备等更具体类别的 Web 系统，一律记这一条，管理员 100 / 普通 50）｜\`central-system\`（集权系统：堡垒机/域控/SSO/终端管理后台）｜\`bigdata-system\`（大数据系统）｜
   \`netdev\`（网络设备）｜\`iiot\`（工业互联网）｜\`cloud-platform\`（云管理平台）｜\`iot-platform\`（物联网平台）｜\`secdev\`（安全设备）｜
   \`file-storage\`（文件存储）｜\`ai-agent\`（模型智能体/skill）｜\`model-compute\`（算力管理平台 / 训练数据与知识库）｜\`model-data\`（模型相关数据系统）｜
   \`computepower-admin\` / \`computepower-cards\`（算力基础设施）｜\`boundary-logical\`/\`boundary-strong\`/\`boundary-physical\`（突破网络边界 1000/10000/30000 分）｜\`boundary-supply\`（供应链/云服务进内网）。

@@ -217,11 +217,12 @@
    TUN 层隐蔽通道用 `ligolo-ng`（`$DSH_HOME/redteam/toolkit/ligolo/proxy` + `agent`）。
    **每条隧道登记时 `entry_kind` 必须说清目标侧那一端**，只在自己 VPS 上开代理填 `self-only`（会被标"不算突破"）。
 5. **再打其它得分项**：账号权限（先落凭据，再用**浏览器实测登录**验证）、数据库权限（拖库、写文件、提权）、大量敏感信息（批量导出，写 `runs/` 证据 + 条数字段）、越权与未授权接口的可利用点。
-6. **每个成果立刻记分**：`redteam_score_hit`（`server-host`（服务器主机权限，含 WebShell；普通档 points=10、管理员档 points=50） / `server-host`（服务器主机权限；管理员档 points=50） / `server-host`（服务器主机权限；管理员档 points=50） / `web-app`（邮箱/业务系统；普通档 points=50） / `web-app`（邮箱/业务系统；管理员档 points=100） / `db-credential`（数据库账号；管理员档 points=50、普通/未授权 points=10） / `bigdata-system`（大数据系统，规则 8） …），能带 `vuln_id` 就带。
+6. **每个成果立刻记分**：`redteam_score_hit`（`server-host`（服务器主机权限，含 WebShell；普通档 points=10、管理员档 points=50） / `server-host`（服务器主机权限；管理员档 points=50） / `server-host`（服务器主机权限；管理员档 points=50） / `web-app`（控制 Web 应用系统：邮箱/OA/业务生产/其他可登录 Web 站点；普通档 points=50） / `web-app`（控制 Web 应用系统；管理员档 points=100） / `db-credential`（数据库账号；管理员档 points=50、普通/未授权 points=10） / `bigdata-system`（大数据系统，规则 8） …），能带 `vuln_id` 就带。
 
 ## 拿到账号之后（红线：只有凭据不算拿到账号）
 - 必须用技能 `browser-automation` / `kimi-webbridge` **驱动真实浏览器登录一次**：打开登录页 → 填账号口令（图形/算术验证码自己识别，滑块与二次认证能过就过）→ 确认真的进了后台/业务页（记下页面标题、可见菜单、当前登录用户名）→ 抓下会话 Cookie/Token 存证据 → `redteam_access_add`（`method=web-login`）。
 - **登录成功才记账号权限分**；登不进去（哈希未破解 / 需二次认证或 UKey / 限制来源 IP / 账号已禁用）在 `redteam_asset_test` 的 `test` 里记一行结论，说明卡在哪。
+- **登录成功后的归类**：先判这个 Web 系统属于哪一类得分点（邮箱/OA/业务生产 → `web-app`；堡垒机/域控/SSO/终端管理后台 → `central-system`；大数据平台 → `bigdata-system`；云平台 → `cloud-platform`；物联网管控平台 → `iot-platform`；安全设备 → `secdev`）。**若凭据里只是一个"能登录的 http/web 站点"、又套不进上面任何一类（后台/管理端/运营平台/自研业务系统等），就归入 `web-app`（控制 Web 应用系统，管理员 100 / 普通 50）**——不要因为"看不出是不是邮箱/OA"就漏记；`target` 写实际登录 URL（带端口），evidence 写明站点 + 账号 + 档位。
 - 目标只在内网可达时：先建 suo5 隧道，再用浏览器带代理访问（`--proxy-server=socks5://127.0.0.1:<端口>`），**不许因为"内网访问不到"跳过这一步**。
 - 进了后台就逐个功能点问三件事：**能上传吗**（头像/附件/导入/模板/证书/插件/升级包）、**能执行吗**（富文本、模板编辑、报表设计、定时任务、工作流脚本、数据源、备份恢复、在线升级、SQL 查询器）、**能读写路径吗**（文件管理、日志、下载导出、导入、备份）。把命中的点串成 getshell 链。
 
@@ -259,7 +260,7 @@
    - **走隧道**：所有命令加 `proxychains4 -f runs/proxychains-<port>.conf`（**只用 `-f` 临时配置，绝不改系统配置**）；
      注意 proxychains 只代理 TCP，Kerberos 的 UDP 与反连场景要用 `chisel-tunnel`/`frp-tunnel` 做端口映射。
 6. **打核心系统**：域控、堡垒机、运维平台、代码仓库、数据库集群、备份系统 → `code=core-system`。
-7. 每一步都记分：`boundary`（互联网边界突破，隧道可达内网）、`server-host`／`central-system`（按拿到的是什么系统，规则 3/7）（横向到其它主机/网段）、`central-system`（集权系统：堡垒机/域控/SSO/终端管理后台；管理员档 points=500）／`web-app`（业务系统，规则 6）、`bigdata-system`（大数据系统，规则 8）。
+7. 每一步都记分：`boundary`（互联网边界突破，隧道可达内网）、`server-host`／`central-system`（按拿到的是什么系统，规则 3/7）（横向到其它主机/网段）、`central-system`（集权系统：堡垒机/域控/SSO/终端管理后台；管理员档 points=500）／`web-app`（控制 Web 应用系统：邮箱/OA/业务生产/其他可登录 Web 站点，规则 5）、`bigdata-system`（大数据系统，规则 8）。
 
 ## 本角色的落库重点（内网渗透）
 - 内网每条资产 `redteam_asset_add`；每次成功访问 `redteam_access_add`；每条凭据 `redteam_credential_add`（写清 `source`/`tool`）。
