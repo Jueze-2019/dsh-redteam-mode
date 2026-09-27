@@ -64,6 +64,35 @@ dsh plugin --profile web add ./dsh-redteam-mode-<版本>.tgz
 > **本账号目前 `npmjs.com → Profile` 里是 `Enable 2FA`（等于没开）**——
 > 没有 2FA 就既批准不了暂存、也过不了双用途的强制 2FA 要求，这是当前唯一的卡点。
 
+### 暂存批准这条路在「没有本地终端」时怎么走（2026-09-27 实测）
+
+`npm@12 stage approve` 内部是 `otplease()`：要求 **stdin/stdout 都是 TTY**，而且人工证明要在
+**浏览器里按一次安全密钥**。CLI 只会打印一句 `Authenticate your account at: <authUrl>` 然后
+干等回车 —— 在「CLI 跑在 A 会话、浏览器在 B 会话」的场景（例如让助手在沙箱里跑命令、用户在
+自己的 Chrome 里按密钥）它永远等不到，因为回车和密钥不在同一侧。
+
+按同一套 web-OTP 协议自己拆开即可，`scripts/stage-approve.mjs` 就是这件事：
+
+1. `POST /-/stage/<stage-id>/approve` → **401 EOTP**，响应体里给 `authUrl` / `doneUrl`；
+2. 把 `authUrl` 给人，他在自己的浏览器里完成证明；
+3. 轮询 `doneUrl`（202 = 还没按，200 = 拿到一次性凭据）；
+4. 带 `npm-otp: <凭据>` 再 POST 一次 → 发布。
+
+两个必须知道的前提，少一个都拿不到 `authUrl`（只会回一句
+`You must provide a one-time pass`）：
+
+- 请求头要带 **`npm-command: stage` + `npm-auth-type: web` + npm 的 `user-agent`**——
+  registry 只对 npm CLI 形态的请求返回 web-OTP 链接；
+- 第 4 步那条 POST 是**单次公网请求**，实测撞过一次瞬时连接超时，**必须带重试**
+  （一次性凭据在有效期内可重复使用）。
+
+**别在审查跑完之前去批准。** 暂存后状态是 `validating`，此时 approve 返回
+`409 ... automated review hasn't finished`；2026-09-27 实测在这个阶段连试两次之后，
+**暂存条目直接从队列里消失（stage view 变 404），而版本号被永久占用**——
+再暂存同版本变成 `409 Cannot stage previously published version`，但公开读端
+（packument / `npm view` / `npm pack`）查不到、也装不了，等于烧掉一个版本号。
+正确姿势：先 `scripts/stage-watch.mjs <stage-id>` 等 `validating` 结束，拿到提示再 `stage-approve`。
+
 ### 顺带记录：绕过 2FA 的 token 还有两个副作用
 
 - 这类 token 调的 `npm publish` 可能被降级为**暂存**，命令照样打印 `+ pkg@x.y.z`；
