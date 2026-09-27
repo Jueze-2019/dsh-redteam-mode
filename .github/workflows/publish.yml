@@ -82,25 +82,22 @@ jobs:
           node tools/build.mjs --check
           node tools/test-all.mjs
 
-      - name: 发布到 npm（OIDC，无需 token）
+      # 双用途包只能走暂存：直接发布（无论 token 还是受信发布）都会被 registry 拒：
+      #   "A credential that bypasses two-factor authentication cannot publish a dual-use
+      #    security package"（token）
+      #   "Direct trusted publishing cannot publish a dual-use security package"（OIDC）
+      # 官方给的出路就是 stage publish + 人工批准 —— 批准那一下必须由人在浏览器里按安全密钥，
+      # CI 代替不了（这正是"人工存在性证明"的意义）。
+      - name: 暂存到 npm（OIDC，人工批准后生效）
         if: steps.gate.outputs.enabled == 'true'
-        run: npm publish --access public
+        run: npm stage publish --access public
 
-      - name: 发布后校验 registry
+      - name: 提示下一步（暂存不校验 registry）
         if: steps.gate.outputs.enabled == 'true'
         run: |
           pkg="$(node -p "require('./package.json').version")"
-          echo "本地版本: $pkg"
-          sleep 30
-          curl -s "https://registry.npmjs.org/dsh-redteam-mode?t=$(date +%s)" \
-            | node -e "
-              let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{
-                const d=JSON.parse(s);
-                const want=process.argv[1];
-                const ok=Object.prototype.hasOwnProperty.call(d.versions||{}, want);
-                console.log('registry 上的版本:', Object.keys(d.versions||{}).slice(-4).join(', '));
-                console.log('latest:', (d['dist-tags']||{}).latest);
-                if(!ok){ console.error('::error::registry 上还没有 '+want+'（可能仍在扫描，稍后自行确认）'); process.exit(1); }
-                console.log('✓ '+want+' 已可安装');
-              });
-            " "$pkg"
+          echo "已暂存 dsh-redteam-mode@$pkg。"
+          echo "双用途包暂存后必须由人在浏览器里按一次安全密钥批准才会真正发布，"
+          echo "所以此刻 registry 上还查不到它是正常的 —— 批准后用它确认："
+          echo "  npm view dsh-redteam-mode version"
+          echo "批准入口：npx npm@12 stage list → npx npm@12 stage approve <stage-id>"
