@@ -132,6 +132,36 @@ dsh plugin --profile web add ./dsh-redteam-mode-<版本>.tgz
 **版本号会被烧掉**：`0.11.5`/`0.11.6`/`0.11.7` 已不可复用（`409 Cannot stage previously
 published version`），下一个可用号从 `0.12.0` 起。
 
+### ✅ 0.12.0 发布成功：真正的拦路虎是「包内容」，不是账号（2026-09-28 定论）
+
+之前把 0.11.x 全部失败归因于"账号侧状态"，**结论是错的**。真正原因有两个，都靠 0.12.0 验证：
+
+**① 内容审查：包不能"自己下载安全工具"。** npm 的发布期自动审查把本包判定为
+「安装后自动下载渗透二进制 + 9 份攻击链技能」——这与真实供应链攻击的行为特征无法区分。
+去武器化（见 `packages/redteam-bundle/tools/distribution.mjs`）之后，同一个账号、同一套流程，
+报错从 `403 dual-use security package` 直接变成 `EOTP`（只剩人工验证），说明内容关口过了。
+
+**② 人工存在性证明不可省，但"证明"与"提交"是两步、且都有几分钟窗口。**
+双用途包必须由人做一次 WebAuthn；而 registry 返回的一次性凭据（web-OTP 的 16 位 token）
+**只活几分钟** —— 实测领到后隔两分钟再用就变成 `404 not found`。所以正确姿势是
+**把"领凭据"和"立刻重发"串在同一个进程里**：
+
+```sh
+node scripts/publish-now.mjs packages/redteam-bundle   # 打印链接 → 人验证 → 自动领凭据并立即发布
+```
+
+发布成功时 registry 返回的是 **`202 {"success":true}`**（进入发布期审查），版本要过一会儿
+才在 packument 上可见（本次约 1 分钟内出现）。**`202` 不等于失败**，别急着重发。
+
+**③ 前后端缓存都会骗人。** 发布后 `dsh plugin add dsh-redteam-mode` 仍装到旧版，
+一度以为发布失败；实际原因是两层缓存 + 一条策略：
+
+- npm `~/.npm/_cacache` 与 pnpm `~/.cache/pnpm/v11/metadata` 里的 packument 是旧的；
+- **pnpm 12 内置 `minimumReleaseAge` = 1440 分钟**（供应链防护）：**发布不足 24 小时的版本会被
+  自动跳过**。所以新版本发布当天，别人 `pnpm add` 拿到的仍是上一个成熟版本 —— 这是设计行为，
+  不是故障。要立刻装新版：`pnpm add dsh-redteam-mode@<确切版本>`（显式指定绕过年龄门），
+  或在项目 `pnpm-workspace.yaml` 写 `minimumReleaseAge: 0`（等于关掉这层防护，不建议常态开）。
+
 ### 顺带记录：绕过 2FA 的 token 还有两个副作用
 
 - 这类 token 调的 `npm publish` 可能被降级为**暂存**，命令照样打印 `+ pkg@x.y.z`；
