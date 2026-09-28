@@ -17,6 +17,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
+/* 发行组成契约（哪些技能/脚本进 npm 包）—— 见该文件的说明 */
+const { isSkillShipped, isScriptShipped } = await import('./distribution.mjs')
 const pkgRoot = join(here, '..')
 const packagesDir = join(pkgRoot, '..')
 const libDir = join(pkgRoot, 'lib')
@@ -135,14 +137,19 @@ if (CHECK) {
   writeFileSync(presetMetaPath, presetMeta, 'utf8')
 }
 
-/* 技能：从仓库已脱敏的 skills/ 拷一份。
+/* 技能：从仓库已脱敏的 skills/ 拷一份 —— 但按 tools/distribution.mjs 的发行契约，
+   攻击操作手册型技能**不进 npm 包**（它们与"下载渗透工具"一起构成自动审查眼中的恶意特征）。
+   留在仓库的那 9 份随 Release 附件分发，用户显式获取。
+
    ⚠️ 拷贝前先清空目标目录：本脚本只"写"不"删"，历史上一次手工放进
    packages/redteam-bundle/skills/ 的文件会永远留在包里 —— 表现是"本机看着 23 个技能、
    干净检出只有 13 个"（README 承诺 23 个，发布产物却只有 13 个）。
-   清空后 `skills/` 与仓库根 `skills/` 严格一一对应，包内容可复现。 */
+   清空后 `skills/` 与"仓库根 skills/ ∩ 发行白名单"严格对应，包内容可复现。 */
 const skillsSrc = join(packagesDir, '../skills')
 const skillsDst = join(pkgRoot, 'skills')
-const skillNames = readdirSync(skillsSrc).filter((f) => f.endsWith('.md'))
+const allSkillNames = readdirSync(skillsSrc).filter((f) => f.endsWith('.md'))
+const omittedSkills = allSkillNames.filter((f) => !isSkillShipped(f))
+const skillNames = allSkillNames.filter((f) => isSkillShipped(f))
 if (CHECK) {
   /* 只比对，不删盘：目标目录里多出来的文件同样是 drift */
   let current = []
@@ -165,26 +172,35 @@ for (const f of skillNames) {
   skills += 1
 }
 
-/* 环境安装脚本：随包分发一份。
-   为什么必须随包：市场包用户装完只有 node_modules，仓库根本不在盘上——
-   预检里如果只说"从仓库取 scripts/redteam-setup.sh"，用户拿不到脚本、引导就断了。
-   随包分发后由 lib/index.js 在启动时落到 $DSH_HOME/redteam/setup.sh。 */
+/* 环境安装脚本：**不再随 npm 包分发**（0.12.0 起）。
+   它会在用户机器上自动下载 11 个渗透二进制并 chmod +x —— 这正是发布期自动审查判定
+   "恶意"的行为特征。改为：包内不带；需要的人从 Release 附件取工具箱后**自己执行**。
+   启动逻辑（lib/index.js 的 installSetupScript）本就处理"包内没有脚本"的情况：
+   返回 action=missing，预检据此提示用户去哪拿，绝不代下载。 */
 const setupSrc = join(packagesDir, '..', 'scripts', 'redteam-setup.sh')
 const setupDst = join(pkgRoot, 'scripts', 'redteam-setup.sh')
 let setupCopied = false
-try {
-  const text = readFileSync(setupSrc, 'utf8')
+if (!isScriptShipped('redteam-setup.sh')) {
   if (CHECK) {
-    let current
-    try { current = readFileSync(setupDst, 'utf8') } catch { current = undefined }
-    if (current !== text) drift.push('scripts/redteam-setup.sh')
+    if (existsSync(setupDst)) drift.push('scripts/redteam-setup.sh（发行契约要求删除）')
   } else {
-    mkdirSync(dirname(setupDst), { recursive: true })
-    writeFileSync(setupDst, text, { encoding: 'utf8', mode: 0o755 })
+    rmSync(join(pkgRoot, 'scripts'), { recursive: true, force: true })
   }
-  setupCopied = true
-} catch (error) {
-  console.error('✗ 读取 scripts/redteam-setup.sh 失败：' + (error && error.message ? error.message : String(error)))
+} else {
+  try {
+    const text = readFileSync(setupSrc, 'utf8')
+    if (CHECK) {
+      let current
+      try { current = readFileSync(setupDst, 'utf8') } catch { current = undefined }
+      if (current !== text) drift.push('scripts/redteam-setup.sh')
+    } else {
+      mkdirSync(dirname(setupDst), { recursive: true })
+      writeFileSync(setupDst, text, { encoding: 'utf8', mode: 0o755 })
+    }
+    setupCopied = true
+  } catch (error) {
+    console.error('✗ 读取 scripts/redteam-setup.sh 失败：' + (error && error.message ? error.message : String(error)))
+  }
 }
 
 /* 校验：生成的 lib 里不允许再出现跨包的相对路径 */

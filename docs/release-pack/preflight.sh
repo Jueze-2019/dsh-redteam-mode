@@ -6,7 +6,7 @@
 # 只读检查，不会改任何东西；全绿再执行 npm publish。
 set -uo pipefail
 
-WANT_VERSION="${1:-0.11.8}"
+WANT_VERSION="${1:-$(node -p "require(\"./packages/redteam-bundle/package.json\").version" 2>/dev/null || echo 0.12.0)}"
 PKG_DIR="packages/redteam-bundle"
 REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_DIR"

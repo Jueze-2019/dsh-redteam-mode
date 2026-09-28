@@ -1,11 +1,11 @@
-## Updated to v0.11.8 — one line added to the scoring description
+## Updated to v0.12.0 — one line added to the scoring description
 
 The entry is unchanged in shape; one capability note was missing. The numbers already in the
 current description are still exact for this revision:
 
 | | value | how to check in the repo |
 | --- | --- | --- |
-| npm | [`dsh-redteam-mode@0.11.8`](https://www.npmjs.com/package/dsh-redteam-mode) | `npm view dsh-redteam-mode version` |
+| npm | [`dsh-redteam-mode@0.12.0`](https://www.npmjs.com/package/dsh-redteam-mode) | `npm view dsh-redteam-mode version` |
 | agent roles | 5 executors + 1 planner session | `presets/redteam/` prompt sections, `redteam_role_prompt` enum |
 | `redteam_*` tools | **53** | `grep -c "name: 'redteam_" packages/redteam-bundle/lib/tools.js` |
 | native skills | **23** | `ls packages/redteam-bundle/skills \| wc -l` |

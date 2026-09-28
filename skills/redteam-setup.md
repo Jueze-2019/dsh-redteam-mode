@@ -15,10 +15,25 @@ enabled: true
 
 **核心原则**：**一次性把话说完，一次要齐**。不要挤牙膏式反复找用户要东西——那是这套引导存在的唯一理由。
 
+## 〇、先确认你有没有"工具箱"（npm 版默认没有）
+
+npm 版 `dsh-redteam-mode` **不随包分发工具安装脚本与 9 份攻击链技能**（隧道 / 凭据 /
+WebShell / 反弹 Shell / 横向移动 / 未授权利用）。原因：npm 的发布期自动审查会把
+"包在安装后自动下载渗透二进制"判定为恶意行为特征，整包会被 Blocked。
+
+- **有** `$DSH_HOME/redteam/setup.sh`（自行取过工具箱、或非 npm 安装）→ 按下面第一、二节走；
+- **没有**（`redteam_preflight` 返回里 `onboarding.setup_script.exists=false`）→ 先去项目
+  GitHub Release 下载 `dsh-redteam-mode-<版本>-toolkit.tar.gz`，解压后按其中 README
+  **由用户自己执行**，再到第三节手动配 `FOFA_KEY` 与 VPS；
+- **都不要**也行：只用本包自带的 14 个侦察/检测向技能（`fofa-recon` / `active-scan` /
+  `nuclei-scan` / `web-fingerprint` / `dir-bruteforce` 等）也能开工，只是拿不到需要落地的成果。
+
+> **红线**：本插件**不替用户下载或安装任何安全工具**。需要什么，说清获取位置，由用户自己取、自己执行。
+
 ## 一、先跑体检（不装任何东西，10 秒）
 
 ```bash
-bash "$DSH_HOME/redteam/setup.sh" --check
+bash "$DSH_HOME/redteam/setup.sh" --check     # 仅当本机存在该脚本
 ```
 
 它输出四块：① PATH 系统工具 ② nuclei 模板库 ③ 配置（FOFA_KEY / VPS） ④ 工具箱二进制体检表。
@@ -30,6 +45,9 @@ bash "$DSH_HOME/redteam/setup.sh" --check
 bash "$DSH_HOME/redteam/setup.sh" --yes      # 全自动：缺的工具自动下载，配置用已有值
 bash "$DSH_HOME/redteam/setup.sh"            # 交互式：会引导用户粘贴 FOFA_KEY 等
 ```
+
+> 这一步**只有在本机已经有该脚本时**才做（见第〇节）。脚本由**用户自己**从工具箱附件取得并执行，
+> 智能体不要代跑、更不要代下载。
 
 特性说明（可以这样告诉用户）：
 - **幂等**：随时可重跑，已装的不重装；`--force` 才强制重下。

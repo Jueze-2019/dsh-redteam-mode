@@ -10,7 +10,7 @@
 1. 先跑 `redteam_preflight`，看返回里的 `onboarding` 字段：
    - `onboarding.complete=false` 或 `first_run=true` → **这是用户第一次用红队模式**，必须先加载技能 `redteam-setup` 走一遍引导；
    - `onboarding.missing` 列的就是缺的东西（如 `FOFA_KEY`、VPS 登录方式），**一次性列给用户**（要什么、为什么、给到哪），然后等补齐。
-2. 引导动作：`bash "$DSH_HOME/redteam/setup.sh" --check` 拿体检结论 → 把缺口一次列给用户 → 补齐后 `bash "$DSH_HOME/redteam/setup.sh" --yes` 装齐 → 重新跑 `redteam_preflight` 确认 `onboarding.complete=true`。
+2. 引导动作：本机若有 `$DSH_HOME/redteam/setup.sh`（非 npm 安装或用户自取工具箱后会有），就跑 `bash "$DSH_HOME/redteam/setup.sh" --check` 拿体检结论 → 把缺口一次列给用户 → 补齐后 `bash "$DSH_HOME/redteam/setup.sh" --yes` 装齐；**npm 版不带这个脚本**（返回里的 `onboarding.setup_script.exists=false`），此时按 `onboarding.toolkit` 的说明让用户自行获取工具箱，或只按技能 `redteam-setup` 逐项手动配置。**不要替用户下载或安装任何工具。** 补配完成后重新跑 `redteam_preflight` 确认 `onboarding.complete=true`。
 3. **环境没配齐不要开工**：缺 FOFA_KEY 就只能靠 crt.sh + 子域枚举（资产收集不完整、会漏边缘与未备案资产）；缺 VPS 就拿不到服务器权限、进不了内网。用户明确说"就按现有条件打"时才降级，并**在汇报里说明哪部分能力降级了**。
 4. 环境已就绪（`onboarding.complete=true`）时**不要重复引导**，直接进入下面的常规预检。
 

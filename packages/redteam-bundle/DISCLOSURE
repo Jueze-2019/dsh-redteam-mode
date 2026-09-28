@@ -23,13 +23,12 @@ shellcode, no credential dumps and no C2 implants. It consists of:
 
   lib/            orchestration logic, a local SQLite fact base, tool schemas,
                   a right-side console UI and report rendering
-  skills/         23 Markdown instruction documents (prose runbooks) telling an
-                  agent how to *operate* third-party tools the user installs
+  skills/         14 Markdown instruction documents (prose runbooks) covering
+                  reconnaissance, asset correlation, service and web
+                  fingerprinting, directory/template scanning and first-run
+                  setup — they tell an agent how to *operate* third-party tools
+                  that the user installs themselves
   presets/        agent preset composition (YAML)
-  scripts/        redteam-setup.sh — an optional environment bootstrap that
-                  downloads well-known open-source security tools (nmap, nuclei,
-                  fscan, gogo, chisel, frp, ...) into the user's own home
-                  directory
 
 Dual-use capabilities, and their legitimate use
 -----------------------------------------------
@@ -54,12 +53,14 @@ Dual-use capabilities, and their legitimate use
    SQLite database under the operator's own $DSH_HOME directory; it is never
    transmitted anywhere by this package.
 
-5. Environment bootstrap (scripts/redteam-setup.sh). This shell script downloads
-   open-source security binaries from their official GitHub release assets into
-   $DSH_HOME/redteam/toolkit/. It does not install system packages, does not
-   require or use sudo, does not modify network or proxy configuration, and does
-   not run any downloaded binary beyond a --version/-h smoke test. Operators who
-   prefer to install these tools themselves can skip the script entirely; nothing
+5. Distribution split (from v0.12.0). The published tarball deliberately does NOT
+   include the environment bootstrap script or the attack-chain skills
+   (credential testing, web-shell handling, reverse shells, pivoting, tunnelling,
+   unauthenticated exploitation). Those live in the separate `-toolkit.tar.gz`
+   Release attachment that operators fetch and run themselves. This package never
+   downloads or installs any security tool on the user's behalf; it only invokes
+   tools that are already present on the operator's machine. Operators who prefer
+   to install these tools themselves can skip the toolkit entirely; nothing
    in the plugin requires it to run.
 
 Hard boundaries the package declares and enforces

@@ -130,7 +130,7 @@ dsh plugin --profile web add ./dsh-redteam-mode-<版本>.tgz
 - 需要时向 npm 提工单（<https://www.npmjs.com/support>），把上面的时间线直接贴过去。
 
 **版本号会被烧掉**：`0.11.5`/`0.11.6`/`0.11.7` 已不可复用（`409 Cannot stage previously
-published version`），下一个可用号从 `0.11.8` 起。
+published version`），下一个可用号从 `0.12.0` 起。
 
 ### 顺带记录：绕过 2FA 的 token 还有两个副作用
 

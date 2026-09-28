@@ -152,9 +152,15 @@ console.log('— 浏览器半侧的注册 id')
   ok(!/customSkillDirs/.test(srcPreset), '仓库源预设不含 skill-filesystem 的技能目录配置（由 build 注入）')
 }
 
-console.log('— 技能随包分发')
+console.log('— 技能随包分发（发行契约：只带侦察/检测向技能）')
 const skills = readdirSync(join(root, 'skills')).filter((f) => f.endsWith('.md'))
-ok(skills.length === 23, `打包技能 ${skills.length} 个`)
+const { OMITTED_SKILLS: omitted } = await import('../tools/distribution.mjs')
+const shippedCount = readdirSync(join(root, '..', '..', 'skills')).filter((f) => f.endsWith('.md')).length - omitted.length
+ok(skills.length === shippedCount, `打包技能 ${skills.length} 个（仓库 ${shippedCount + omitted.length} 个，发行排除 ${omitted.length} 个）`)
+for (const f of omitted) {
+  ok(!skills.includes(f), `攻击链技能不随包分发：${f}`)
+  ok(existsSync(join(root, '..', '..', 'skills', f)), `但它仍在仓库里（随 Release 附件分发）：${f}`)
+}
 const badSkill = skills.find((f) => {
   const text = readFileSync(join(root, 'skills', f), 'utf8')
   return !/^---\n[\s\S]*?name:\s*\S+/m.test(text) || !/description:/.test(text)
@@ -213,22 +219,22 @@ try {
   const forced = installPreset({ force: true, log: () => {} })
   ok(forced.action === 'installed' && !readFileSync(installed, 'utf8').includes('用户自己改过'), 'REDTEAM_PRESET_REFRESH=1 时强制覆盖')
 
-  /* ── 环境安装脚本随包分发（v0.10.0）──────────────────────────────────────
-     为什么必须随包：市场包用户装完只有 node_modules，仓库不在盘上。
-     预检若只说"从仓库取 scripts/redteam-setup.sh"，用户根本拿不到脚本、首次引导就断了。
-     所以启动时要把它落到 $DSH_HOME/redteam/setup.sh（可执行）。 */
+  /* ── 发行契约：npm 包**不含**环境安装脚本（0.12.0 起）────────────────────────
+     为什么改：`scripts/redteam-setup.sh` 会在用户机器上自动下载 11 个渗透二进制并 chmod +x，
+     这正是发布期自动审查判定"恶意"的行为特征（0.11.x 因此全部被 Blocked）。
+     现在它随 Release 附件分发，由用户显式执行；包内必须没有它，且自举必须优雅处理"没有"。 */
   const { installSetupScript, redteamDataDir } = await import('../lib/index.js')
+  const { isScriptShipped, isSkillShipped, OMITTED_SKILLS } = await import('../tools/distribution.mjs')
   const setupTarget = join(redteamDataDir(), 'setup.sh')
+  ok(!existsSync(join(root, 'scripts', 'redteam-setup.sh')), 'npm 包内不含 redteam-setup.sh（发行契约）')
+  ok(isScriptShipped('redteam-setup.sh') === false, '发行契约把 redteam-setup.sh 标为"不随包"')
   const s1 = installSetupScript()
-  ok(s1.action === 'installed' && existsSync(setupTarget), '首次启动把安装脚本落到 $DSH_HOME/redteam/setup.sh')
-  ok((statSync(setupTarget).mode & 0o111) !== 0, '落地的安装脚本带可执行位（能直接 bash 跑）')
-  const setupText = readFileSync(setupTarget, 'utf8')
-  ok(setupText.startsWith('#!/usr/bin/env bash'), '落地的是一份真正的 bash 脚本')
-  ok(/--check/.test(setupText) && /--yes/.test(setupText), '脚本含 --check / --yes 两种模式')
-  ok(installSetupScript().action === 'kept', '内容一致时不重复写盘（幂等）')
-  writeFileSync(setupTarget, '#!/bin/bash\n# 被改坏了\n', 'utf8')
-  ok(installSetupScript().action === 'updated', '内容与包内不一致时自动对齐（脚本无用户可改状态）')
-  ok(readFileSync(setupTarget, 'utf8') === setupText, '对齐后内容与包内完全一致')
+  ok(s1.action === 'missing' && !existsSync(setupTarget), '包内没有脚本时安装步骤返回 missing，不写盘、不报错')
+  /* 用户自己从 Release 附件解压放了一份 → 包内没有也**不许覆盖**用户那份 */
+  mkdirSync(redteamDataDir(), { recursive: true })
+  writeFileSync(setupTarget, '#!/usr/bin/env bash\n# 用户自己放的\n', { encoding: 'utf8', mode: 0o755 })
+  ok(installSetupScript().action === 'missing', '用户自己放的同名脚本不受影响（不覆盖、不删除）')
+  ok(readFileSync(setupTarget, 'utf8').includes('用户自己放的'), '用户自己的脚本内容原样保留')
 
   /* ── 坏预设自愈（v0.9.0 真实事故回归）────────────────────────────────────
      事故：部署时把**打包模板**直接 cp 进用户预设目录，占位符没被替换 → YAML 把它解析成
