@@ -21,9 +21,10 @@ name: Publish to npm
 #   git tag v0.11.3 && git push origin v0.11.3
 
 on:
-  push:
-    tags:
-      - 'v*'
+  # 默认**不**在推 tag 时自动发布：本包是双用途，npm 规定必须"暂存 + 人工批准"，
+  # 而 CI 无法完成人工存在性证明（要按安全密钥），自动跑只会留下一次失败记录。
+  # 发版请按 docs/release-pack/README.md 在能验证的机器上手动做，或手动触发本 workflow
+  # 生成"暂存"，再由人在浏览器里批准。
   workflow_dispatch:
 
 permissions:

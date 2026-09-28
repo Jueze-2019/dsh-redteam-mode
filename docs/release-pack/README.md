@@ -94,6 +94,16 @@ cd /tmp && dsh plugin --profile web add dsh-redteam-mode
 git tag v0.11.8 && git push origin main --tags
 ```
 
+> CI 的自动发布已经**关掉**了（`.github/workflows/publish.yml` 不再监听 tag 推送，仓库变量
+> `NPM_TRUSTED_PUBLISHING_ENABLED` 也置为 `false`），所以你推 tag 不会触发一次注定失败的
+> 发布 job，也不会留下红色记录。想恢复 CI 发布时，把变量设回 `true`：
+>
+> ```sh
+> gh variable set NPM_TRUSTED_PUBLISHING_ENABLED --body "true" --repo Jueze-2019/dsh-redteam-mode
+> ```
+>
+> （它的能力上限是"暂存"，最终仍需人工批准 —— 这是 npm 对双用途包的政策。）
+
 推完 tag 后，**剩下三步交给我**（告诉我一声即可）：
 
 1. 建 GitHub Release（`bash scripts/release-notes.sh v0.11.8`）；
