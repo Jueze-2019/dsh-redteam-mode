@@ -34,7 +34,10 @@ function readToken (rcPath = join(homedir(), '.npmrc')) {
 }
 
 async function resume (authUrl, doneUrl, token) {
+  /* 链接与状态写文件：后台跑时 stdout 可能被缓冲，写文件才能立刻被读到 */
+  writeFileSync('/tmp/npm-auth-url.txt', authUrl + '\n' + doneUrl + '\n', { mode: 0o600 })
   console.log(`\n请在**能完成验证的设备**（手机/带指纹的电脑）上打开这个链接：\n\n    ${authUrl}\n`)
+  console.log('（链接与 doneUrl 也已写入 /tmp/npm-auth-url.txt）')
   console.log('等待验证完成（最多 15 分钟）…')
   const deadline = Date.now() + 15 * 60 * 1000
   while (Date.now() < deadline) {
@@ -65,8 +68,11 @@ if (mode === 'resume') {
   const cwd = args.includes('--cwd') ? args[args.indexOf('--cwd') + 1] : process.cwd()
   const token = readToken(userconfig)
 
-  console.log(`[1/4] 在 ${cwd} 发起发布（不带 OTP，预期拿到 EOTP）…`)
-  const proc = spawn('npx', ['-y', 'npm@12', 'publish', '--access', 'public', '--userconfig', userconfig], {
+  console.log(`[1/4] 在 ${cwd} 发起发布（不带 OTP，预期拿到 EOTP 的鉴权链接）…`)
+  /* 必须用伪终端（script -qec）跑：npm CLI 在非 TTY 下会把 authUrl/doneUrl **打码成 \*\*\***，
+     只有 TTY 才打印完整链接（实测：raw 请求能拿到，CLI 非 TTY 拿不到）。 */
+  const cmd = `npx -y npm@12 publish --access public --userconfig ${JSON.stringify(userconfig)}`
+  const proc = spawn('script', ['-qec', cmd, '/dev/null'], {
     cwd,
     env: { ...process.env, npm_config_otp: '' },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -80,10 +86,9 @@ if (mode === 'resume') {
     const started = Date.now()
     const timer = setInterval(() => {
       const m = out.match(/https:\/\/www\.npmjs\.com\/auth\/cli\/[a-f0-9-]+/)
-      const done = out.match(/https:\/\/registry\.npmjs\.org\/-?\/?v1\/done\?authId=[a-z0-9-]+/)
-        || out.match(/https:\/\/registry\.npmjs\.org\/-\/v1\/done\?authId=[a-z0-9-]+/)
+      const done = out.match(/https:\/\/registry\.npmjs\.org\/-\/v1\/done\?authId=[a-z0-9-]+/)
       if (m && done) { clearInterval(timer); resolve({ authUrl: m[0], doneUrl: done[0] }) }
-      else if (Date.now() - started > 120000) { clearInterval(timer); reject(new Error('等 authUrl 超时:\n' + out.slice(-800))) }
+      else if (Date.now() - started > 300000) { clearInterval(timer); reject(new Error('等 authUrl 超时:\n' + out.slice(-800))) }
       else if (/npm error (?!code EOTP)/.test(out) && !/EOTP/.test(out)) { /* 继续等 */ }
     }, 500)
   })
