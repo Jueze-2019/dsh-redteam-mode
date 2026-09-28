@@ -62,14 +62,38 @@ cat > "$STAGE/$NAME/README.md" <<EOF
 ## 怎么用（就是两条命令，**由你自己执行**）
 
 \`\`\`sh
-# 1) 安装脚本放到插件约定的位置（插件启动会读这里；放好后也可以直接 bash 跑）
+# 1) 安装脚本放到插件约定的位置
 mkdir -p "\$DSH_HOME/redteam"
 cp scripts/redteam-setup.sh "\$DSH_HOME/redteam/setup.sh"
 chmod +x "\$DSH_HOME/redteam/setup.sh"
 
-# 2) 体检 → 装齐（--check 只看不装，--yes 全自动，交互式就裸跑）
+# 2) 体检 → 装齐（--check 只看不装；--yes 全自动；裸跑是交互式引导）
 bash "\$DSH_HOME/redteam/setup.sh" --check
 bash "\$DSH_HOME/redteam/setup.sh" --yes
+\`\`\`
+
+脚本做四件事：① 把技能用到的二进制装到 \`\$DSH_HOME/redteam/toolkit/\`（`nmap` 这类
+系统工具只提示、不擅自 sudo）；② 体检 nuclei 模板库；③ 引导你粘贴 \`FOFA_KEY\` 与 VPS
+登录方式（写进 \`\$DSH_HOME/.env\`，权限 600）；④ 实测通道可用并写完成标记
+\`\$DSH_HOME/redteam/.setup-complete\`。
+
+特性：**幂等**（随时重跑，已装不重装，\`--force\` 才强制重下）；**不猜 URL**（走 GitHub
+\`releases/latest\` API 取真实资产）；**不动系统**（只写 \`\$DSH_HOME/redteam/\` 与
+\`\$DSH_HOME/.env\`，不装系统包、不改网络配置）；日志在 \`\$DSH_HOME/redteam/setup.log\`。
+
+需要 apt 装的系统工具（脚本只提示，不擅自 sudo）：\`nmap masscan nuclei sqlmap ffuf
+feroxbuster gobuster hydra john hashcat wpscan nikto whatweb msfconsole\` ——
+**要装的话由你自己执行**。
+
+### 装完的验证（逐项实测，别只看"文件存在"）
+
+\`\`\`bash
+\$DSH_HOME/redteam/toolkit/fscan/fscan -h 2>&1 | head -3
+\$DSH_HOME/redteam/toolkit/gogo/gogo -h 2>&1 | head -3
+\$DSH_HOME/redteam/toolkit/chisel/chisel --version
+\$DSH_HOME/redteam/toolkit/frp/frpc -v
+\$DSH_HOME/redteam/toolkit/suo5/suo5-linux-amd64 --help 2>&1 | head -3
+nuclei -tl 2>/dev/null | wc -l      # 模板库应有上万条
 \`\`\`
 
 技能目录：把 \`skills/*.md\` 拷进 \`\$DSH_HOME/skills/\`（DSH 的用户技能目录，优先级高于包内技能）：
