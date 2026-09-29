@@ -12,7 +12,7 @@
  */
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync, mkdirSync, statSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { tmpdir, homedir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -206,16 +206,27 @@ const badSkill = skills.find((f) => {
 ok(badSkill === undefined, '每个技能都有 front-matter（name + description）')
 
 console.log('— 公开包不能夹带敏感信息')
-/* 待检查的真实值在运行时拼出来：这样**仓库里不出现这些字面量**（仓库自身的
-   发布前扫描就是查这些串），而这个测试仍然在真正地检查"包里有没有夹带它们"。
-   检查对象是打出来的包（lib/ presets/ skills/ cordis.patch.yml）。 */
+/* 检查"打出来的包有没有夹带本机敏感值"。检查对象是包内文件（lib/ presets/ skills/
+   cordis.patch.yml）；test/ 自己不在 npm 包里（见 package.json 的 files）。
+
+   ⚠️ **真实值绝不能写进这个文件** —— 仓库是公开的。v0.7.0～0.12.1 曾把 FOFA key 拆成
+   四段写在这里"防扫描"，但四段都在同一个文件里、拼起来就是完整的 key，等于公开；
+   同理 VPS IP、主机名也不该出现在仓库里。现在改成从环境变量读，没配就跳过并说明，
+   仓库里不留任何密钥素材；本机路径由 homedir() 推导，也不必写死用户名。
+
+   想在本机跑全量检查：
+     REDTEAM_TEST_FOFA_KEY=… REDTEAM_TEST_VPS_IP=… REDTEAM_TEST_HOSTNAME=… node test/bundle.test.mjs */
 const SENSITIVE = [
-  ['FOFA key', ['6c720afd', 'ebd3a7ac', 'ad8601fb', '70df06f8'].join('')],
-  ['VPS IP', ['123', '.207.63', '.62'].join('')],
-  ['主机名', ['VM-20-3', '-ubuntu'].join('')],
-  ['本机路径', ['/home', '/jz'].join('')],
+  ['FOFA key', 'REDTEAM_TEST_FOFA_KEY', process.env.REDTEAM_TEST_FOFA_KEY],
+  ['VPS IP', 'REDTEAM_TEST_VPS_IP', process.env.REDTEAM_TEST_VPS_IP],
+  ['主机名', 'REDTEAM_TEST_HOSTNAME', process.env.REDTEAM_TEST_HOSTNAME],
+  ['本机用户名路径', '(homedir())', join(homedir(), '')],
 ]
-for (const [label, needle] of SENSITIVE) {
+for (const [label, source, needle] of SENSITIVE) {
+  if (typeof needle !== 'string' || needle.length < 5) {
+    console.log(`  · ${label}：跳过（未提供 ${source}；仓库里不留真实值）`)
+    continue
+  }
   const hits = []
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
