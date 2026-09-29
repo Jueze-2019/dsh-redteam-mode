@@ -2793,7 +2793,7 @@ window.__ModuleLoader__.load({
         h('span', {
           className: 'rt-tag' + (hasNew ? ' rt-tag-warn' : ''),
           title: ('当前版本 ' + (current || '未知') + (latest ? '\n最新版本 ' + latest : '')
-            + (mode === 'dev' ? '\n安装方式：开发态（源码软链）' : mode === 'package' ? '\n安装方式：包安装' : '')
+            + ((mode === 'dev' || mode === 'source') ? '\n安装方式：本地源码（未走包管理器）' : mode === 'package' ? '\n安装方式：包安装' : '')
             + (info && info.check_error ? '\n检查失败：' + info.check_error : '')),
         }, 'v' + (current || '?')),
         hasNew
@@ -2813,7 +2813,7 @@ window.__ModuleLoader__.load({
                 h('div', { className: 'rt-kv' }, h('b', null, '当前版本'), h('span', null, current || '未知')),
                 h('div', { className: 'rt-kv' }, h('b', null, '最新版本'), h('span', null, latest || '未知')),
                 h('div', { className: 'rt-kv' }, h('b', null, '安装方式'),
-                  h('span', null, mode === 'dev' ? '开发态（源码软链）' : mode === 'package' ? '包安装（' + ((info.install && info.install.packageManager) || 'npm') + '）' : '未知')),
+                  h('span', null, (mode === 'dev' || mode === 'source') ? '本地源码' : mode === 'package' ? '包安装（' + ((info.install && info.install.packageManager) || 'npm') + '）' : '未知')),
                 info && info.install && info.install.dir
                   ? h('div', { className: 'rt-kv' }, h('b', null, '安装位置'), h('span', { className: 'rt-mono' }, info.install.dir))
                   : null,
@@ -2836,8 +2836,8 @@ window.__ModuleLoader__.load({
                   h('button', { className: 'rt-btn', onClick: () => setOpen(false) }, '关闭'),
                   h('button', {
                     className: 'rt-btn rt-btn-primary',
-                    disabled: busy || blockers.length > 0 || mode === 'dev',
-                    title: mode === 'dev' ? '开发态安装请用仓库流程升级' : blockers.length ? '先解决上面的阻塞项' : '安装并重启',
+                    disabled: busy || blockers.length > 0,
+                    title: (mode === 'dev' || mode === 'source') ? '把 npm 发布版装进 profile（本地源码改动不再生效）' : blockers.length ? '先解决上面的阻塞项' : '安装并重启',
                     onClick: apply,
                   }, busy ? '更新中…' : '一键更新并重启'))))
           : null)

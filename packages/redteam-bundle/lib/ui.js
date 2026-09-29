@@ -88,10 +88,16 @@ function pluginIdentity(ctx) {
   }
 }
 
-/** profile 目录：DSH 的 `ctx.baseUrl` 就是它（loader.internal.import(name, profileDir) 的 base）。 */
+/** profile 目录：DSH 的 `ctx.baseUrl` 就是它（loader.internal.import(name, profileDir) 的 base）。
+    注意它在不同 DSH 版本里可能是**文件路径**，也可能是 `file://` URL —— 后者直接当路径用会
+    读不到 package.json 与 node_modules，把正常的包安装误判成"开发态（源码软链）"，
+    于是更新按钮永远点不动。 */
 function profileDirOf(ctx) {
   try {
-    if (typeof ctx.baseUrl === 'string' && ctx.baseUrl.length > 0) return ctx.baseUrl
+    const base = ctx.baseUrl
+    if (typeof base === 'string' && base.length > 0) {
+      return base.startsWith('file:') ? fileURLToPath(base) : base
+    }
   } catch { /* 忽略 */ }
   const home = process.env.DSH_HOME || join(process.env.HOME || '', '.dsh')
   return join(home, 'profiles', 'web')
@@ -124,11 +130,14 @@ async function updatePreflight(ctx) {
   const blockers = []
   const notes = []
 
-  /* ① 开发态（源码软链）：profile 里没有这个包名 → 不能用包管理器更新 */
-  const devLinked = declared === null && !existsSync(join(installedDir, 'package.json'))
-  if (devLinked) {
-    blockers.push('当前是**开发态安装**（profile 依赖里没有 ' + pkg.name + '，是源码软链/手动挂载的），包管理器更新不适用。')
-    notes.push('开发态请用仓库流程升级：`git pull && node packages/redteam-bundle/tools/build.mjs`，再重启 dsh web。')
+  /* ① 装法：profile 依赖里没有这个包名，且 node_modules 里也没有它 —— 是本地源码软链/
+     手动挂载的开发态。**不再拦住更新**：包管理器照常能把发布版装进 profile（等于把开发态
+     换成正式安装），只是要明确提醒"本地源码改动不再生效"。 */
+  const installedInNodeModules = existsSync(join(installedDir, 'package.json'))
+  const sourceInstall = declared === null && !installedInNodeModules
+  if (sourceInstall) {
+    notes.push('当前是**本地源码安装**（profile 依赖里没有 ' + pkg.name + '）：点击更新会把发布版'
+      + '装进 profile 的 node_modules，本地源码改动不再生效；装完这次以后就能正常用一键更新。')
   }
 
   /* ② 有智能体在跑：重启会打断它们 */
@@ -154,7 +163,7 @@ async function updatePreflight(ctx) {
   if (running.length > 0) {
     blockers.push('有 ' + running.length + ' 个智能体正在跑（' + running.map((r) => r.label).join('、') + '）：更新要重启 dsh web，会打断它们。请等它们结束。')
   }
-  return { dir, declared, packageManager: packageManagerOf(dir), devLinked, running, blockers, notes }
+  return { dir, declared, packageManager: packageManagerOf(dir), sourceInstall, running, blockers, notes }
 }
 
 /** 到 npm registry 查最新版本（走包管理器，避免自带网络栈）。 */
@@ -272,13 +281,34 @@ function restartScript(pid, port, command, args, logPath, cwd) {
 
 /** 应用更新：装新版本 + 生成重启脚本 + 让当前进程退出。 */
 async function applyUpdate(ctx, dir, name, targetVersion) {
-  const pm = packageManagerOf(dir)
+  const primary = packageManagerOf(dir)
   const spec = targetVersion ? name + '@' + targetVersion : name
-  const args = pm === 'pnpm' ? ['add', spec] : ['install', spec, '--save']
-  const r = await run(pm, args, { cwd: dir, timeoutMs: 300000 })
-  if (r.code !== 0) {
-    return { ok: false, error: '安装失败（' + pm + ' ' + args.join(' ') + '）：' + String(r.stderr || r.stdout || '').trim().slice(0, 1200) }
+  const attempt = async (pm) => {
+    const args = pm === 'pnpm' ? ['add', spec] : ['install', spec, '--save']
+    const r = await run(pm, args, { cwd: dir, timeoutMs: 300000 })
+    return { pm, args, r }
   }
+  let { pm, args, r } = await attempt(primary)
+  if (r.code !== 0) {
+    /* 首选包管理器失败就换另一个再试一次：profile 由 pnpm 管理但机器上没装 pnpm、
+       或 npm 因 workspace 布局拒绝写入，都属于"换一个就能装"的情况。
+       两个都失败才报错，并把两次输出都带上，别让用户猜。 */
+    const first = pm + ' ' + args.join(' ') + '：' + String(r.stderr || r.stdout || '').trim().slice(0, 600)
+    const retry = await attempt(primary === 'pnpm' ? 'npm' : 'pnpm')
+    if (retry.r.code !== 0) {
+      return {
+        ok: false,
+        error: '安装失败。第一次：' + first + ' ｜ 第二次：' + retry.pm + ' ' + retry.args.join(' ')
+          + '：' + String(retry.r.stderr || retry.r.stdout || '').trim().slice(0, 600),
+      }
+    }
+    pm = retry.pm
+    args = retry.args
+    r = retry.r
+  }
+  /* 装完把这个包登记进 profile 的 `dsh.profile.bundles`：手动挂载过的机器可能只装了依赖
+     而没登记，重启后插件不会加载。 */
+  const bundleState = ensureProfileBundle(dir, name)
   /* 重启：拿当前进程的启动命令原样再来一遍 */
   const argv = process.argv.slice()
   const command = argv[0]
@@ -298,9 +328,27 @@ async function applyUpdate(ctx, dir, name, targetVersion) {
   /* 给浏览器留出收到响应的窗口，然后退出 —— 新进程由脚本按原命令行拉起 */
   setTimeout(() => { process.exit(0) }, 1200).unref()
   return {
-    ok: true, installed: spec, packageManager: pm,
+    ok: true, installed: spec, packageManager: pm, bundleRegistered: bundleState,
     restart: { script: scriptPath, log: logPath, port, command: [command].concat(rest).join(' '), pid: process.pid },
   }
+}
+
+/**
+ * 把包名登记进 profile 的 `dsh.profile.bundles`（缺了重启后插件不会被加载）。
+ * @returns `'present'`（本来就在）/ `'added'`（已补上）/ `'failed'`（读不到或写不了，不影响安装本身）。
+ */
+function ensureProfileBundle(dir, name) {
+  try {
+    const path = join(dir, 'package.json')
+    const pkg = JSON.parse(readFileSync(path, 'utf8'))
+    const profile = pkg && pkg.dsh && pkg.dsh.profile ? pkg.dsh.profile : null
+    if (profile === null || typeof profile !== 'object') return 'failed'
+    const bundles = Array.isArray(profile.bundles) ? profile.bundles : []
+    if (bundles.includes(name)) return 'present'
+    profile.bundles = bundles.concat([name])
+    writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n', 'utf8')
+    return 'added'
+  } catch { return 'failed' }
 }
 
 
@@ -577,12 +625,12 @@ async function handleUpdateOp(ctx, request) {
   const pkg = pluginIdentity(ctx)
   const pre = await updatePreflight(ctx)
   if (request.op === 'version') {
-    const check = pre.devLinked ? null : await checkLatest(ctx, pre.dir, pkg.name)
+    const check = await checkLatest(ctx, pre.dir, pkg.name)
     return {
       ok: true,
       plugin: pkg,
       install: {
-        mode: pre.devLinked ? 'dev' : 'package',
+        mode: pre.sourceInstall ? 'source' : 'package',
         dir: pre.dir,
         declared: pre.declared,
         packageManager: pre.packageManager,
@@ -600,13 +648,13 @@ async function handleUpdateOp(ctx, request) {
   }
   if (request.op === 'updateCheck') {
     const check = await checkLatest(ctx, pre.dir, pkg.name)
-    if (check.ok !== true) return { ok: false, error: check.error, current: pkg.version, install: { mode: pre.devLinked ? 'dev' : 'package' } }
+    if (check.ok !== true) return { ok: false, error: check.error, current: pkg.version, install: { mode: pre.sourceInstall ? 'source' : 'package' } }
     const localAhead = pkg.version ? versionLess(check.latest, pkg.version) : false
     return {
       ok: true, current: pkg.version, latest: check.latest,
       updateAvailable: pkg.version ? versionLess(pkg.version, check.latest) : true,
       localAhead,
-      install: { mode: pre.devLinked ? 'dev' : 'package', dir: pre.dir, packageManager: pre.packageManager },
+      install: { mode: pre.sourceInstall ? 'source' : 'package', dir: pre.dir, packageManager: pre.packageManager, sourceInstall: pre.sourceInstall },
       blockers: pre.blockers,
       notes: pre.notes.concat(localAhead
         ? ['本机版本（' + pkg.version + '）比 npm 上的最新版（' + check.latest + '）还新：'
