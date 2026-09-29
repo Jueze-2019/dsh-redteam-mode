@@ -209,10 +209,9 @@ console.log('— 公开包不能夹带敏感信息')
 /* 检查"打出来的包有没有夹带本机敏感值"。检查对象是包内文件（lib/ presets/ skills/
    cordis.patch.yml）；test/ 自己不在 npm 包里（见 package.json 的 files）。
 
-   ⚠️ **真实值绝不能写进这个文件** —— 仓库是公开的。v0.7.0～0.12.1 曾把 FOFA key 拆成
-   四段写在这里"防扫描"，但四段都在同一个文件里、拼起来就是完整的 key，等于公开；
-   同理 VPS IP、主机名也不该出现在仓库里。现在改成从环境变量读，没配就跳过并说明，
-   仓库里不留任何密钥素材；本机路径由 homedir() 推导，也不必写死用户名。
+   ⚠️ **真实值绝不能写进这个文件**（仓库是公开的），"拆成几段再拼"也不算安全 ——
+   片段在同一个文件里，拼起来就是完整值。敏感值一律从环境变量读，没配就跳过并说明；
+   本机路径由 homedir() 推导，不必写死用户名。
 
    想在本机跑全量检查：
      REDTEAM_TEST_FOFA_KEY=… REDTEAM_TEST_VPS_IP=… REDTEAM_TEST_HOSTNAME=… node test/bundle.test.mjs */

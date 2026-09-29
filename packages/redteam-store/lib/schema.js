@@ -8,8 +8,8 @@ import { DatabaseSync } from 'node:sqlite'
  * 看 schema 不用翻过 500 行计分逻辑，改表结构也不会误碰业务代码。
  *
  * 两处迁移遵循同一条纪律：**先查 PRAGMA 再 ADD COLUMN**，可重复执行、老库不用重建。
- * 读不到表结构时必须按"没有这一列"处理（返回 false）—— 曾经写成"出错就当列已存在"，
- * 结果迁移被静默跳过，用户拿到的是"莫名其妙 no such column"而不是"迁移失败"。
+ * 读不到表结构一律按"没有这一列"处理（返回 false），交给 ensure 去尝试 ALTER；
+ * 反过来当成"列已存在"会让迁移被静默跳过，故障点从"迁移失败"漂到远端 SQL 执行处。
  */
 
 /* ------------------------------------------------------------------ FTS5 能力检测 */
@@ -17,10 +17,9 @@ import { DatabaseSync } from 'node:sqlite'
 /**
  * 本机 `node:sqlite` 是否带 FTS5。
  *
- * **必须检测**：FTS5 是编译期选项，官方 Node 构建里并不一致 ——
- * Node 22.14 的 `node:sqlite` 就没有（`no such module: fts5`），22.23 有。
- * GitHub Actions 上用 setup-node 装的 22.14 因此整个 DDL 都建不起来，
- * 8 个测试文件全红、本地却全绿（2026-09 真实踩坑）。
+ * **必须检测**：FTS5 是编译期选项，不同 Node 构建并不一致 ——
+ * Node 22.14 的 `node:sqlite` 没有（`no such module: fts5`），22.23 有。
+ * 因此不能假定它存在：CI 与本地 Node 版本不一致时，整个 DDL 都建不起来。
  * 语义：只有 FTS5 缺席时才降级成 LIKE 检索 —— 装了 FTS5 的机器行为完全不变。
  *
  * `REDTEAM_NO_FTS5=1` 可强制走降级路径：CI 的 Node 一旦换了带 FTS5 的版本，
@@ -177,9 +176,8 @@ CREATE TABLE IF NOT EXISTS score_point (
   legacy INTEGER DEFAULT 0,
   /* builtin：1 = 随《突破入侵类得分规则》分发的内置得分点（分值/上限/口径由规则锁定，
      用户只能改「启用/停用」）；0 = 用户自建点（可任意编辑，且不会被播种逻辑清掉）。
-     历史教训：清理旧体系时用 code 名单判定是否内置，于是用户自建的得分点在
-     下一次读取得分面板时被当成旧体系残留连同命中一起删掉 —— 「新增得分点」永远无效，
-     而 saveScorePoint 还返回 ok，界面照样弹「已保存」。 */
+     判定内置**必须看这个标志位**，不能用 code 名单：用户自建的得分点一旦被判成旧体系残留，
+     会在下次读取得分面板时连同命中一起删掉，而写入侧仍返回成功。 */
   builtin INTEGER DEFAULT 0
 );
 
@@ -450,10 +448,9 @@ export function migrate(db) {
     try {
       return db.prepare(`PRAGMA table_info(${table})`).all().some((row) => row.name === column)
     } catch {
-      /* 读不到表结构时必须返回 false（= "没有这一列"），让 ensure 去尝试 ALTER。
-         这里曾经 return true，等于"出错就当列已存在"，迁移会被静默跳过：
-         代码随后按新列写 SQL，用户拿到的是"莫名其妙 no such column"而不是"迁移失败"，
-         排查方向直接跑偏。 */
+      /* 读不到表结构必须返回 false（= "没有这一列"），让 ensure 去尝试 ALTER。
+         返回 true 会让迁移被静默跳过，代码随后按新列写 SQL，故障表现为远端 SQL 报错
+         而不是迁移失败。 */
       return false
     }
   }

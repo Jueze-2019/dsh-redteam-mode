@@ -46,8 +46,8 @@ function run(command, args, options = {}) {
   return new Promise((resolvePromise) => {
     let child
     try {
-      /* ⚠️ 两个都踩过：
-         · env 必须显式传 process.env —— spawn 默认给的是空环境，空 PATH 下
+      /* ⚠️ 两个参数必须显式给对：
+         · env 必须传 process.env —— spawn 默认给的是空环境，空 PATH 下
            npm/pnpm 会直接 `spawn npm ENOENT`（版本检查永远失败）；
          · cwd 必须是**真实存在**的目录 —— 传一个不存在的路径同样是 ENOENT
            （报错长得像"命令找不到"，很容易误判）。 */
@@ -595,7 +595,7 @@ export function apply(ctx) {
         return
       }
       /* 来源校验：**默认拒绝**。
-         曾经的写法只在 origin 与 host 都是字符串时才比对，两个头缺任意一个就整段跳过 ——
+         只在 origin 与 host 都是字符串时才比对是不够的：缺任意一个头就整段跳过，
          "校验被跳过"等同于"没有校验"，一个不发送 Origin 的请求就能打到所有 op
          （包括读明文凭据与 updateApply 这条会装包并重启进程的路径）。
          现在：有 Origin → 必须与 Host 同源；没有 Origin → 只允许来自回环地址的请求。 */

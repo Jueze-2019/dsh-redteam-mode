@@ -1403,10 +1403,9 @@ export class RedteamStore {
        （web-account-* / webshell / rce / server-shell / db-access / sensitive-data /
        boundary / internal-pivot / core-system 等）与其历史命中。
 
-       ⚠️ 这里曾经写成"凡是不在 DEFAULT_SCORE_POINTS 里的一律删掉"，后果是
-       **用户自建的得分点在下次读取得分面板时被静默删除**（连同它的命中），
-       而 saveScorePoint 照样返回 ok、界面照样弹「已保存」——「新增得分点」永远无效。
-       判定"是否内置"必须用 builtin 列，不能用"是否在当前默认名单里"。
+       ⚠️ 判定"是否内置"**必须用 builtin 列**，不能用"是否在当前默认名单里"：
+       用户自建的得分点会被当成旧体系残留，在下次读取得分面板时连同命中一起静默删除，
+       而 saveScorePoint 照样返回 ok、界面照样弹「已保存」。
 
        ⚠️ 不可逆：清理前把被删的得分点与命中**导出到 <靶标>/runs/legacy-score-<时间>.json**
        存档一次（报告/审计还能查），然后才删。 */
@@ -1523,7 +1522,7 @@ export class RedteamStore {
        · rule + cap 决定该规则的累计上限。
        自建账号既不参与竞争也不占位（本来就不计分）。 */
     /* 元数据与评估都走共享实现（evaluateScoreBoard）：面板 / 报告 / 攻击链三处
-       曾经各写一遍，已经漂移出"报告不看 enabled""攻击链丢了档位分值"两个真实事故。 */
+       各写一遍必然出现不同口径，总分对不上。 */
     const pointsMeta = new Map(rows.map((r) => [String(r.code), {
       rule: r.rule === null || r.rule === undefined ? null : Number(r.rule),
       cap: Number(r.cap) || 0,
@@ -2586,8 +2585,8 @@ export class RedteamStore {
     }
     /* 自己注册/自建的账号不算成果：从报告主体剔除，只在页脚给一个数字 */
     const selfCreatedRows = rows.filter((h) => Number(h.self_created) === 1)
-    /* 「停用」的得分点：面板只累加 enabled 的点（listScorePoints 的口径），报告必须一致。
-       曾经报告不看 enabled —— 停用 web-app 后面板 50 分、报告 150 分，交付物自相矛盾。
+    /* 「停用」的得分点：面板只累加 enabled 的点（listScorePoints 的口径），报告必须一致，
+       否则同一个交付物里会出现两个总分（例如停用 web-app 后面板 50 分、报告 150 分）。
        这些命中不进正文、不进总分，但同样只报个数（用户是自己关的，不是被规则顶掉的）。
        判定函数放在下面与 reportRows 一起，避免两份口径漂移。 */
     /* 计分口径与规则上限：**必须与 listScorePoints 用同一套**（applyScoreCaps + 得分点元数据），
@@ -3120,8 +3119,8 @@ export class RedteamStore {
     const chainMeta = loadScoreMeta(db)
     const chainNames = loadAssetNames(db)
     /* 本条命中的实际分值：**命中自带档位优先**（合并版里同一条含多档，如管理员 50 / 普通 10）。
-       scoreChain 的 SQL 用 hit_points / point_default 两个别名把两列分开取（直接取 h.points 会被
-       同名的 p.points 遮蔽）—— 这一点曾经漏掉，导致攻击链页把"普通档计分、管理员档不计分"整个判反。 */
+       scoreChain 的 SQL 用 hit_points / point_default 两个别名把两列分开取：直接取 h.points 会被
+       同名的 p.points 遮蔽，攻击链页的档位判定会整个判反。 */
     const chainPointsOf = (it) => hitPointsOf({
       points: Number(it.hit_points) || Number(it.point_default) || 0,
       multiplier: it.multiplier,
