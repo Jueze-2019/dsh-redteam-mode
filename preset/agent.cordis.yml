@@ -326,8 +326,10 @@
         backgroundMode: one-shot
         maxDepth: provider-managed
 
-    - id: workflow-worker-thread
-      name: '@deepseek-ai/dsh-workflow-worker-thread'
+    # DSH 0.1.7-rc.2：`@deepseek-ai/dsh-workflow-worker-thread` 已下线，随基座分发的
+    # 是 `@deepseek-ai/dsh-workflow-ptc`（同样是 provider: spawn）。留着旧名会让这条行激活失败。
+    - id: workflow-ptc
+      name: '@deepseek-ai/dsh-workflow-ptc'
       config:
         provider: spawn
 

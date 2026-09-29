@@ -10,12 +10,17 @@
  *   ① `build.mjs` 从三个源码包重新生成市场包 `lib/` 与预设/技能（保证产物与源码一致）；
  *   ② 把包内 `lib/` 同步到 profile 的 `node_modules/dsh-redteam-mode/lib/`（运行中加载的就是这份）；
  *   ③ 调 `installPreset({ force: true })` **用官方安装路径**刷新用户预设 ——
- *      这一步是关键：**直接把打包模板 cp 进 `$DSH_HOME/.agent-presets/redteam/` 会留下
+ *      这一步只对 **DSH < 0.1.7** 有意义（那时模式来自 `$DSH_HOME/.agent-presets/` 目录）。
+ *      0.1.7-rc.2 起注册表既不扫目录也不接受预设路径，模式改由随包补丁
+ *      `cordis.patch.yml` 生成区里的 `@deepseek-ai/dsh-agent-preset` 声明行注册；
+ *      这里保留刷新是为了老版本机器，新版本机器上它只是写一份没人读的文件。
+ *      注：**直接把打包模板 cp 进 `$DSH_HOME/.agent-presets/redteam/` 会留下
  *      `{{REDTEAM_SKILLS_DIR}}` 占位符**，YAML 把它解析成对象 → skill-filesystem 配置校验失败
  *      → 整个预设挂载失败 → 建不了会话、发不出消息（v0.9.0 真实事故，别再用 cp）。
  *      注：`installPreset` 现在也会自愈已存在的坏预设（占位符残留 / 旧包路径失效），
  *      所以即使以前踩过坑，正常启动一次 dsh web 也会自动修好。
- *   ④ 顺手把已装包里的 package.json 版本号对齐（面板显示的版本来自它）。
+ *   ④ 把 package.json（含 `dsh.bundle.patch` 补丁层清单）整份对齐到仓库那份 ——
+ *      补丁层从 0.12.1 起是两个文件，只同步 lib/ 会让声明行挂不上、模式列表里没红队模式。
  *
  * 之后 host 侧改动仍需重启 dsh web 才生效（客户端 UI 会自动热重载）。
  */
@@ -68,15 +73,32 @@ for (const profile of profiles) {
     }
     console.log(`   ${sub}/ 已同步`)
   }
-  /* 版本号对齐（面板显示的是这份 package.json） */
+  /* ⚠️ **cordis.patch.yml 本身也必须同步**：新会话模式列表的唯一入口
+     （`preset-redteam` 声明行）就写在这个补丁层里。只同步 lib/ 会变成
+     "代码是新的、补丁层是旧的"——表现是插件一切正常，就是模式列表里没有红队模式。
+     它由 build.mjs 从 preset/ 重新生成，所以这里必须从仓库那份拷过去。 */
+  const patchSrc = join(bundle, 'cordis.patch.yml')
+  if (existsSync(patchSrc)) {
+    copyFileSync(patchSrc, join(installedRoot, 'cordis.patch.yml'))
+    console.log('   cordis.patch.yml 已同步（含 preset-redteam 声明行）')
+  }
+  /* package.json 整份对齐 —— **不只是版本号**：`dsh.bundle.patch`、`exports`、
+     `dsh.client` 都写在这份清单里。只同步 lib/ 会出现"文件到位了、补丁层没声明"，
+     表现同样是模式列表里没有红队模式。仓库那份是唯一事实来源。
+     注意 `dsh.bundle.patch` 必须保持**字符串**：数组形式只有 DSH ≥0.1.7 才认，
+     0.1.6 及更早会直接抛错、harness 起不来（详见 cordis.patch.yml 里的说明）。 */
   const installedPkgPath = join(profilesRoot, profile, 'node_modules', 'dsh-redteam-mode', 'package.json')
-  const sourcePkg = JSON.parse(readFileSync(join(bundle, 'package.json'), 'utf8'))
+  const sourcePkgText = readFileSync(join(bundle, 'package.json'), 'utf8')
   if (existsSync(installedPkgPath)) {
-    const installed = JSON.parse(readFileSync(installedPkgPath, 'utf8'))
-    if (installed.version !== sourcePkg.version) {
-      installed.version = sourcePkg.version
-      writeFileSync(installedPkgPath, JSON.stringify(installed, null, 2) + '\n', 'utf8')
-      console.log(`   版本号 ${installed.version} ← ${sourcePkg.version}`)
+    let current = ''
+    try { current = readFileSync(installedPkgPath, 'utf8') } catch { current = '' }
+    if (current !== sourcePkgText) {
+      let before = {}
+      try { before = JSON.parse(current) } catch { before = {} }
+      const after = JSON.parse(sourcePkgText)
+      writeFileSync(installedPkgPath, sourcePkgText, 'utf8')
+      console.log('   package.json 已对齐'
+        + (before.version !== after.version ? `（版本 ${before.version} ← ${after.version}）` : '（补丁层/exports 等）'))
     }
   }
   synced += files.length

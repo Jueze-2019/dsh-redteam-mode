@@ -11,7 +11,7 @@
 | 包名 | `dsh-redteam-mode`（在 `packages/redteam-bundle/`） |
 | 打包契约 | `dsh.bundle.patch: ./cordis.patch.yml` + `dsh.client.platform: web` + `exports: . / ./store / ./ui / ./tools / ./client` |
 | 自包含 | 零运行时依赖；`lib/` 由 `tools/build.mjs` 从三个源码包生成 |
-| 预设 | `presets/redteam/`（首次启动落地到 `$DSH_HOME/.agent-presets/redteam/`，不覆盖用户改动） |
+| 预设 | `cordis.patch.yml` 生成区里的 `preset-redteam` 声明行（DSH ≥0.1.7-alpha.1 只认声明行，目录预设不再被读取）；`presets/redteam/` 目录预设只留给 ≤0.1.6 的旧 DSH |
 | 技能 | `skills/` 13 个，随包分发 |
 | 发布守卫 | `prepublishOnly` = `build --check` + `bundle.test.mjs`（漂移或泄露会直接拦住 publish） |
 | 真机验收 | 干净 `DSH_HOME` + `npm pack` 出的 tarball + `dsh plugin add` → 预设可用、13 个技能可见、`POST /redteam/api` 正常 |

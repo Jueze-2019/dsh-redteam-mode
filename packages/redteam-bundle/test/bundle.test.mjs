@@ -26,7 +26,10 @@ const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 
 console.log('— 打包契约')
 ok(manifest.name === 'dsh-redteam-mode', `包名是 ${manifest.name}`)
-ok(manifest.dsh?.bundle?.patch === './cordis.patch.yml', '声明了 dsh.bundle.patch（否则装完不会成为 profile 层）')
+ok(manifest.dsh?.bundle?.patch === './cordis.patch.yml',
+  'dsh.bundle.patch 是**单文件**（写成数组会让 DSH ≤0.1.6 拿数组去 path.join 直接抛错、整个 harness 起不来）')
+ok(!Array.isArray(manifest.dsh?.bundle?.patch), '补丁声明不是数组（只有 DSH ≥0.1.7 才支持数组形式）')
+ok(existsSync(join(root, manifest.dsh.bundle.patch)), `补丁文件真的在包里：${manifest.dsh.bundle.patch}`)
 ok(manifest.dsh?.client?.platform === 'web', '声明了 dsh.client.platform=web（浏览器半侧才会被加载）')
 for (const sub of ['.', './store', './ui', './tools', './client']) {
   ok(typeof manifest.exports?.[sub] === 'string', `exports["${sub}"] 存在`)
@@ -36,7 +39,15 @@ ok((manifest.files ?? []).includes('cordis.patch.yml') && (manifest.files ?? [])
   'files 覆盖补丁/预设/技能（npm 打包不会漏）')
 
 console.log('— 补丁层')
-const patch = readFileSync(join(root, 'cordis.patch.yml'), 'utf8')
+const patchFileText = readFileSync(join(root, 'cordis.patch.yml'), 'utf8')
+/* cordis.patch.yml 分两段：标记之前是**手写**的迁移补丁与三个挂载行，标记之后是
+   build.mjs 从 preset/ 生成的 `preset-redteam` 声明行。两组断言必须分开：
+   挂载行只允许引用本包子路径，而声明行内部本来就有一堆基座包名与嵌套 id。 */
+const DECL_START = '# >>> preset-redteam declaration'
+const declAt = patchFileText.indexOf(DECL_START)
+ok(declAt > 0, 'cordis.patch.yml 里有生成区起始标记（build.mjs 靠它整段替换生成区）')
+const patch = patchFileText.slice(0, declAt)
+const decl = patchFileText.slice(declAt)
 ok(patch.includes('dsh-redteam-mode/store') && patch.includes('dsh-redteam-mode/ui'), '只挂本包的子路径行（不引用传递依赖）')
 ok(patch.includes("dshHomePath('redteam')"), '资产库根目录用 dshHomePath 解析')
 /* 挂载行只引用本包子路径（裸兄弟包名在 pnpm 隔离布局下解析不到）；
@@ -75,6 +86,33 @@ for (const legacy of LEGACY_IDS) {
 /* 迁移补丁必须同时给出 name：loader 只在 id 与 name 都匹配时才应用，否则会误改同 id 的别的行 */
 ok(/^- id: redteam-store\n  name: dsh-redteam-store/m.test(patch) && /^- id: redteam-ui\n  name: dsh-redteam-ui/m.test(patch),
   '两条迁移补丁都带 name（精确匹配，不会误伤同 id 的其它行）')
+
+/* ── 模式列表入口：DSH 0.1.7-alpha.1 起 agent preset 只认声明行 ──────────────
+   旧版会扫 `$DSH_HOME/.agent-presets/<id>/`（那个包叫 dsh-agent-presets，止于
+   0.1.6-alpha.2）；新版注册表（dsh-agent-preset-registry，0.1.7-alpha.1 起）既不扫
+   目录、也不接受预设路径（随包技能 editing-cordis-compositions 的「Migrate a legacy
+   preset」一节写明 "Nothing reads that directory any more"）。2026-09-29 实测：
+   DSH 升到 0.1.7-rc.2 后「红队模式」从新会话模式列表消失，插件其余部分都正常。
+   声明行由 build.mjs 从 preset/ 生成到 cordis.patch.yml 的生成区。 */
+console.log('— 预设声明行（新会话模式列表的唯一入口）')
+ok(/^\s*- id: preset-redteam$/m.test(decl), '声明行 loader id = preset-redteam')
+ok(/^\s*name: '@deepseek-ai\/dsh-agent-preset'$/m.test(decl), '挂的是 @deepseek-ai/dsh-agent-preset')
+ok(/^\s*id: redteam$/m.test(decl), '预设 id = redteam（会话日志与恢复按它查）')
+ok(/^\s*name: "红队模式"$/m.test(decl), '显示名 = 红队模式（与 preset/preset.yml 同源）')
+ok(/^\s*order: \d+$/m.test(decl), '给了 order（模式列表里的位置）')
+ok(!decl.includes('{{REDTEAM_SKILLS_DIR}}'), '声明行里没有未替换的占位符（留着会让整个预设激活失败）')
+ok(/redteamMode/.test(decl) && /skills/.test(decl), '技能目录运行时解析（redteamMode 服务，包搬到哪都对）')
+ok(/dshHomePath\('skills'\)/.test(decl), '技能根顺序：$DSH_HOME/skills 排在包内目录前面')
+ok(/name: '@deepseek-ai\/dsh-workflow-ptc'/.test(decl) && !/name: '@deepseek-ai\/dsh-workflow-worker-thread'/.test(decl),
+  'workflow 行用随基座分发的 @deepseek-ai/dsh-workflow-ptc（worker-thread 已下线）')
+const declRows = [...decl.matchAll(/^ {10}- id: (\S+)$/gm)].map((m) => m[1])
+ok(declRows.length >= 15, `带上了完整插件列表（${declRows.length} 个顶层预设行）`)
+for (const wanted of ['persona', 'redteam-tools', 'skill-filesystem', 'delegation', 'tool-web']) {
+  ok(declRows.includes(wanted), `关键顶层行在：${wanted}`)
+}
+/* 委派行嵌在 `delegation` 组里（缩进更深），单独确认没有被平铺/丢掉 */
+ok(/^\s+- id: tool-subagent$/m.test(decl) && /maxDepth: 1/.test(decl),
+  '组内的 tool-subagent 行与其 maxDepth=1 硬约束随声明行一起带过来')
 
 console.log('— 预设')
 const preset = readFileSync(join(root, 'presets/redteam/agent.cordis.yml'), 'utf8')

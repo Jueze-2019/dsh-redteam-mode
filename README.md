@@ -51,15 +51,24 @@ dsh plugin --profile web add ./dsh-redteam-mode-0.11.4.tgz
 **从源码装**：
 
 ```bash
+# 生成市场包 → 同步到 profile → 刷新预设/技能，一步到位（推荐）
+node scripts/deploy-local.mjs
+node scripts/deploy-local.mjs --restart   # 顺带重启 dsh web（会中断当前会话）
+```
+
+<details>
+<summary>手工等价步骤（不推荐，容易漏东西）</summary>
+
+```bash
 PROFILE=~/.dsh/profiles/web
 mkdir -p "$PROFILE/node_modules"
 for p in redteam-store redteam-tools redteam-ui; do
   ln -sfn "$PWD/packages/$p" "$PROFILE/node_modules/dsh-$p"
 done
-mkdir -p ~/.dsh/.agent-presets/redteam ~/.dsh/skills
-cp preset/agent.cordis.yml preset/preset.yml ~/.dsh/.agent-presets/redteam/
-cp skills/*.md ~/.dsh/skills/
+# 注意：DSH ≥0.1.7 起模式列表来自 cordis.patch.yml 生成区里的 preset-redteam 声明行，
+# 不再是 $DSH_HOME/.agent-presets/ 目录 —— 手工部署必须把 cordis.patch.yml 一起同步过去。
 ```
+</details>
 
 细节见 [`docs/详细文档.md`](docs/详细文档.md) 第 7 章。
 </details>

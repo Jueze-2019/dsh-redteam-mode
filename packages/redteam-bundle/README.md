@@ -11,8 +11,13 @@ dsh plugin --profile web add dsh-redteam-mode
 ```
 
 装完重启一次 `dsh web`，然后在**设置 → 插件市场**里就能看到它（也可以直接在上面搜
-`redteam`）。首次启动会把自带的 `红队模式` 预设装到 `$DSH_HOME/.agent-presets/redteam/`，
-并注册 14 个原生技能——不需要手动拷任何文件。
+`redteam`）。插件随包带一个 `红队模式` 预设声明行（`cordis.patch.yml` 里由
+`tools/build.mjs` 生成），并注册 14 个原生技能——不需要手动拷任何文件。
+
+> **需要 DSH ≥ 0.1.7-alpha.1**：从这个版本起 agent preset 只认声明行，注册表不再扫描
+> `$DSH_HOME/.agent-presets/`。0.12.0 及更早的插件版本在 0.1.7+ 上模式列表里不会出现
+> 「红队模式」（资产库 / 控制台 / 工具仍可用，只有模式入口没了）。更早的 DSH（≤0.1.6）
+> 仍会走旧目录机制，插件照常可用，日志里会有一条 `preset-redteam ... failed to import` 警告。
 
 使用：新建会话 → 选预设 **红队模式** → 直接发靶标单位名称。
 

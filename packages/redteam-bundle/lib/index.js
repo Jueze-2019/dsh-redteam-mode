@@ -2,16 +2,22 @@
  * dsh-redteam-mode —— 插件自举（host 半侧）
  *
  * 这个包是**自包含**的：资产库、工具、控制台、预设、技能全在包内，
- * 装一个包就齐活。本文件负责三件事：
+ * 装一个包就齐活。本文件负责四件事：
  *
+ *   0. **新会话里的「红队模式」入口不在这里**：DSH 0.1.7-rc.2 起 agent preset
+ *      只认 `@deepseek-ai/dsh-agent-preset` 声明行，由随包补丁
+ *      `cordis.patch.yml` 生成区（build.mjs 生成）注册；注册表既不扫目录、
+ *      也不接受预设路径。本文件下面那套"落地到用户预设目录"的机制只对
+ *      **DSH < 0.1.7** 生效，留着给老版本机器。
  *   1. 首次启动时把包内自带的 `redteam` 预设装到用户的 preset 根
  *      （`$DSH_HOME/.agent-presets/redteam/`），并把预设里的
  *      `{{REDTEAM_SKILLS_DIR}}` 占位符替换成包内 skills/ 的**真实绝对路径**。
- *      为什么走"落地到用户根"而不是配置一个 preset roots：YAML 补丁里拿不到
- *      本包安装路径（`ctx.baseUrl` 是 profile 目录），而 JS 里
- *      `import.meta.url` 永远正确。落地还有一个好处：用户可以就地改预设。
+ *      老版本的目录扫描按这个路径读；新版本读不到它，改用声明行 +
+ *      `redteamMode` 服务（见下）在运行时解析技能目录。
  *   2. 已经存在同名预设时**不动它**（用户自己的改动优先），只提示。
- *   3. 把包内路径挂到 ctx 上，方便排障与其它行复用。
+ *   3. 把包内路径挂到 ctx 上，方便排障与其它行复用 —— 声明行里的
+ *      `skill-filesystem.customSkillDirs` 就是靠 `ctx.get('redteamMode').paths.skills`
+ *      拿到随包技能目录的（`import.meta.url` 解析，包搬到哪都对）。
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -82,7 +88,10 @@ export function installSetupScript() {
   }
 }
 
-/** 用户 preset 根（与 dsh-agent-presets 的 USER_PRESET_DIR 保持一致）。 */
+/**
+ * 用户 preset 根（老版本 DSH 的 `dsh-agent-presets` 用的 USER_PRESET_DIR）。
+ * DSH >= 0.1.7 不再读这个目录，仅作老版本兼容路径保留。
+ */
 export function userPresetRoot() {
   const home = process.env.DSH_HOME || join(homedir(), '.dsh')
   return join(home, '.agent-presets')
