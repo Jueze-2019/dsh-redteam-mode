@@ -111,7 +111,7 @@ const body = buildBody(manifest.name, manifest.version, tarball)
 console.log('[2/4] PUT（不带 OTP），预期 401 EOTP …')
 let res = await put(body)
 let text = await res.text()
-if (res.status === 200 || res.status === 201) {
+if ([200, 201, 202].includes(res.status)) {
   console.log('✓ 直接发布成功（这次没要求人工验证）')
   process.exit(0)
 }
@@ -150,8 +150,10 @@ console.log(`\n    ✓ 已领取一次性凭据（${/^\d{6}$/.test(otp) ? '6 位
 console.log('[4/4] 带凭据重发同一个 PUT …')
 res = await put(body, otp)
 text = await res.text()
-if (res.status === 200 || res.status === 201) {
-  console.log(`✓ 发布成功：${manifest.name}@${manifest.version}`)
+/* 202 = 成功（进入发布期审查），不是失败：npm 对双用途包返回 202 + {"success":true}。
+   详见 scripts/publish-now.mjs 里的同一处理。 */
+if ([200, 201, 202].includes(res.status)) {
+  console.log(`✓ 发布成功：${manifest.name}@${manifest.version}${res.status === 202 ? '（202，进入发布期审查）' : ''}`)
   process.exit(0)
 }
 console.error(`✗ 提交失败 ${res.status}：${text.slice(0, 500)}`)

@@ -81,7 +81,11 @@ let text = await res.text()
 let parsed = {}
 try { parsed = JSON.parse(text) } catch { /* 非 JSON */ }
 
-if (res.status === 200 || res.status === 201) { console.log('✓ 无需人工验证，已直接发布成功'); process.exit(0) }
+/* 200/201 = 直接落库；**202 = 成功**，表示进入发布期审查（npm 对双用途包的正常响应，
+   正文 `{"success":true}`）。把 202 当失败会让每次成功发布都白报一次错 —— 0.12.1 就踩了。 */
+const PUBLISHED = new Set([200, 201, 202])
+const describe = (status) => status === 202 ? '202（进入发布期审查，属正常成功）' : String(status)
+if (PUBLISHED.has(res.status)) { console.log(`✓ 无需人工验证，已直接发布成功（${describe(res.status)}）`); process.exit(0) }
 if (!parsed.authUrl || !parsed.doneUrl) {
   console.error(`✗ 状态 ${res.status}：${text.slice(0, 500)}`); process.exit(1)
 }
@@ -110,8 +114,14 @@ console.log(`\n    ✓ 领到凭据（${otp.length} 位），立刻发布 …`)
 
 res = await put(body, otp)
 text = await res.text()
-if (res.status === 200 || res.status === 201) {
-  console.log(`✓✓ 发布成功：${manifest.name}@${manifest.version}`)
+/* 同上：202 也是成功（进入发布期审查）。版本要在 packument 上可见还需要一小会儿，
+   别因为"查不到版本"就重发 —— 重发同版本会撞 409。 */
+if (PUBLISHED.has(res.status)) {
+  console.log(`✓✓ 发布成功：${manifest.name}@${manifest.version}（${describe(res.status)}）`)
+  if (res.status === 202) {
+    console.log('   版本需要过发布期审查，packument 上稍后才可见（0.12.0 实测约 1 分钟）。')
+    console.log('   验证：curl -s https://registry.npmjs.org/' + manifest.name + ' | grep -o \'"latest":"[^"]*"\'')
+  }
   process.exit(0)
 }
 console.error(`✗ 发布失败 ${res.status}：${text.slice(0, 500)}`)
