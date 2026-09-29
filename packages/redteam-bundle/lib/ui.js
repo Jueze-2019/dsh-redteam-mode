@@ -378,8 +378,47 @@ async function skillAvailabilityOf(ctx, list, scope, force) {
   return { at: now, cached: false, byName }
 }
 
+/** 红队 preset 的 id —— 与 cordis.patch.yml 里那条声明行的 `config.id` 必须一致。 */
+const REDTEAM_PRESET_ID = 'redteam'
+
 /**
- * 技能目录：按红队 preset 的 standing scope 读取原生 skill 注册表。
+ * 取红队 preset 的作用域键：技能库按它读"红队会话实际能用到的技能"。
+ *
+ * DSH 的 preset 注册表在两个世代里 API 不同，这里都兼容：
+ *   · ≥ 0.1.7（`dsh-agent-preset-registry`）：`acquireScope(id)` 返回**租约**
+ *     `{ key, [Symbol.asyncDispose] }`，官方注释写明"读完就释放"——
+ *     不释放会让已退役的 revision 一直被留住；
+ *   · ≤ 0.1.6（`dsh-agent-presets`）：`standingKeyFor(id)` 直接给一个常驻作用域键，无需释放。
+ *
+ * @param ctx - 插件上下文。
+ * @returns `{ key, release }`；`release` 为 null 表示无需释放。
+ * @throws 两个 API 都没有时抛出（错误里带上实际可用的方法名，便于下次改名时定位）。
+ */
+async function resolveRedteamScope(ctx) {
+  const presets = ctx.agentPresets
+  if (typeof presets?.acquireScope === 'function') {
+    const lease = await presets.acquireScope(REDTEAM_PRESET_ID)
+    const release = typeof lease?.[Symbol.asyncDispose] === 'function'
+      ? () => lease[Symbol.asyncDispose]()
+      : (typeof lease?.dispose === 'function' ? () => lease.dispose() : null)
+    return { key: lease.key, release }
+  }
+  if (typeof presets?.standingKeyFor === 'function') {
+    return { key: await presets.standingKeyFor(REDTEAM_PRESET_ID), release: null }
+  }
+  let seen = '（没有 agentPresets 服务）'
+  if (presets) {
+    const proto = Object.getPrototypeOf(presets)
+    seen = Object.getOwnPropertyNames(proto)
+      .filter((name) => typeof presets[name] === 'function')
+      .slice(0, 16)
+      .join(', ') || '（看不到任何方法）'
+  }
+  throw new Error('当前 DSH 的 agentPresets 缺少 acquireScope / standingKeyFor；实际可用：' + seen)
+}
+
+/**
+ * 技能目录：按红队 preset 的作用域读取原生 skill 注册表。
  * 技能由 DSH 管理（$DSH_HOME/skills、项目 .dsh/skills、.agents/skills、内置根），
  * 控制台只列出「红队会话实际能用到的技能」。
  * @param ctx - 插件上下文。
@@ -388,12 +427,30 @@ async function skillAvailabilityOf(ctx, list, scope, force) {
  */
 async function handleSkillOp(ctx, request) {
   if (request.op !== 'skillCatalog' && request.op !== 'skillRead') return undefined
-  let scope = null
+  let lease
   try {
-    scope = await ctx.agentPresets.standingKeyFor('redteam')
+    lease = await resolveRedteamScope(ctx)
   } catch (error) {
     return { ok: false, error: '无法解析红队 preset 作用域：' + (error && error.message ? error.message : String(error)) }
   }
+  /* 作用域是"租约"：无论读取成功还是抛错，读完都要还回去。 */
+  try {
+    return await readSkillOp(ctx, request, lease.key)
+  } finally {
+    if (typeof lease.release === 'function') {
+      try { await lease.release() } catch { /* 释放失败不该盖住读取结果 */ }
+    }
+  }
+}
+
+/**
+ * 技能类 op 的实现；`scope` 由调用方申请并负责释放。
+ * @param ctx - 插件上下文。
+ * @param request - `{ op: 'skillCatalog' | 'skillRead', name? }`。
+ * @param scope - 红队 preset 的作用域键。
+ * @returns JSON 结果。
+ */
+async function readSkillOp(ctx, request, scope) {
   if (request.op === 'skillCatalog') {
     const list = await ctx.skills.list({ scope })
     /* 可用性检查要读每个技能的正文（可能几百个），做 30 秒缓存：
