@@ -162,6 +162,29 @@ node scripts/publish-now.mjs packages/redteam-bundle   # 打印链接 → 人验
   不是故障。要立刻装新版：`pnpm add dsh-redteam-mode@<确切版本>`（显式指定绕过年龄门），
   或在项目 `pnpm-workspace.yaml` 写 `minimumReleaseAge: 0`（等于关掉这层防护，不建议常态开）。
 
+### ✅ 0.12.1 发布成功（2026-09-29）：又两个坑，都已修进脚本
+
+0.12.1 是「DSH 0.1.7+ 新会话里选不到红队模式」的修复版（详见 `docs/releases/v0.12.1.md`）。
+发布过程本身踩了两个新坑，都已落到脚本里，下次不用再查：
+
+1. **`~/.npmrc` 里的 token 会失效，而症状极具误导性。** 失效后 `npm whoami` 报 `401`，
+   而发布用的 `PUT` 被 registry 回一个**裸的 `404 {"error":"Not found"}`** —— 它用 404
+   掩盖"无权写入"（与"包没绑定/客户端太老"那条 404 长得一样，别混）。
+   重新登录用 **`node scripts/npm-login.mjs`**（链接有效期给到 30 分钟），
+   **不要**用 `npm login --auth-type=web`：本机（无桌面环境）opener 抛 `ENYI`，
+   而 npm 的 `lib/utils/auth.js` 一见到 ENYI 就**直接退化到 Username/Password 交互登录**，
+   表现是打印完 `Login at:` 链接后又问 `Username:` —— npm 的 2FA 只有 WebAuthn，这条路走不通。
+2. **`publish-now.mjs` 曾把成功的 `202` 当失败。** registry 对双用途包返回
+   `202 {"success":true}`（进入发布期审查），脚本原来只认 200/201，于是每次成功发布都会多打
+   一条 `✗ 发布失败 202`。已修：200/201/202 都算成功，202 额外说明"审查中、packument 稍后可见"。
+   0.12.1 的 packument 实测 **45–60 秒**出现，`dist-tags.latest` 直接指向它。
+
+**市场条目现状**：PR #5034（首次收录）与 #5575（v0.11.x 条目）**已合并**，线上条目
+`version` 字段由 npm 自动取，所以发新版不需要再动它。0.12.1 对应的条目更新在
+**PR #6076**（v0.12.0 形态：14 个随包技能 + 去武器化说明），仍在等维护者合并；
+本版没有改动任何"被描述的能力"，条目内容不动，只在 #6076 上留了一条复核评论
+（原文见 `docs/marketplace-pr/pr-6076-comment.md`）。
+
 ### 顺带记录：绕过 2FA 的 token 还有两个副作用
 
 - 这类 token 调的 `npm publish` 可能被降级为**暂存**，命令照样打印 `+ pkg@x.y.z`；

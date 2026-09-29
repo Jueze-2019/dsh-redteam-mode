@@ -1,12 +1,16 @@
-# 市场投稿 PR #5034 的支撑材料
+# 市场投稿 PR 的支撑材料
 
 `docs/marketplace.md` §2 的附件，放这里是为了**跟仓库一起版本化**（下次改版要同步更新时，
-直接改这两个文件再推到 fork 分支即可）。
+直接改这几个文件再推到 fork 分支即可）。
 
 | 文件 | 用途 |
 | --- | --- |
 | `entry-file.yml` | 投稿条目本体，对应市场仓库的 `data/plugins/Jueze-2019__dsh-redteam-mode--packages-redteam-bundle.yml` |
-| `pr-5034-comment.md` | 可直接粘贴到 PR #5034 的评论：说明"上一版描述哪里过时、现在是什么"，方便维护者复核 |
+| `pr-6076-comment.md` | **当前生效**：PR [#6076](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6076)（v0.12.x 条目，仍开着）上的复核评论，2026-09-29 随 0.12.1 发布贴出 |
+| `pr-5034-comment.md` | 历史：首次收录 PR [#5034](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5034) 的评论（已合并；里面的"23 个技能"是去武器化之前的旧口径，别再照抄） |
+
+> 已合并的：**#5034**（首次收录）、**#5575**（v0.11.x 条目）。线上条目的 `version` 字段由 npm
+> 自动取，发新版不必改它；只有"被描述的能力"（角色数 / 技能数 / 工具数 / 页签数）变了才要动条目。
 
 ## 更新流程（改版后必做）
 
