@@ -772,10 +772,20 @@ window.__ModuleLoader__.load({
 
       const sideChildren = []
       sideChildren.push(h('div', Object.assign({
-        key: 'all', className: 'rt-seg' + (cidr ? '' : ' on'),
-      }, clickable(() => setCidr(null), { label: '全部 C 段' })),
+        key: 'all', className: 'rt-seg' + (cidr === null && view !== 'testing' ? ' on' : ''),
+      }, clickable(() => { setView('list'); setCidr(null) }, { label: '全部 C 段', expanded: cidr === null && view !== 'testing' })),
         h('div', { className: 'rt-seg-cidr' }, '全部 C 段'),
         h('div', { className: 'rt-seg-meta' }, segs.length + ' 个网段')))
+      /* 「当前测试」与 C 段分组同级：正在跑的扫描/探测是"看资产"的一部分，
+         原来单独占一个页签，来回切太远。 */
+      sideChildren.push(h('div', Object.assign({
+        key: 'testing', className: 'rt-seg' + (view === 'testing' ? ' on' : ''),
+        title: '正在跑的扫描 / 探测与进度（5 秒自动刷新）',
+      }, clickable(() => { setView('testing'); setCidr(null) }, { label: '当前测试', expanded: view === 'testing' })),
+        h('div', { className: 'rt-seg-cidr', style: { display: 'flex', alignItems: 'baseline', gap: 5 } },
+          h('span', { className: 'rt-scope rt-scope-external' }, '测'),
+          h('span', { style: { flex: 1 } }, '当前测试')),
+        h('div', { className: 'rt-seg-meta' }, '正在跑的扫描与探测')))
       /* C 段按内外网分组：先外网（互联网可达，通常是入口）再内网（打进去之后才看得到） */
       const segBlock = (title, list, kind) => {
         /* 外网 / 内网两组各自可折叠（状态按靶标记住），默认展开 */
@@ -1046,13 +1056,15 @@ window.__ModuleLoader__.load({
 
 
       let pane = listPane
-      if (view === 'domain') pane = domainPane
+      if (view === 'testing') pane = h(TestingTab, { engagement: eng, refreshKey: refreshKey })
+      else if (view === 'domain') pane = domainPane
       else if (view === 'web') pane = webPane
       /* 发现时间视图自带滚动容器，直接放进 rt-main 的 flex 里 */
       else if (view === 'timeline') pane = h(DiscoveryView, { engagement: eng, refreshKey: refreshKey })
 
       return h('div', { className: 'rt-split' }, side,
-        h('div', { className: 'rt-main' }, toolbar,
+        /* 当前测试是独立视图：资产搜索/过滤那一排收起来，免得看的人以为筛的是"测试" */
+        h('div', { className: 'rt-main' }, view === 'testing' ? null : toolbar,
           conclusion,
           state.error ? h('div', { className: 'rt-err' }, state.error) : null,
           pane))
@@ -1469,6 +1481,7 @@ window.__ModuleLoader__.load({
       const [state, setState] = React.useState({ loading: false, error: null, total: 0, items: [], stats: null })
       const [creds, setCreds] = React.useState([])
       const [accesses, setAccesses] = React.useState([])
+      const [files, setFiles] = React.useState([])
       const [openId, setOpenId] = React.useState(null)
       const [msg, setMsg] = React.useState(null)
       /* 子页签：漏洞 / 凭据 / 访问会话（凭据不再铺在漏洞页底部） */
@@ -1491,6 +1504,9 @@ window.__ModuleLoader__.load({
         }, (e) => setState({ loading: false, error: String((e && e.message) || e), total: 0, items: [], stats: null }))
         api({ op: 'credentials', engagement: eng }).then((r) => setCreds((r && r.items) || []), () => {})
         api({ op: 'access', engagement: eng }).then((r) => setAccesses((r && r.items) || []), () => {})
+        /* 攻击文件与漏洞的对应关系：attack_file 行上有 vuln_id / asset_id，
+           这里读一次按 vuln_id 建索引，漏洞详情里直接列出"这条漏洞留下了哪些文件"。 */
+        api({ op: 'attackFiles', engagement: eng }).then((r) => setFiles((r && r.items) || []), () => {})
       }
       React.useEffect(load, [eng, sev, status, qApplied, refreshKey])
 
@@ -1526,6 +1542,17 @@ window.__ModuleLoader__.load({
         h('span', null, '等级'), h('span', null, '漏洞 / 编号'), h('span', null, '目标'),
         h('span', null, '拿到什么'), h('span', null, '状态'), h('span', null, '置信'))
 
+      /* 攻击文件按 vuln_id 建索引（同一份文件只挂一条漏洞；没挂的归到"未关联"） */
+      const allFiles = (files || []).flatMap((g) => (g.files || []).map((f) => Object.assign({ target: g.target }, f)))
+      const filesByVuln = new Map()
+      const orphanFiles = []
+      for (const f of allFiles) {
+        const vid = f.vuln_id === null || f.vuln_id === undefined ? null : Number(f.vuln_id)
+        if (vid === null) { orphanFiles.push(f); continue }
+        if (!filesByVuln.has(vid)) filesByVuln.set(vid, [])
+        filesByVuln.get(vid).push(f)
+      }
+
       /* 单条漏洞（行 + 展开详情），聚合视图与平铺视图共用 */
       const vulnRows = (v, compact) => {
         const out = []
@@ -1560,6 +1587,17 @@ window.__ModuleLoader__.load({
           h('div', { className: 'rt-kv' }, h('b', null, '资产'), h('span', null, (v.asset_ip || '—') + ' · ' + (v.segment_cidr || ''))),
           h('div', { className: 'rt-kv' }, h('b', null, '来源'), h('span', null, (v.source || '—') + ' · ' + (v.found_by_agent || '—') + ' · ' + fmt(v.found_at))),
           detailEvidence(v),
+          (() => {
+            const mine = filesByVuln.get(Number(v.id)) || []
+            return h('div', { className: 'rt-kv' }, h('b', null, '攻击文件'),
+              mine.length
+                ? h('span', null, mine.map((f, fi) => h('div', { key: 'af' + fi, style: { marginBottom: 3 } },
+                    '· ' + (f.kind ? '[' + f.kind + '] ' : '') + (f.name || '(未命名)')
+                    + (f.description ? ' — ' + f.description : ''),
+                    h('div', { className: 'rt-mono', style: { fontSize: 11, marginLeft: 12, color: 'var(--dsw-alias-label-secondary)', overflowWrap: 'anywhere' } }, f.path || ''))))
+                : h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } },
+                    '（无）用 redteam_attack_file_add 把这条漏洞打通的脚本/马/EXP 归档，并带上 vuln_id'))
+          })(),
           h('div', { className: 'rt-actions' },
             h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); setVulnStatus(v.id, 'confirmed') } }, '确认'),
             h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); setVulnStatus(v.id, 'exploited') } }, '已利用'),
@@ -1678,6 +1716,7 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'rt-main' }, toolbar, conclusion,
         h('div', { className: 'rt-subtabs' },
           subTabBtn('vulns', '漏洞', state.total || 0),
+          subTabBtn('files', '攻击文件', allFiles.length),
           subTabBtn('creds', '凭据', creds.length),
           subTabBtn('access', '访问会话', accesses.length),
           h('div', { className: 'rt-spacer' }),
@@ -1697,7 +1736,13 @@ window.__ModuleLoader__.load({
         msg ? h('div', { className: msg.err ? 'rt-err' : 'rt-foot' }, msg.err || msg.ok) : null,
         needRestart ? h('div', { className: 'rt-empty' }, '该模块的宿主代码已更新，需重启一次 dsh web 后生效') : null,
         state.error && !needRestart ? h('div', { className: 'rt-err' }, state.error) : null,
-        subTab === 'creds'
+        subTab === 'files'
+          ? h('div', { className: 'rt-body', style: { overflow: 'auto' } },
+              h('div', { className: 'rt-hint', style: { marginBottom: 8 } },
+                '攻击文件按靶标目录组织（原「攻击文件」页签）；每条漏洞的关联文件也能在该漏洞详情里直接看到。'
+                + (orphanFiles.length ? ' 目前有 ' + orphanFiles.length + ' 个文件没挂 vuln_id，建议补上以便与漏洞对应。' : '')),
+              h(AttackFilesTab, { engagement: eng, refreshKey: refreshKey }))
+          : subTab === 'creds'
           ? h('div', { className: 'rt-body', style: { overflow: 'auto' } }, credSection)
           : subTab === 'access'
             ? h('div', { className: 'rt-body', style: { overflow: 'auto' } }, accessSection)
@@ -3574,10 +3619,10 @@ window.__ModuleLoader__.load({
 
       const stats = (snapshot && snapshot.stats) || {}
       const tabs = [
-        ['assets', '资产测绘'], ['testing', '当前测试'], ['agents', '智能体'], ['sessions', '会话隧道'],
+        ['assets', '资产测绘'], ['agents', '智能体'], ['sessions', '会话隧道'],
         ['findings', '漏洞战果'],
         ['chain', '攻击链'], ['scores', '得分目标'], ['report', '报告'],
-        ['attackfiles', '攻击文件'], ['knowledge', '知识库'],
+        ['knowledge', '知识库'],
         /* 「智能体提示词」已并入「智能体」页：并发数量配置与角色提示词编辑在同一处 */
         ['skills', '技能库'],
       ]
@@ -3621,13 +3666,15 @@ window.__ModuleLoader__.load({
               h('button', { className: 'rt-btn rt-btn-primary', disabled: creating, onClick: () => openEngagement() },
                 creating ? '创建中…' : '创建靶标'))))
       } else if (st.tab === 'assets') body = h(AssetsTab, { engagement: eng, snapshot: snapshot, refreshKey: refreshKey, onRefresh: refreshAll, onData: () => loadSnapshot(eng) })
-      else if (st.tab === 'testing') body = h(TestingTab, { engagement: eng, refreshKey: refreshKey })
+      /* 「当前测试」已并入资产测绘页（左侧 C 段分组同级入口），旧的 #testing 链接落到资产页 */
+      else if (st.tab === 'testing') body = h(AssetsTab, { engagement: eng, snapshot: snapshot, refreshKey: refreshKey, onRefresh: refreshAll, onData: () => loadSnapshot(eng) })
       else if (st.tab === 'agents') body = h(AgentsTab, { engagement: eng, refreshKey: refreshKey })
       else if (st.tab === 'sessions') body = h(SessionTab, { engagement: eng, refreshKey: refreshKey })
       else if (st.tab === 'findings') body = h(FindingsTab, { engagement: eng, refreshKey: refreshKey })
       else if (st.tab === 'chain') body = h(ChainTab, { engagement: eng, refreshKey: refreshKey })
       else if (st.tab === 'report') body = h(ReportTab, { engagement: eng, refreshKey: refreshKey })
-      else if (st.tab === 'attackfiles') body = h(AttackFilesTab, { engagement: eng, refreshKey: refreshKey })
+      /* 「攻击文件」已并入漏洞战果页（子页签 + 每条漏洞详情里的关联文件），旧链接落到漏洞战果 */
+      else if (st.tab === 'attackfiles') body = h(FindingsTab, { engagement: eng, refreshKey: refreshKey })
       else if (st.tab === 'scores') body = h(ScoreTab, { engagement: eng, refreshKey: refreshKey })
       else if (st.tab === 'prompts') body = h(AgentsTab, { engagement: eng, refreshKey: refreshKey })
       else body = h(SkillsTab, { engagement: eng, refreshKey: refreshKey })

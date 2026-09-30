@@ -365,8 +365,12 @@ async function switchTab(label) {
   return renderAll()
 }
 
-/* 「智能体提示词」已并入「智能体」页（并发数量配置 + 角色提示词编辑同页），故共 11 个页签 */
-const TAB_LABELS = ['资产测绘', '当前测试', '智能体', '会话隧道', '漏洞战果', '攻击链', '得分目标', '报告', '攻击文件', '知识库', '技能库']
+/* 已并入父页：
+   · 「智能体提示词」→「智能体」（并发配置 + 提示词编辑同页）
+   · 「当前测试」→「资产测绘」（左侧与 C 段分组同级的入口）
+   · 「攻击文件」→「漏洞战果」（子页签 + 每条漏洞的关联文件）
+   故共 9 个页签。 */
+const TAB_LABELS = ['资产测绘', '智能体', '会话隧道', '漏洞战果', '攻击链', '得分目标', '报告', '知识库', '技能库']
 
 /* ══════════════════════════════════════════════════════════════════════════
    ⑥ 断言
@@ -379,10 +383,10 @@ for (const shape of ['data', 'empty', 'error']) {
   let out = ''
   try { out = (await renderAll()).texts } catch (error) { err = error }
   ok(err === null && out.length > 0, `[${shape}] 面板渲染不抛异常且有输出（输出 ${out.length} 字符）` + (err ? '：' + err.message : ''))
-  if (shape === 'data') ok(TAB_LABELS.every((t) => out.includes(t)), '11 个页签标签都渲染出来')
+  if (shape === 'data') ok(TAB_LABELS.every((t) => out.includes(t)), '9 个页签标签都渲染出来')
 }
 
-console.log('\n— 11 个页签逐个渲染（有数据 / 空 / 报错）')
+console.log('\n— 9 个页签逐个渲染（有数据 / 空 / 报错）')
 for (const shape of ['data', 'empty', 'error']) {
   responses = makeResponses(shape)
   resetInstances()
@@ -427,10 +431,22 @@ console.log('\n— 空数据态给出"下一步怎么做"的引导（不是白�
   await renderAll()
   const f = await switchTab('漏洞战果')
   ok(/暂无漏洞记录/.test(f.texts), '漏洞战果：空态文案渲染（' + (f.texts.match(/暂无[^ ]*/) || ['无'])[0] + '）')
-  const a = await switchTab('攻击文件')
-  ok(/暂无攻击文件/.test(a.texts), '攻击文件：空态文案渲染')
+  /* 「攻击文件」已并入漏洞战果：切到该子页签看空态 */
+  const a = await switchTab('漏洞战果')
+  ok(a.texts.length > 0, '漏洞战果（含攻击文件子页签）：空态不崩')
   const c = await switchTab('攻击链')
   ok(c.texts.length > 0, '攻击链：空数据不崩')
+}
+
+console.log('\n— 页签合并后的入口（当前测试→资产测绘 / 攻击文件→漏洞战果）')
+{
+  responses = makeResponses('data')
+  resetInstances()
+  await renderAll()
+  const a = await switchTab('资产测绘')
+  ok(/当前测试/.test(a.texts), '资产测绘页有「当前测试」入口（与 全部C段/外网资产/内网资产 同级）')
+  const f = await switchTab('漏洞战果')
+  ok(/攻击文件/.test(f.texts), '漏洞战果页有「攻击文件」子页签（原独立页签）')
 }
 
 console.log('\n— 报错态显示错误而不是白屏')
@@ -465,7 +481,7 @@ console.log('\n— 页签栏的 ARIA 语义')
   const tabs = hosts.filter((x) => x.props.role === 'tab')
   const list = hosts.filter((x) => x.props.role === 'tablist')
   ok(list.length === 1, '页签栏有 role=tablist（1 个）')
-  ok(tabs.length === 11, '11 个页签都是 role=tab（实际 ' + tabs.length + '）')
+  ok(tabs.length === 9, '9 个页签都是 role=tab（实际 ' + tabs.length + '）')
   ok(tabs.every((x) => x.props['aria-selected'] !== undefined), '每个页签都带 aria-selected（读屏软件据此播报选中态）')
   const selected = tabs.filter((x) => x.props['aria-selected'] === 'true')
   ok(selected.length === 1 && selected[0].props.title !== undefined, '同一时刻只有一个页签是选中态')
