@@ -270,7 +270,7 @@ window.__ModuleLoader__.load({
         title: '正在跑的扫描 / 探测与进度（5 秒自动刷新）',
       }, clickable(() => { setView('testing'); setCidr(null) }, { label: '当前测试', expanded: view === 'testing' })),
         h('div', { className: 'rt-seg-cidr', style: { display: 'flex', alignItems: 'baseline', gap: 5 } },
-          h('span', { className: 'rt-scope rt-scope-external' }, '测'),
+          h('span', { className: 'rt-scope rt-scope-testing', title: '当前测试（既非内网也非外网）' }, '测'),
           h('span', { style: { flex: 1 } }, '当前测试')),
         h('div', { className: 'rt-seg-meta' }, '正在跑的扫描与探测')))
       /* C 段按内外网分组：先外网（互联网可达，通常是入口）再内网（打进去之后才看得到） */

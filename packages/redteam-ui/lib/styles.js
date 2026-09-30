@@ -220,6 +220,8 @@ export const CSS = String.raw`
 .rt-scope{display:inline-block;padding:0 4px;border-radius:3px;font-size:10px;font-weight:700;line-height:15px;flex:none}
 .rt-scope-internal{color:#0e7490;background:#a5f3fc}
 .rt-scope-external{color:#9a3412;background:#fed7aa}
+/* 「当前测试」的标记：既不是内网也不是外网，用紫色单独区分（避免和外网橙混淆） */
+.rt-scope-testing{color:#5b21b6;background:#ddd6fe}
 .rt-hits{display:flex;flex-direction:column;gap:6px;margin-top:7px}
 .rt-hit{border:1px solid var(--dsw-alias-border-l1);border-left:3px solid #10b981;border-radius:6px;
   padding:7px 9px;background:var(--dsw-alias-bg-layer-2)}
