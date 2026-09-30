@@ -7,6 +7,9 @@
  *   · 智能体侧 —— `redteam_preflight` 开工前跑一次，缺什么直接找用户要；
  *   · 面板侧 —— 「技能库」页签给每个技能标出可用性状态。
  *
+ * 每条问题都同时给出**修复方法**（`issues[].fix`，文案见 `skill-fixes.js`）：面板上
+ * 不只是说"哪里不可用"，而是直接告诉用户"怎么修"。`problems` 保留为纯文本视图（兼容旧调用方）。
+ *
  * 判定维度（都是能从技能正文里客观读出来的）：
  *   ① 技能文件是否存在、正文能否加载；
  *   ② 必需环境变量（`os.environ["X"]` / `process.env.X`；带默认值的 `os.environ.get("X", "…")` 不算必需）；
@@ -18,6 +21,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
+import { fixesForIssue } from './skill-fixes.js'
 
 /** 解析 $DSH_HOME / ${DSH_HOME} / ~（技能正文里几种写法都有）。 */
 export function expandSkillPath(p, env = process.env) {
@@ -66,6 +70,11 @@ export function readSkillFromRoot(root, name) {
   return null
 }
 
+/** 调修复文案生成器，任何异常都退化成空串（可用性判定不能因为文案出错而挂）。 */
+function safeFix(issue) {
+  try { return String(fixesForIssue(issue) || '') } catch { return '' }
+}
+
 /**
  * 检查一个技能的可用性。
  *
@@ -73,7 +82,9 @@ export function readSkillFromRoot(root, name) {
  * @param options - `{ env?: NodeJS.ProcessEnv, sameNameIn?: string[] }`。
  *   `sameNameIn` 是**其它也注册了同名技能**的根目录：同名技能会按根顺序择优，被排在后面的那份
  *   会被"盖住"。这里用它兜底识别"实际加载的是随包占位符版本、而你自己的已配置版本排在后面"的情况。
- * @returns `{ name, status: 'available'|'broken'|'unknown', problems, needs_user, checked, shadowed_by? }`
+ * @returns `{ name, status: 'available'|'broken'|'unknown', issues, problems, needs_user, checked, shadowed_by? }`
+ *   `issues` 是 `{ kind, detail, fix }` 列表（`kind` ∈ file-missing / content-missing /
+ *   env-missing / path-missing / placeholder / shadowed），`problems` 是它的 detail 文本视图。
  *   status='unknown' 表示"正文读不到，判不了"（例如只有元数据、正文加载失败的远端技能）。
  */
 export function checkSkill(skill, options = {}) {
@@ -82,29 +93,40 @@ export function checkSkill(skill, options = {}) {
   const content = skill && typeof skill.content === 'string' ? skill.content : ''
   const file = skill && typeof skill.path === 'string' ? skill.path : null
   const root = skill && typeof skill.root === 'string' ? skill.root : null
-  const problems = []
+  const issues = []
   const needsUser = []
+  /** 记一条问题：detail 是给用户看的"不可用原因"，fix 是"怎么修"（见 skill-fixes.js）。 */
+  const addIssue = (kind, detail, extra) => {
+    const payload = Object.assign({ kind, skill: name }, extra || {})
+    let fix = ''
+    try { fix = String(fixesForIssue(payload) || '') } catch { fix = '' }
+    issues.push(Object.assign({ kind, detail, fix }, extra || {}))
+  }
 
   if (content.trim() === '') {
+    const detail = '技能正文读不到（只有元数据）：无法判断可用性，需要时用 `skill` 工具实际加载一次'
     return {
       name,
       status: 'unknown',
-      problems: ['技能正文读不到（只有元数据）：无法判断可用性，需要时用 `skill` 工具实际加载一次'],
+      issues: [{ kind: 'content-missing', detail, fix: safeFix({ kind: 'content-missing', skill: name }) }],
+      problems: [detail],
       needs_user: [],
       checked: { file, env: [], paths: [] },
     }
   }
-  if (file !== null && !existsSync(file)) problems.push('技能文件不存在：' + file)
+  if (file !== null && !existsSync(file)) addIssue('file-missing', '技能文件不存在：' + file, { file })
 
   const envNames = requiredEnvOf(content)
   const missingEnv = envNames.filter((n) => !env[n])
-  for (const n of missingEnv) problems.push('缺环境变量 ' + n + '（export ' + n + '=…、或写进 `$DSH_HOME/.env` 后重启 dsh web）')
+  for (const n of missingEnv) {
+    addIssue('env-missing', '缺环境变量 ' + n, { env: n })
+  }
 
   const paths = referencedPathsOf(content)
   const missingPaths = paths.filter((p) => !existsSync(expandSkillPath(p, env)))
   if (missingPaths.length > 0) {
-    problems.push('引用的本机路径不存在：' + missingPaths.slice(0, 6).join('、')
-      + (missingPaths.length > 6 ? ' 等 ' + missingPaths.length + ' 处' : ''))
+    addIssue('path-missing', '引用的本机路径不存在：' + missingPaths.slice(0, 6).join('、')
+      + (missingPaths.length > 6 ? ' 等 ' + missingPaths.length + ' 处' : ''), { paths: missingPaths })
   }
 
   /* 外部基础设施占位符：技能里出现 `<你的VPS_IP>` 这类说明还没配。
@@ -119,7 +141,7 @@ export function checkSkill(skill, options = {}) {
     if (content.includes('<你的VPS_主机名>') || content.includes('<VPS 主机名>')) placeholders.push('VPS 主机名')
   }
   for (const p of placeholders) {
-    problems.push(p + '还是占位符（技能里写的是占位符，说明本机/本环境还没配）')
+    addIssue('placeholder', p + '还是占位符（技能里写的是占位符，说明本机/本环境还没配）', { placeholder: p })
     needsUser.push(p)
   }
   for (const n of missingEnv) needsUser.push('环境变量 ' + n)
@@ -132,19 +154,19 @@ export function checkSkill(skill, options = {}) {
     const alt = readSkillFromRoot(other, name)
     if (alt === null || alt.content === content) continue
     const verdict = checkSkill({ name, content: alt.content, path: alt.path }, { env })
-    if (verdict.status === 'available' || verdict.problems.length < problems.length) {
+    if (verdict.status === 'available' || verdict.problems.length < issues.length) {
       shadowed = { root: other, path: alt.path, status: verdict.status }
-      problems.push('注意：`' + other + '` 里还有一份同名技能（' + verdict.status + '），'
-        + '但按技能根顺序当前加载的是这一份（上面这些缺口来自这一份）；'
-        + '要让已配置的那份生效，需把它排到技能根顺序的前面')
+      addIssue('shadowed', '`' + other + '` 里还有一份同名技能（' + verdict.status + '），'
+        + '但按技能根顺序当前加载的是这一份（上面这些不可用原因来自这一份）', { other_root: other })
       break
     }
   }
 
   return {
     name,
-    status: problems.length === 0 ? 'available' : 'broken',
-    problems,
+    status: issues.length === 0 ? 'available' : 'broken',
+    issues,
+    problems: issues.map((x) => x.detail),
     needs_user: Array.from(new Set(needsUser)),
     ...(shadowed === null ? {} : { shadowed_by: shadowed.root, shadowed_path: shadowed.path }),
     checked: { file, env: envNames, missing_env: missingEnv, paths, missing_paths: missingPaths },

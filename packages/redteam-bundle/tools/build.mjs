@@ -47,13 +47,14 @@ const write = (rel, text) => {
 const core = read('redteam-store/lib/core.js')
 write('lib/store-core.js', core)
 /* 1a) core.js 依赖的 4 个模块（纯函数，零外部依赖） */
-for (const name of ['ip-utils', 'schema', 'validate', 'score-rules', 'report-replay']) {
+for (const name of ['ip-utils', 'schema', 'validate', 'score-rules', 'report-replay', 'settings']) {
   write('lib/' + name + '.js', read('redteam-store/lib/' + name + '.js'))
 }
 
-/* 1b) 技能可用性判定：tools 与面板共用的一份实现（零依赖，原样拷） */
+/* 1b) 技能可用性判定与「不可用修复方法」：tools 与面板共用（零依赖，原样拷） */
 const skillAvailability = read('redteam-store/lib/skill-availability.js')
 write('lib/skill-availability.js', skillAvailability)
+write('lib/skill-fixes.js', read('redteam-store/lib/skill-fixes.js'))
 const storeIndex = read('redteam-store/lib/index.js').replace("from './core.js'", "from './store-core.js'")
 write('lib/store.js', storeIndex)
 
@@ -61,6 +62,8 @@ write('lib/store.js', storeIndex)
 const uiIndex = read('redteam-ui/lib/index.js')
   .replace("from '../../redteam-store/lib/core.js'", "from './store-core.js'")
   .replace("from '../../redteam-store/lib/skill-availability.js'", "from './skill-availability.js'")
+  .replace("from '../../redteam-store/lib/settings.js'", "from './settings.js'")
+  .replace("from '../../redteam-store/lib/skill-fixes.js'", "from './skill-fixes.js'")
 write('lib/ui.js', uiIndex)
 
 /* 3) 浏览器半侧：拷过来，并把注册 id 改成**本包的包名**。
@@ -99,6 +102,8 @@ write('lib/client.js', clientOut)
 const tools = read('redteam-tools/lib/index.js')
   .replace("from '../../redteam-store/lib/core.js'", "from './store-core.js'")
   .replace("from '../../redteam-store/lib/skill-availability.js'", "from './skill-availability.js'")
+  .replace("from '../../redteam-store/lib/settings.js'", "from './settings.js'")
+  .replace("from '../../redteam-store/lib/skill-fixes.js'", "from './skill-fixes.js'")
 write('lib/tools.js', tools)
 
 /* 5) 预设：同一份源码生成**两个**产物。
@@ -252,7 +257,7 @@ if (!isScriptShipped('redteam-setup.sh')) {
 const generated = [
   'lib/store-core.js', 'lib/ip-utils.js', 'lib/schema.js', 'lib/validate.js', 'lib/score-rules.js',
   'lib/report-replay.js',
-  'lib/skill-availability.js', 'lib/store.js', 'lib/ui.js', 'lib/tools.js', 'lib/client.js',
+  'lib/skill-availability.js', 'lib/skill-fixes.js', 'lib/settings.js', 'lib/store.js', 'lib/ui.js', 'lib/tools.js', 'lib/client.js',
 ]
 const offenders = []
 for (const rel of generated) {

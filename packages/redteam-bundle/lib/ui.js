@@ -19,6 +19,7 @@ import { spawn } from 'node:child_process'
 import { dispatch, dispatchAsync } from './store-core.js'
 /* 技能可用性判定与 redteam_preflight 共用同一份实现（环境变量 / 本机路径 / 占位符） */
 import { checkSkill, summarizeSkills } from './skill-availability.js'
+import { maxAgentsOf, maxAgentsSourceOf, saveMaxAgents, DEFAULT_MAX_AGENTS, MAX_AGENTS_LIMIT } from './settings.js'
 
 /** 本包自带技能目录（随包分发；dev 安装的 UI 包没有 skills/，此时恒为 false）。 */
 const PLUGIN_SKILLS_DIR = (() => {
@@ -542,7 +543,7 @@ async function readSkillOp(ctx, request, scope) {
         checked_at: availability.at,
         cached: availability.cached,
         broken: Array.from(availability.byName.values()).filter((x) => x.status === 'broken')
-          .map((x) => ({ name: x.name, problems: x.problems, needs_user: x.needs_user })),
+          .map((x) => ({ name: x.name, issues: x.issues, problems: x.problems, needs_user: x.needs_user })),
         note: '可用性 = 技能文件存在 + 正文能加载 + 必需环境变量已设置 + 正文引用的本机路径存在 + 没有未填的基础设施占位符；'
           + '判定用的是运行 dsh 的这个进程的环境变量（不是 shell 里 export 的）。未列出的技能正文读不到，状态为未知。',
       },
@@ -578,11 +579,18 @@ async function readSkillOp(ctx, request, scope) {
  * @returns JSON 结果，或 undefined 表示不是这个 op。
  */
 async function handleAgentsOp(ctx, request) {
-  if (request.op !== 'agentsStatus') return undefined
-  const max = (() => {
-    const raw = Number(process.env.REDTEAM_MAX_AGENTS)
-    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 3
-  })()
+  if (request.op !== 'agentsStatus' && request.op !== 'setAgentsMax') return undefined
+  /* 并发上限与工具侧的闸门读同一份设置（settings.json → REDTEAM_MAX_AGENTS → 默认 3），
+     改完立即生效、不需要重启 —— 派活时 redteam_agent_slot 每次现读。 */
+  const root = (() => { try { return ctx.redteam.root } catch { return undefined } })()
+  if (request.op === 'setAgentsMax') {
+    const next = saveMaxAgents(root, request.max)
+    return {
+      ok: true, max: next, source: 'settings', limit: MAX_AGENTS_LIMIT,
+      note: '已保存为 ' + next + ' 个并发执行智能体，**立即生效**（派活时按新值放行，不用重启 dsh web）。',
+    }
+  }
+  const max = maxAgentsOf(root, process.env)
   const subagents = ctx.get('subagents')
   const sessions = ctx.get('sessions')
   if (subagents === undefined || subagents === null || sessions === undefined || sessions === null || typeof sessions.list !== 'function') {
@@ -609,6 +617,9 @@ async function handleAgentsOp(ctx, request) {
   return {
     ok: true, max, used: running.length, free: Math.max(max - running.length, 0),
     running: running.slice(0, 20), total_children: children.length,
+    source: maxAgentsSourceOf(root, process.env),
+    limit: MAX_AGENTS_LIMIT,
+    default_max: DEFAULT_MAX_AGENTS,
     note: '同一会话（靶标）同时最多 ' + max + ' 个执行智能体；默认顺序派活。',
   }
 }

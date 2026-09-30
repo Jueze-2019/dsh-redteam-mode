@@ -16,6 +16,7 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { existsSync } from 'node:fs'
 import { ROLE_TITLES, PLANNER_ROLE, ROLE_ORDER } from '../../redteam-store/lib/core.js'
+import { maxAgentsOf, DEFAULT_MAX_AGENTS, MAX_AGENTS_LIMIT } from '../../redteam-store/lib/settings.js'
 /* 技能可用性判定只有一份实现：面板的「技能库」页签与这里共用（见该文件头注释） */
 import { checkSkill, summarizeSkills, expandSkillPath } from '../../redteam-store/lib/skill-availability.js'
 
@@ -33,12 +34,17 @@ const reservations = new Map()
 
 /**
  * 并发上限：同一靶标（根会话）同时最多几个执行智能体。
- * 可用 `REDTEAM_MAX_AGENTS` 覆盖；默认 3（用户口径：整个项目最多并发 3 个智能体）。
+ *
+ * **每次调用现读**（不在模块加载时定死）：用户在控制台「智能体」页改完立即生效，
+ * 不必重启 dsh web。生效顺序见 `settings.js`：settings.json → `REDTEAM_MAX_AGENTS` → 默认 3。
+ * @returns 当前生效的整数上限。
  */
-const MAX_AGENTS = (() => {
-  const raw = Number(process.env.REDTEAM_MAX_AGENTS)
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 3
-})()
+function maxAgentsNow() {
+  const root = (() => {
+    try { return ctx.redteam.root } catch { return undefined }
+  })()
+  return maxAgentsOf(root, process.env)
+}
 
 /** 一次调用的会话解析结果。 */
 function sessionInfoOf(exec) {
@@ -589,7 +595,7 @@ export function apply(ctx) {
 
   ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_agent_slot',
-    description: '【主会话派活前后用】执行智能体的并发闸门：同一靶标**最多同时 3 个**在跑（可用 REDTEAM_MAX_AGENTS 配置）。action=status 看还剩几个名额与谁在跑；action=acquire 占一个名额（满了会直接拒绝，**不要重试硬塞**）；action=release 释放（子智能体结束时服务端也会自动释放）。',
+    description: '【主会话派活前后用】执行智能体的并发闸门：同一靶标**最多同时 N 个**在跑（N 是用户当前配置的并发数量，默认 3；控制台「智能体」页可改，随时生效）。action=status 看还剩几个名额与谁在跑；action=acquire 占一个名额（满了会直接拒绝，**不要重试硬塞**）；action=release 释放（子智能体结束时服务端也会自动释放）。',
     parameters: {
       action: { type: 'string', required: true, enum: ['status', 'acquire', 'release'], description: 'status 查看 / acquire 占用 / release 释放' },
       label: { type: 'string', description: 'acquire 时的任务标签，例如「信息收集：主域与 C 段」' },
@@ -607,9 +613,10 @@ export function apply(ctx) {
       /* 注册表里 running 的子会话已经包含正在跑的；预留是"刚占位还没出现在注册表"的那部分，
          两者取较大值，避免重复计数又不会漏计 */
       const used = Math.max(live.running, reserved.length)
-      const free = Math.max(MAX_AGENTS - used, 0)
+      const max = maxAgentsNow()
+      const free = Math.max(max - used, 0)
       const base = {
-        ok: true, max: MAX_AGENTS, used, free,
+        ok: true, max, used, free,
         running_from_registry: live.running,
         running_labels: live.running_labels ?? [],
         reservations: reserved,
@@ -627,12 +634,12 @@ export function apply(ctx) {
         if (free <= 0) {
           return JSON.stringify(Object.assign(base, {
             ok: false,
-            error: '并发已满（最多 ' + MAX_AGENTS + ' 个）：现在不能派新智能体。先等当前的在跑智能体回报，或先 release 掉已经结束的。',
+            error: '并发已满（最多 ' + max + ' 个）：现在不能派新智能体。先等当前的在跑智能体回报，或先 release 掉已经结束的。',
           }), null, 2)
         }
         const key = (typeof args.label === 'string' && args.label.trim() !== '' ? args.label.trim() : 'slot') + '#' + Date.now()
         addReservation(owner, key)
-        return JSON.stringify(Object.assign(base, { slot: key, used: used + 1, free: Math.max(MAX_AGENTS - used - 1, 0) }, {
+        return JSON.stringify(Object.assign(base, { slot: key, used: used + 1, free: Math.max(max - used - 1, 0) }, {
           hint: '已占位（' + key + '）。**派完之后要记得**：子智能体结束会自动释放；若你派活失败（比如工具报错），手动 redteam_agent_slot action=release key=' + key + ' 把它放掉。',
         }), null, 2)
       }

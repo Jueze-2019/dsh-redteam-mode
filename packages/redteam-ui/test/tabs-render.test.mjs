@@ -365,7 +365,8 @@ async function switchTab(label) {
   return renderAll()
 }
 
-const TAB_LABELS = ['资产测绘', '当前测试', '智能体', '会话隧道', '漏洞战果', '攻击链', '得分目标', '报告', '攻击文件', '知识库', '智能体提示词', '技能库']
+/* 「智能体提示词」已并入「智能体」页（并发数量配置 + 角色提示词编辑同页），故共 11 个页签 */
+const TAB_LABELS = ['资产测绘', '当前测试', '智能体', '会话隧道', '漏洞战果', '攻击链', '得分目标', '报告', '攻击文件', '知识库', '技能库']
 
 /* ══════════════════════════════════════════════════════════════════════════
    ⑥ 断言
@@ -378,10 +379,10 @@ for (const shape of ['data', 'empty', 'error']) {
   let out = ''
   try { out = (await renderAll()).texts } catch (error) { err = error }
   ok(err === null && out.length > 0, `[${shape}] 面板渲染不抛异常且有输出（输出 ${out.length} 字符）` + (err ? '：' + err.message : ''))
-  if (shape === 'data') ok(TAB_LABELS.every((t) => out.includes(t)), '12 个页签标签都渲染出来')
+  if (shape === 'data') ok(TAB_LABELS.every((t) => out.includes(t)), '11 个页签标签都渲染出来')
 }
 
-console.log('\n— 12 个页签逐个渲染（有数据 / 空 / 报错）')
+console.log('\n— 11 个页签逐个渲染（有数据 / 空 / 报错）')
 for (const shape of ['data', 'empty', 'error']) {
   responses = makeResponses(shape)
   resetInstances()
@@ -407,8 +408,10 @@ console.log('\n— 有数据时的关键内容（渲染确实用了接口返回�
      否则测试会因为'没找到标题'而红，但其实页面是对的。 */
   ok(f.texts.includes('http://10.1.1.1') && /1 个漏洞/.test(f.texts), '漏洞战果：按目标聚合出分组（目标 + 漏洞数）')
   ok(f.texts.includes("后台管理员"), "漏洞战果：分组右侧显示「拿到什么权限」")
-  const s = await switchTab('智能体提示词')
-  ok(s.texts.includes('主会话') || s.texts.includes('信息收集'), '智能体提示词：角色列表渲染出来')
+  /* 提示词编辑器现在挂在「智能体」页里，跟着该页一起渲染 */
+  const s = await switchTab('智能体')
+  ok(s.texts.includes('主会话') || s.texts.includes('信息收集'), '智能体页：角色列表渲染出来')
+  ok(s.texts.includes('并发数量'), '智能体页：并发数量配置渲染出来')
   const k = await switchTab('技能库')
   ok(k.texts.includes('fofa-recon'), '技能库：技能名渲染出来')
   const rep = await switchTab('报告')
@@ -462,7 +465,7 @@ console.log('\n— 页签栏的 ARIA 语义')
   const tabs = hosts.filter((x) => x.props.role === 'tab')
   const list = hosts.filter((x) => x.props.role === 'tablist')
   ok(list.length === 1, '页签栏有 role=tablist（1 个）')
-  ok(tabs.length === 12, '12 个页签都是 role=tab（实际 ' + tabs.length + '）')
+  ok(tabs.length === 11, '11 个页签都是 role=tab（实际 ' + tabs.length + '）')
   ok(tabs.every((x) => x.props['aria-selected'] !== undefined), '每个页签都带 aria-selected（读屏软件据此播报选中态）')
   const selected = tabs.filter((x) => x.props['aria-selected'] === 'true')
   ok(selected.length === 1 && selected[0].props.title !== undefined, '同一时刻只有一个页签是选中态')

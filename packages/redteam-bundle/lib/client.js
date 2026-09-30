@@ -1258,13 +1258,14 @@ window.__ModuleLoader__.load({
       }, clickable(() => open(s.name), { label: '查看技能 ' + s.name, expanded: active === s.name })),
         h('div', { className: 'rt-item-name' }, s.name,
           s.modelInvocable === false ? h('span', { className: 'rt-tag', style: { marginLeft: 6 } }, '仅人工') : null,
-          /* 可用性状态：能跑 / 有缺口 / 判不了 —— 一眼看出哪些技能现在用不了 */
+          /* 可用性状态：能跑 / 不可用 / 判不了 —— 一眼看出哪些技能现在用不了（点进去有不可用原因与修复方法） */
           h('span', {
             className: 'rt-avail rt-avail-' + (s.availability || 'unknown'),
             style: { marginLeft: 6 },
             title: (s.availability === 'available'
               ? '可用：正文能加载，必需的环境变量/本机路径/基础设施都在'
-              : (s.problems || []).join('\n') || '未知'),
+              : (s.issues || []).map((x) => x.detail + (x.fix ? '\n  修复：' + x.fix : '')).join('\n')
+                || (s.problems || []).join('\n') || '未知'),
           }, s.availability === 'available' ? '可用' : s.availability === 'broken' ? '不可用' : '未知')),
         h('div', { className: 'rt-item-desc' }, s.description || '（无描述）'),
         h('div', { className: 'rt-kb-sub' },
@@ -1274,7 +1275,7 @@ window.__ModuleLoader__.load({
             s.dir ? s.dir : null].filter(Boolean).join(' · ')),
         (s.problems || []).length > 0 && s.availability !== 'available'
           ? h('div', { className: 'rt-kb-sub', style: { color: 'var(--dsw-alias-state-warn-primary, #f59e0b)' } },
-              '⚠ ' + String(s.problems[0]).slice(0, 60))
+              '⚠ ' + String((s.issues && s.issues[0] && s.issues[0].detail) || s.problems[0]).slice(0, 60))
           : null))
 
       return h('div', { className: 'rt-split' },
@@ -1289,7 +1290,7 @@ window.__ModuleLoader__.load({
           availSummary && (availSummary.broken > 0 || availSummary.unknown > 0)
             ? h('label', {
                 className: 'rt-kb-check', style: { display: 'flex', margin: '0 0 8px' },
-                title: '只看有明确缺口（缺 key / 缺本机路径 / 基础设施还是占位符）或判不了可用性的技能',
+                title: '只看不可用（缺 key / 缺本机路径 / 基础设施还是占位符）或判不了可用性的技能',
               },
                 h('input', { type: 'checkbox', checked: brokenOnly, onChange: (e) => setBrokenOnly(e.target.checked) }),
                 '只看不可用/未知（' + ((availSummary.broken || 0) + (availSummary.unknown || 0)) + ' 个）')
@@ -1331,11 +1332,18 @@ window.__ModuleLoader__.load({
                   return h('div', null,
                     h('div', { className: 'rt-kv' }, h('b', null, '可用性'),
                       h('span', { className: 'rt-avail rt-avail-' + avail },
-                        avail === 'available' ? '可用' : avail === 'broken' ? '不可用（有明确缺口）' : '未知（正文读不到）')),
-                    (s2.problems || []).length > 0
-                      ? h('div', { className: 'rt-kv' }, h('b', null, '缺口'),
-                          h('span', null, s2.problems.map((x, i) => h('div', { key: 'p' + i }, '· ' + x))))
-                      : null,
+                        avail === 'available' ? '可用' : avail === 'broken' ? '不可用' : '未知（正文读不到）')),
+                    (s2.issues || []).length > 0
+                      ? h('div', { className: 'rt-kv' }, h('b', null, '不可用原因'),
+                          h('span', null, s2.issues.map((x, i) => h('div', { key: 'i' + i, style: { marginBottom: 6 } },
+                            h('div', null, '· ' + x.detail),
+                            x.fix
+                              ? h('div', { style: { marginLeft: 14, color: 'var(--dsw-alias-label-secondary)' } }, '修复：' + x.fix)
+                              : null))))
+                      : (s2.problems || []).length > 0
+                        ? h('div', { className: 'rt-kv' }, h('b', null, '不可用原因'),
+                            h('span', null, s2.problems.map((x, i) => h('div', { key: 'p' + i }, '· ' + x))))
+                        : null,
                     (s2.needs_user || []).length > 0
                       ? h('div', { className: 'rt-kv' }, h('b', null, '需要你提供'),
                           h('span', { style: { color: 'var(--dsw-alias-state-warn-primary, #f59e0b)' } },
@@ -1358,9 +1366,11 @@ window.__ModuleLoader__.load({
                   : null,
                 meta.availability && (meta.availability.broken || []).length > 0
                   ? h('div', { className: 'rt-hint' },
-                      h('div', { style: { fontWeight: 600, marginBottom: 4 } }, '现在跑不起来的技能：'),
+                      h('div', { style: { fontWeight: 600, marginBottom: 4 } }, '现在跑不起来的技能（左侧点开每个技能都有修复方法）：'),
                       meta.availability.broken.slice(0, 12).map((b) => h('div', { key: b.name },
-                        '· ' + b.name + (b.problems && b.problems.length ? ' — ' + b.problems[0] : ''))))
+                        '· ' + b.name + ' — '
+                        + String((b.issues && b.issues[0] && b.issues[0].detail) || (b.problems && b.problems[0]) || '未知')
+                        + (b.issues && b.issues[0] && b.issues[0].fix ? '（' + b.issues[0].fix + '）' : ''))))
                   : null,
                 (meta.byDir || []).slice(0, 6).map((d) => h('div', { key: d.key, className: 'rt-mono', style: { fontSize: 11, marginBottom: 2, overflowWrap: 'anywhere' } },
                   d.n + ' 个 · ' + d.key)),
@@ -3228,18 +3238,64 @@ window.__ModuleLoader__.load({
               '④ 漏洞利用 `exploit` —— 先拿服务器权限（冰蝎/哥斯拉马）+ 建 suo5 隧道，再打其它得分项', h('br'),
               '⑤ 内网渗透 `internal` —— 走隧道，依次拉起 ①②③④ 做内网', h('br'),
               '⑥ 主会话 `plan` —— 只做计划、派活、汇总、汇报，不动手')),
+          h(ConcurrencyCard, { concurrency, onSaved: load }),
           h('div', { className: 'rt-card' },
-            h('h4', null, '角色提示词（按靶标存，可在这里查看）'),
+            h('h4', null, '角色提示词（按靶标存，可在这里编辑）'),
             h('div', { style: { fontSize: 11.5, color: 'var(--dsw-alias-label-secondary)', marginBottom: 6 } },
-              '完整编辑在「智能体提示词」页签；这里是速览。'),
-            h('div', { style: { display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 } },
-              list.map((x) => h('button', {
-                key: x.role, className: 'rt-btn' + (current && current.role === x.role ? ' rt-btn-primary' : ''),
-                onClick: () => setOpenRole(x.role),
-              }, (ROLE_LABEL[x.role] || x.role) + (x.planner ? '（不派活）' : '')))),
-            current
-              ? h('pre', { className: 'rt-rep-http', style: { maxHeight: 340 } }, current.content || '（还没有正文）')
-              : h('div', { className: 'rt-empty' }, eng ? '加载中…' : '先选一个靶标'))))
+              '「智能体提示词」已并入本页；下面是完整编辑器（改完点保存，只影响当前靶标）。'),
+            h(PromptsTab, { engagement: eng, refreshKey: refreshKey }))))
+    }
+
+    /**
+     * 并发数量配置（同一靶标同时最多几个执行智能体）。
+     *
+     * 为什么放这儿：这是使用中最常调的一项 —— 派活密了想调大、模型侧开始限速了想调小。
+     * 之前只能启动前设 `REDTEAM_MAX_AGENTS` 环境变量，改一次要重启 dsh web。
+     * 现在写进 `$DSH_HOME/redteam/settings.json`，工具侧闸门每次现读，**改完立即生效**。
+     */
+    function ConcurrencyCard(props) {
+      const info = props.concurrency || {}
+      const [draft, setDraft] = React.useState('')
+      const [busy, setBusy] = React.useState(false)
+      const [msg, setMsg] = React.useState(null)
+      React.useEffect(() => { if (info.max) setDraft(String(info.max)) }, [info.max])
+
+      const limit = info.limit || 10
+      const used = typeof info.used === 'number' ? info.used : null
+      const source = info.source === 'settings' ? '面板中设置'
+        : info.source === 'env' ? '环境变量 REDTEAM_MAX_AGENTS' : '默认值'
+      const n = Number(draft)
+      const invalid = !Number.isFinite(n) || Math.floor(n) !== n || n < 1 || n > limit
+      const save = () => {
+        if (invalid) return
+        setBusy(true); setMsg(null)
+        api({ op: 'setAgentsMax', max: n }).then((r) => {
+          setBusy(false)
+          if (!r || r.ok === false) { setMsg({ err: (r && r.error) || '保存失败' }); return }
+          setMsg({ ok: '已保存：并发上限 ' + r.max + '（立即生效，不用重启）' })
+          if (props.onSaved) props.onSaved()
+        }, (e) => { setBusy(false); setMsg({ err: String((e && e.message) || e) }) })
+      }
+      return h('div', { className: 'rt-card' },
+        h('h4', null, '并发数量'),
+        h('div', { style: { fontSize: 12, lineHeight: 1.8, marginBottom: 8 } },
+          '同一靶标**同时最多几个执行智能体**。当前生效：**' + (info.max || '?') + '**'
+          + (used === null ? '' : '（在跑 ' + used + '，剩余 ' + Math.max((info.max || 0) - used, 0) + '）')
+          + '，来源：' + source + '。改完**立即生效**，不用重启。'),
+        h('div', { style: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' } },
+          h('input', {
+            className: 'rt-input', style: { width: 90 }, type: 'number', min: 1, max: limit,
+            value: draft, onChange: (e) => setDraft(e.target.value),
+          }),
+          h('span', { style: { fontSize: 11.5, color: 'var(--dsw-alias-label-secondary)' } }, '范围 1 – ' + limit),
+          h('button', { className: 'rt-btn rt-btn-primary', disabled: busy || invalid, onClick: save },
+            busy ? '保存中…' : '保存'),
+          msg && msg.err ? h('span', { style: { fontSize: 12, color: 'var(--rt-danger, #d33)' } }, msg.err) : null,
+          msg && msg.ok ? h('span', { style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)' } }, msg.ok) : null),
+        h('div', { className: 'rt-note', style: { marginTop: 8 } },
+          '⚠️ 调大不等于更快：**同一个模型 API Key 的并发/速率上限是共享的**，同时派太多会互相挤占，'
+          + '表现为排队等待、超时、返回被截断甚至限流报错 —— 反而让测试结果不稳定（漏测、半途而废）。'
+          + '建议从 2–3 开始，只有在确认 Key 的额度足够、任务之间确实互不依赖时才调大。'))
     }
 
     /**
@@ -3522,7 +3578,8 @@ window.__ModuleLoader__.load({
         ['findings', '漏洞战果'],
         ['chain', '攻击链'], ['scores', '得分目标'], ['report', '报告'],
         ['attackfiles', '攻击文件'], ['knowledge', '知识库'],
-        ['prompts', '智能体提示词'], ['skills', '技能库'],
+        /* 「智能体提示词」已并入「智能体」页：并发数量配置与角色提示词编辑在同一处 */
+        ['skills', '技能库'],
       ]
       const full = isFullWindow()
       const openFull = () => {
@@ -3572,7 +3629,7 @@ window.__ModuleLoader__.load({
       else if (st.tab === 'report') body = h(ReportTab, { engagement: eng, refreshKey: refreshKey })
       else if (st.tab === 'attackfiles') body = h(AttackFilesTab, { engagement: eng, refreshKey: refreshKey })
       else if (st.tab === 'scores') body = h(ScoreTab, { engagement: eng, refreshKey: refreshKey })
-      else if (st.tab === 'prompts') body = h(PromptsTab, { engagement: eng, refreshKey: refreshKey })
+      else if (st.tab === 'prompts') body = h(AgentsTab, { engagement: eng, refreshKey: refreshKey })
       else body = h(SkillsTab, { engagement: eng, refreshKey: refreshKey })
 
       const shellProps = full
