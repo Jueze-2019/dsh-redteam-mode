@@ -169,7 +169,9 @@ node scripts/publish-now.mjs packages/redteam-bundle   # 打印链接 → 人验
 1. **`~/.npmrc` token 失效时，发布请求会得到裸的 `404 {"error":"Not found"}`** ——
    registry 用 404 掩盖"无权写入"，与"包没绑定/客户端太老"那条 404 无法区分；
    自检用 `npm whoami`（失效会报 401）。重新登录用 `node scripts/npm-login.mjs`。
-2. **`npm login --auth-type=web` 在无桌面环境的机器上不可用**：opener 抛 `ENYI` 后
+3. **token 大约一天就失效，症状是裸 404。** 所以 `publish-now.mjs` 现在开跑就先
+   `whoami` 验一次，失效直接提示"先跑 `node scripts/npm-login.mjs`"，不再白跑一轮打包。
+4. **`npm login --auth-type=web` 在无桌面环境的机器上不可用**：opener 抛 `ENYI` 后
    npm 会退化到 Username/Password 交互登录，而 npm 的 2FA 只有 WebAuthn。
    `npm-login.mjs` 直接走 `/-/v1/login` + 轮询 `doneUrl`，链接有效期 30 分钟。
 

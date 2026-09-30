@@ -68,6 +68,23 @@ const put = (body, otp) => fetch(`${registry}/${manifest.name}`, {
   method: 'PUT', headers: otp ? { ...HEADERS, 'npm-otp': otp } : HEADERS, body: JSON.stringify(body),
 })
 
+/* ⓪ 先验 token：token 失效时 registry 会把"无权写入"掩成一个**裸的 404 Not found**，
+   看起来像"包没绑定/客户端太老"，很容易查错方向（实测踩过两次，白跑一轮）。
+   这里先花一次 whoami 把它挑明，并直接给出修法。 */
+console.log('[0/3] 检查 npm 凭据 …')
+{
+  const who = await fetch(`${registry}/-/whoami`, { headers: { authorization: `Bearer ${token}` } })
+  if (!who.ok) {
+    console.error(`✗ 凭据不可用（whoami 返回 ${who.status}）—— 直接发布会得到误导性的裸 404。`)
+    console.error('  先重新登录，再重跑本脚本：')
+    console.error('      node scripts/npm-login.mjs')
+    console.error('  （它会打印一条 30 分钟有效的网页登录链接，在能按安全密钥的设备上打开即可。）')
+    process.exit(1)
+  }
+  const whoText = (await who.text()).trim()
+  console.log(`      ✓ ${whoText}（token 有效）`)
+}
+
 /* 先打包（prepublishOnly 会跑自检），再取鉴权链接 —— 顺序重要：链接必须最后生成，
    否则人还没验证，会话就先过期了。 */
 console.log('[1/3] 打包（含 prepublishOnly 自检）…')
