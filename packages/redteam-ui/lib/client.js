@@ -281,9 +281,11 @@ window.__ModuleLoader__.load({
         const out = [h('div', {
           key: 'h' + kind, className: 'rt-sidehead rt-sidehead-btn',
           role: 'button', tabIndex: 0, 'aria-expanded': open ? 'true' : 'false',
-          title: open ? '收起本组' : '展开本组',
-          onClick: toggle,
-          onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(e) } },
+          title: (open ? '收起本组' : '展开本组') + '（并切回资产列表）',
+          /* 组头既折叠也切回资产列表：停在"当前测试"视图时点外网/内网，意图一定是看资产，
+             只折叠不切视图会让人以为"点了没反应"。 */
+          onClick: () => { setView('list'); toggle() },
+          onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setView('list'); toggle(e) } },
         },
           h('span', { className: 'rt-sec-caret' }, open ? '▾' : '▸'),
           h('span', { className: 'rt-scope rt-scope-' + kind }, kind === 'internal' ? '内网' : '外网'),
@@ -296,7 +298,8 @@ window.__ModuleLoader__.load({
           out.push(h('div', Object.assign({
             key: s.cidr, className: 'rt-seg' + (cidr === s.cidr ? ' on' : ''),
             title: (s.org || '未知归属') + ' · 存活 ' + (s.live || 0) + '/' + (s.assets || 0) + ' 台',
-          }, clickable(() => setCidr(s.cidr), { label: '筛选 C 段 ' + s.cidr, expanded: cidr === s.cidr })),
+          }, clickable(() => { setView('list'); setCidr(s.cidr) },
+            { label: '筛选 C 段 ' + s.cidr, expanded: cidr === s.cidr && view !== 'testing' })),
             h('div', { className: 'rt-seg-cidr', style: { display: 'flex', alignItems: 'baseline', gap: 5 } },
               h('span', { className: 'rt-scope rt-scope-' + kind }, kind === 'internal' ? '内' : '外'),
               h('span', { style: { flex: 1 } }, s.cidr),

@@ -449,6 +449,50 @@ console.log('\n— 页签合并后的入口（当前测试→资产测绘 / 攻�
   ok(/攻击文件/.test(f.texts), '漏洞战果页有「攻击文件」子页签（原独立页签）')
 }
 
+console.log('\n— 当前测试 ⇄ 资产列表 来回切换（回归：切过去回不来）')
+{
+  /** 递归收集一个元素子树里的文本（标签往往嵌在 span 里，浅层 flat 取不到）。 */
+  const textOf = (node) => {
+    if (typeof node === 'string') return node
+    if (typeof node === 'number') return String(node)
+    if (Array.isArray(node)) return node.map(textOf).join(' ')
+    if (node && node.props && node.props.children !== undefined) return textOf(node.props.children)
+    return ''
+  }
+  /** 按文本找一个可点击宿主并点击，然后重渲染（与 switchTab 同一套机制）。 */
+  const clickByText = async (needle) => {
+    const r = await renderAll()
+    const hit = r.hosts.find((x) => x.handlers.onClick && textOf(x.props.children).includes(needle))
+    if (hit === undefined) return null
+    hit.handlers.onClick()
+    return renderAll()
+  }
+  /* 资产列表视图的判据：搜索框在（它是 placeholder 属性，不是文本）——测试视图下整个工具条收起 */
+  const hasSearchBox = (r) => r.hosts.some((x) => typeof x.props.placeholder === 'string' && x.props.placeholder.includes('搜索 IP'))
+  responses = makeResponses('data')
+  resetInstances()
+  await switchTab('资产测绘')
+  ok(hasSearchBox(await renderAll()), '资产测绘默认是资产列表视图')
+
+  const t = await clickByText('当前测试')
+  ok(t !== null && /实时 · 5s/.test(t.texts), '点「当前测试」切到测试视图')
+  ok(t !== null && !hasSearchBox(t), '测试视图下收起资产搜索/过滤条')
+
+  const g = await clickByText('个 C 段')
+  ok(g !== null && hasSearchBox(g) && !/实时 · 5s/.test(g.texts),
+    '在测试视图里点「内网资产 / 外网资产」组头能切回资产列表')
+
+  const t2 = await clickByText('当前测试')
+  ok(t2 !== null && /实时 · 5s/.test(t2.texts), '再点「当前测试」又能切过去')
+  /* 上一步点组头顺带把内网组折叠了，先展开回来，否则 C 段行根本没渲染 */
+  await clickByText('个 C 段')
+  const t3 = await clickByText('当前测试')
+  ok(t3 !== null && /实时 · 5s/.test(t3.texts), '（准备）第三次切到测试视图')
+  const seg = await clickByText('10.1.1.0/24')
+  ok(seg !== null && hasSearchBox(seg) && !/实时 · 5s/.test(seg.texts),
+    '在测试视图里点某个 C 段也能切回资产列表')
+}
+
 console.log('\n— 报错态显示错误而不是白屏')
 {
   responses = makeResponses('error')
