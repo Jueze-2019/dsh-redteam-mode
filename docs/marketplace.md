@@ -12,7 +12,7 @@
 | 打包契约 | `dsh.bundle.patch: ./cordis.patch.yml` + `dsh.client.platform: web` + `exports: . / ./store / ./ui / ./tools / ./client` |
 | 自包含 | 零运行时依赖；`lib/` 由 `tools/build.mjs` 从三个源码包生成 |
 | 预设 | `cordis.patch.yml` 生成区里的 `preset-redteam` 声明行（DSH ≥0.1.7-alpha.1 只认声明行，目录预设不再被读取）；`presets/redteam/` 目录预设只留给 ≤0.1.6 的旧 DSH |
-| 技能 | `skills/` 13 个，随包分发 |
+| 技能 | `skills/` 14 个，随包分发 |
 | 发布守卫 | `prepublishOnly` = `build --check` + `bundle.test.mjs`（漂移或泄露会直接拦住 publish） |
 | 真机验收 | 干净 `DSH_HOME` + `npm pack` 出的 tarball + `dsh plugin add` → 预设可用、13 个技能可见、`POST /redteam/api` 正常 |
 
@@ -181,7 +181,7 @@ node scripts/publish-now.mjs packages/redteam-bundle   # 打印链接 → 人验
 
 **市场条目现状**：PR #5034（首次收录）与 #5575（v0.11.x 条目）**已合并**；线上条目
 `version` 字段由 npm 自动取，发新版不需要改它。条目更新在 **PR #6076**
-（14 个随包技能 + 去武器化说明），等维护者合并。
+（14 个随包技能 + 去武器化说明 + v0.13.0 的证据截图能力），等维护者合并。
 
 ### 顺带记录：绕过 2FA 的 token 还有两个副作用
 

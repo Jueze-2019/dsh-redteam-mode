@@ -6,7 +6,8 @@
 | 文件 | 用途 |
 | --- | --- |
 | `entry-file.yml` | 投稿条目本体，对应市场仓库的 `data/plugins/Jueze-2019__dsh-redteam-mode--packages-redteam-bundle.yml` |
-| `pr-6076-comment.md` | **当前生效**：PR [#6076](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6076)（v0.12.x 条目，仍开着）上的复核评论，2026-09-29 随 0.12.1 发布贴出 |
+| `pr-6076-comment-v0.13.0.md` | **当前生效**：PR [#6076](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/6076)（仍开着）上随 0.13.0 发布贴出的复核评论 |
+| `pr-6076-comment-v0.12.5.md` / `pr-6076-comment.md` | 历史：0.12.5 / 0.12.1 发布时贴过的评论 |
 | `pr-5034-comment.md` | 历史：首次收录 PR [#5034](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5034) 的评论（已合并；里面的"23 个技能"是去武器化之前的旧口径，别再照抄） |
 
 > 已合并的：**#5034**（首次收录）、**#5575**（v0.11.x 条目）。线上条目的 `version` 字段由 npm
