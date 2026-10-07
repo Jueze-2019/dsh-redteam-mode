@@ -120,10 +120,10 @@ try {
 
   console.log('\n— 报告结构与简洁性')
   ok(rep.markdown.includes('#### 复现'), '每条有独立的「复现」小节')
-  ok(rep.markdown.indexOf('#### 复现') < rep.markdown.indexOf('#### 怎么拿到的'),
-    '「复现」排在「怎么拿到的」之前（用户要照做的东西放最前）')
+  ok(rep.markdown.indexOf('#### 复现') < rep.markdown.indexOf('#### 动作记录'),
+    '「复现」排在「动作记录」之前（用户要照做的东西放最前）')
   const head = rep.markdown.split('\n').slice(0, 30).join('\n')
-  ok(/先补这些|合计得分/.test(head), '抬头先给总分与需要补录的条目')
+  ok(/合计得分|摘要与对账/.test(head), '抬头先给总分与对账（复现索引紧随其后）')
   ok(rep.markdown.length < 30000, '报告总长可控（' + rep.markdown.length + ' 字符）')
 
   console.log('\n— 反例：什么都记的条目也要能用（不给假命令）')

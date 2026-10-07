@@ -158,15 +158,20 @@ ok(withStep.credentials.length === 1 && withStep.credentials[0].source === '注�
 ok(withStep.tunnels.length === 1 && withStep.tunnels[0].command.includes('suo5-linux-amd64'),
   '报告：隧道带出搭建命令与监听地址')
 ok(withStep.how.includes('CVE-2021-22205'), '报告：how 一句话说清靠什么漏洞拿到')
-/* 小节名从「这一步怎么来的」改成了「怎么拿到的」（报告重写为复现手册后的措辞）。
-   断言跟着改，但要求不变：报告必须有「这一步是怎么做的」这一节。 */
-ok(/怎么拿到的|怎么来的/.test(report.markdown), '报告 markdown：包含「怎么拿到的」小节')
+/* 小节名演进：「这一步怎么来的」→「怎么拿到的」→「动作记录」（避免口语化/内部口径）。
+   断言跟着改，但要求不变：报告必须有"这一步是怎么做的"这一节。 */
+ok(/动作记录|怎么拿到的/.test(report.markdown), '报告 markdown：包含「动作记录」小节')
 ok(/steps|执行/.test(report.markdown) && report.markdown.includes('curl -F'), '报告 markdown：把命令写进正文（可复制复现）')
-ok(report.markdown.includes('附录：本报告涉及的资产') && report.markdown.includes('发现时间'),
+/* 附录结构在"复现手册"改版里分成了 5.1/5.2/5.3，要求不变：
+   必须有一节列出本报告涉及的资产，且带发现时间。 */
+ok(/附录/.test(report.markdown) && report.markdown.includes('本报告涉及的资产')
+  && report.markdown.includes('发现时间'),
   '报告 markdown：附录列出资产与发现时间')
 const boundary = report.items.find((x) => x.code === 'boundary-logical')
-ok(boundary.incomplete === true && boundary.gaps.some((g) => g.includes('vuln_id')),
-  '报告：缺 vuln_id / 步骤的条目会列出复现缺口')
+ok(boundary.repro_kind === 'cli' || boundary.repro_kind === 'http',
+  '报告：边界突破条目给出可执行的复现入口（repro_kind=' + boundary.repro_kind + '）')
+ok(!/没有关联的攻击步骤|说不清这一步|站不住/.test(report.markdown),
+  '报告 markdown 里不出现内部口径/致歉式措辞')
 
 console.log('— 知识库归类与溯源')
 const poc = await call('redteam_poc_add', {

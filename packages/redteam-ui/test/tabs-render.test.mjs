@@ -273,6 +273,7 @@ function makeResponses(shape) {
       recent: arr([{ ...ASSET, test_status: 'tested' }]), queue: arr([{ ...ASSET, test_status: 'untested' }]), untested: 1,
       stats: { testing: 1, untested: 1, tested: 0, abandoned: 0, blocked: 0, no_surface: 0 } }),
     agentsStatus: w({ ok: true, max: 3, used: 1, free: 2, total_children: 1, running: [{ parent: 's1', label: '信息收集', activity: 'running', mode: 'child' }] }),
+    shotData: w({ ok: true, id: 11, mime: 'image/png', bytes: 8, base64: 'iVBORw0KGgo=' }),
     prompts: w({ ok: true, roles: arr([
       { role: 'plan', title: '主会话', content: '# 指挥', updated_at: '2026-01-01T00:00:00Z', planner: true },
       { role: 'recon', title: '信息收集', content: '# 收集', updated_at: '2026-01-01T00:00:00Z' },
@@ -295,12 +296,22 @@ function makeResponses(shape) {
       stages: arr([{ code: 'boundary', name: '边界突破', color: '#f59e0b', ordinal: 3, points: 1000, cumulative: 1000,
         items: [{ id: 1, seq: 1, code: 'boundary-logical', point_name: '进入逻辑隔离业务内网', points: 1000, counted: true, nth_of_point: 1, target: '10.1.1.1', asset_ip: '10.1.1.1', gained: '内网可达', evidence: '可达 10.1.1.0/24', recorded_at: '2026-01-02T03:04:05Z', recorded_by: 'exploit', vuln: null, note: '', how: '靠 CVE-2026-1', incomplete: false, gaps: [], credentials: [], tunnels: [], webshells: [], accesses: [],
           requests: [{ label: 'r', method: 'GET', url: 'http://x/', status: 200, request: 'GET / HTTP/1.1', response: 'HTTP/1.1 200 OK', source: 'linked' }],
-          steps: [{ id: 1, title: '建隧道', tool: 'suo5 -t', result: 'ok', agent: 'exploit', stage_code: 'boundary', recorded_at: '2026-01-02T03:04:05Z', inferred: false }] }] }]) }),
+          steps: [{ id: 1, title: '建隧道', tool: 'suo5 -t', result: 'ok', agent: 'exploit', stage_code: 'boundary', recorded_at: '2026-01-02T03:04:05Z', inferred: false }],
+          shot_total: 5,
+          shots: [
+            { id: 11, url: 'shots/a.png', label: '隧道连通性截图', kind: 'screenshot', mime: 'image/png', bytes: 100, target: '10.1.1.1', captured_at: '2026-01-02T03:04:05Z', source_ref: 'runs/a.png', note: '' },
+            { id: 12, url: 'shots/b.png', label: '证据摘录 #1', kind: 'card', mime: 'image/png', bytes: 100, target: '10.1.1.1', captured_at: '2026-01-02T03:04:06Z', source_ref: 'auto', note: '' },
+          ] }] }]) }),
     scores: w({ ok: true,
       summary: { achievedPoints: 1000, pointCount: 25, hitPointCount: 1, hitCount: 1, countedHits: 1, selfCreatedHits: 0, serviceCappedHits: 0 },
       ruleGroups: arr([{ key: 'BOUNDARY', name: '突破网络边界', capSum: 3000, points: 1000, counted: 1, capped: 0,
         tiers: [{ id: 1, code: 'boundary-logical', name: '进入逻辑隔离业务内网', category: 'BOUNDARY', points: 1000, rule: 19, cap: 0, dedup_scope: 'target', builtin: true, src: 22, legacy: false, counted: 1, earned: 1000, self_created: 0, capped: 0, capped_hits: [], cap_used: 1000, scope_label: '整个目标只算一次', description: '说明', enabled: true, tier: '1000 分',
-          hits: [{ id: 1, points: 1000, counted: true, capped: false, capped_reason: null, evidence: '可达', target: '10.1.1.1', recorded_at: '2026-01-02T03:04:05Z', recorded_by: 'exploit', service: null }] }] }]) }),
+          shot_total: 5,
+          shots: [
+            { id: 11, url: 'shots/a.png', label: '隧道连通性截图', kind: 'screenshot', mime: 'image/png', bytes: 100, target: '10.1.1.1', captured_at: '2026-01-02T03:04:05Z', source_ref: 'runs/a.png', note: '' },
+            { id: 12, url: 'shots/b.png', label: '证据摘录 #1', kind: 'card', mime: 'image/png', bytes: 100, target: '10.1.1.1', captured_at: '2026-01-02T03:04:06Z', source_ref: 'auto', note: '' },
+          ],
+          hits: [{ id: 1, points: 1000, counted: true, capped: false, capped_reason: null, evidence: '可达', target: '10.1.1.1', recorded_at: '2026-01-02T03:04:05Z', recorded_by: 'exploit', service: null, shot_count: 2 }] }] }]) }),
     attackFiles: w({ ok: true, items: arr([{ folder: '10.1.1.1', target: '10.1.1.1', count: 1, files: [{ id: 1, name: 'poc.py', kind: 'poc', description: '验证脚本', path: '/tmp/poc.py' }] }]) }),
     readAttackFile: w({ ok: true, id: 1, name: 'poc.py', kind: 'poc', content: 'print(1)', evidence: '生效', path: '/tmp/poc.py', created_at: '2026-01-02T03:04:05Z', created_by: 'exploit' }),
     pocSearch: w({ ok: true, stats: { total: 1, verified: 1, reused: 0, byKind: [], bySource: [] },
@@ -365,6 +376,18 @@ async function switchTab(label) {
   return renderAll()
 }
 
+/** 展开得分目标里的第一个得分点（行本身是可点的 host 元素），用于验证图片条真的渲染。 */
+async function openFirstScoreRow() {
+  const r = await renderAll()
+  const hit = r.hosts.find((x) => typeof x.props.className === 'string'
+    && x.props.className.indexOf('rt-score-row') !== -1 && !/head/.test(x.props.className)
+    && x.handlers.onClick)
+  if (hit === undefined) return false
+  hit.handlers.onClick()
+  await renderAll()
+  return true
+}
+
 /* 已并入父页：
    · 「智能体提示词」→「智能体」（并发配置 + 提示词编辑同页）
    · 「当前测试」→「资产测绘」（左侧与 C 段分组同级的入口）
@@ -420,8 +443,17 @@ console.log('\n— 有数据时的关键内容（渲染确实用了接口返回�
   ok(k.texts.includes('fofa-recon'), '技能库：技能名渲染出来')
   const rep = await switchTab('报告')
   ok(rep.texts.includes('进入逻辑隔离业务内网'), '报告：得分项渲染出来')
+  ok(rep.texts.includes('证据截图'), '报告：证据截图图条渲染出来')
+  ok(rep.texts.includes('隧道连通性截图') && rep.texts.includes('记录生成的证据摘录'),
+    '报告：现场截图与生成的证据摘录分别标注（不能混为一谈）')
   const sc = await switchTab('得分目标')
   ok(sc.texts.includes('突破网络边界') || sc.texts.includes('进入逻辑隔离业务内网'), '得分目标：分组渲染出来')
+  await openFirstScoreRow()
+  const sc2 = await switchTab('得分目标')
+  ok(sc2.texts.includes('证据截图'), '得分目标：展开得分点后有证据截图条')
+  ok(/显示 2 张/.test(sc2.texts), '得分目标：图条报出"显示几张"（' +
+    ((/显示 \d+ 张/.exec(sc2.texts) || ['未找到'])[0]) + '）')
+  ok(sc2.texts.includes('隧道连通性截图'), '得分目标：截图说明渲染出来')
 }
 
 console.log('\n— 空数据态给出"下一步怎么做"的引导（不是白屏）')

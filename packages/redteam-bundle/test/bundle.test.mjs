@@ -178,7 +178,12 @@ console.log('— 浏览器半侧的注册 id')
   ok(/agentsStatus/.test(client), 'client.js 读并发占用（agentsStatus）')
   ok(/发现时间/.test(client) && /discoveryTimeline/.test(client), 'client.js 有资产「发现时间」视图')
   ok(/POC_CAT_NAME/.test(client) && /按归类分组/.test(client), 'client.js 知识库按归类分组')
-  ok(/这一步怎么来的/.test(client) && /复现链不完整/.test(client), 'client.js 报告展示「这一步怎么来的」与复现缺口')
+  ok(/复现步骤/.test(client) && /复现材料/.test(client), 'client.js 报告展示「复现步骤」与「复现材料」')
+  /* 证据截图：面板展开得分点要看图、报告里也要贴图 —— 两处都必须接上，缺一个都算半成品 */
+  ok(/ShotStrip/.test(client) && /ShotImage/.test(client), 'client.js 有证据截图组件（得分点 + 报告共用）')
+  ok(/'shotData'/.test(client) && /rt-shot-zoom/.test(client), 'client.js 走 shotData 取图并支持点击放大')
+  ok(/\.rt-shot-row/.test(client) && /\.rt-shot-zoom\{/.test(client), '样式已内联进 client.js（缩略图条 + 全屏放大）')
+  ok(!/没有关联的攻击步骤|说不清这一步/.test(client), 'client.js 不出现致歉式/内部口径文案')
 }
 
 /* 仓库源预设里**不允许**出现占位符：占位符是给"打包后落地"用的，

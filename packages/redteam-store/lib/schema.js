@@ -282,6 +282,26 @@ CREATE TABLE IF NOT EXISTS attack_step (
   recorded_by TEXT, recorded_at TEXT
 );
 
+/* 证据截图：得分成果的"看得见"的那一份材料。
+   验收时最有说服力的不是我们写了什么，而是当时那张图（后台页面、命令回显、隧道连通性…）。
+   落盘位置：<靶标目录>/shots/，库里只存文件名与元数据 —— 图片不进 SQLite，
+   否则库会膨胀到没法拷、也没法用普通工具打开。
+
+   kind 必须如实区分：
+     · screenshot —— 现场截图（浏览器/终端当时截的），报告里可以直接当证明材料；
+     · card       —— 由当日记录生成的"证据摘录卡"，不是现场截图，报告里要标注清楚。
+   两者混在一起会让验收人把生成的卡当成现场证据 —— 这是本表最需要防的一件事。 */
+CREATE TABLE IF NOT EXISTS shot (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  point_id INTEGER, hit_id INTEGER, asset_id INTEGER, vuln_id INTEGER,
+  target TEXT, label TEXT, note TEXT,
+  file TEXT NOT NULL,
+  kind TEXT DEFAULT 'screenshot',
+  mime TEXT, bytes INTEGER, width INTEGER, height INTEGER, sha256 TEXT,
+  source_ref TEXT, captured_at TEXT, found_by_agent TEXT, agent TEXT, created_at TEXT,
+  UNIQUE(file)
+);
+
 
 CREATE INDEX IF NOT EXISTS ix_asset_segment ON asset(segment_cidr);
 CREATE INDEX IF NOT EXISTS ix_asset_ip_int ON asset(ip_int);
@@ -301,6 +321,9 @@ CREATE INDEX IF NOT EXISTS ix_cred_host ON credential(host);
 CREATE INDEX IF NOT EXISTS ix_access_host ON access_session(host);
 CREATE INDEX IF NOT EXISTS ix_webshell_status ON webshell(status);
 CREATE INDEX IF NOT EXISTS ix_tunnel_status ON tunnel(status);
+CREATE INDEX IF NOT EXISTS ix_shot_point ON shot(point_id);
+CREATE INDEX IF NOT EXISTS ix_shot_hit ON shot(hit_id);
+CREATE INDEX IF NOT EXISTS ix_shot_asset ON shot(asset_id);
 CREATE INDEX IF NOT EXISTS ix_http_vuln ON http_evidence(vuln_id);
 CREATE INDEX IF NOT EXISTS ix_http_asset ON http_evidence(asset_id);
 CREATE INDEX IF NOT EXISTS ix_step_seq ON attack_step(seq, id);

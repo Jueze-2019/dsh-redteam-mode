@@ -540,7 +540,24 @@ window.__ModuleLoader__.load({
 .rt-kb-tpl-name{flex:1 1 auto;min-width:0;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
 .rt-md{flex:1;overflow:auto;margin:0;padding:14px 16px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;
   line-height:1.65;white-space:pre-wrap;word-break:break-word;background:var(--dsw-alias-bg-base)}
-.rt-weblink{display:block;font-size:11.5px;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}`    /* ---------------------------------------------------------- 桥接与状态 */
+.rt-weblink{display:block;font-size:11.5px;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rt-weblink{display:block;font-size:11.5px;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* ── 证据截图：得分点里最多 3 张代表图，点开全屏 ─────────────────────────── */
+.rt-shots{margin:8px 0 4px;padding:7px 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:7px;
+  background:var(--dsw-alias-bg-layer-1)}
+.rt-shots-head{display:flex;align-items:baseline;gap:8px;font-size:11.5px;margin-bottom:6px}
+.rt-shots-n{color:var(--dsw-alias-label-secondary)}
+.rt-shot-row{display:flex;gap:8px;flex-wrap:wrap}
+.rt-shot{display:flex;flex-direction:column;gap:3px;max-width:220px}
+.rt-shot-thumb{border:1px solid var(--dsw-alias-border-l1);border-radius:5px;background:#0b1020;
+  object-fit:contain;display:block;width:auto;max-width:216px}
+.rt-shot-loading{display:flex;align-items:center;justify-content:center;width:150px;font-size:11px;
+  color:var(--dsw-alias-label-secondary)}
+.rt-shot-cap{display:flex;align-items:center;gap:5px;font-size:10.5px;overflow-wrap:anywhere}
+.rt-shot-label{color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px}
+.rt-shot-zoom{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.82);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:10px;cursor:zoom-out;padding:18px}
+.rt-shot-zoom img{max-width:96vw;max-height:86vh;border-radius:6px;box-shadow:0 18px 48px rgba(0,0,0,.5)}
+.rt-shot-zoom-cap{color:#e5e7eb;font-size:12px;text-align:center;max-width:90vw;overflow-wrap:anywhere}`    /* ---------------------------------------------------------- 桥接与状态 */
     /** 是否在「全面浏览」独立窗口里（URL hash 标记，复用同一套界面代码）。 */
     const isFullWindow = () => {
       try { return String(window.location.hash || '') === '#redteam-full' } catch { return false }
@@ -551,6 +568,67 @@ window.__ModuleLoader__.load({
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(req),
     }).then((res) => res.json())
+
+    /* ── 证据截图：懒加载 + 缓存 + 点击放大 ────────────────────────────────
+       图片走 base64（`shotData` op）而不是静态路由：这条桥已经做了同源校验，
+       再开一个按文件名读盘的静态入口等于绕开它。缓存按 `靶标:shotId` 存，
+       同图在多处出现（得分点 + 报告）只取一次。 */
+    const shotCache = new Map()
+    const shotLoading = new Map()
+    const shotSrc = (eng, id) => shotCache.get(eng + ':' + id) || null
+    const loadShot = (eng, id) => {
+      const key = eng + ':' + id
+      if (shotCache.has(key) || shotLoading.has(key)) return
+      const p = api({ op: 'shotData', engagement: eng, id: id }).then((r) => {
+        shotCache.set(key, r && r.base64 ? 'data:' + (r.mime || 'image/png') + ';base64,' + r.base64 : '')
+        shotLoading.delete(key)
+        for (const f of Array.from(subs)) f()
+      }).catch(() => { shotLoading.delete(key) })
+      shotLoading.set(key, p)
+    }
+    const SHOT_KIND = { screenshot: '现场截图', card: '记录生成的证据摘录' }
+
+    /** 单张图：点一下全屏放大（固定定位，不受所在容器限制）。 */
+    const ShotImage = ({ eng, shot, height }) => {
+      const [zoom, setZoom] = React.useState(false)
+      const src = shotSrc(eng, shot.id)
+      if (src === null) { loadShot(eng, shot.id); }
+      const card = shot.kind === 'card'
+      return h('div', { className: 'rt-shot' },
+        src === null
+          ? h('div', { className: 'rt-shot-thumb rt-shot-loading', style: { height: (height || 96) + 'px' } }, '载入中…')
+          : h('img', {
+              className: 'rt-shot-thumb', src: src, alt: shot.label || ('证据 ' + shot.id),
+              style: { height: (height || 96) + 'px', cursor: 'zoom-in' },
+              onClick: () => setZoom(true),
+            }),
+        h('div', { className: 'rt-shot-cap' },
+          h('span', { className: 'rt-tag ' + (card ? 'rt-tag-warn' : 'rt-tag-live'), title: card
+            ? '由当日记录生成的证据摘录，不是现场截图 —— 报告里同样会标注'
+            : '现场截图' }, SHOT_KIND[shot.kind] || shot.kind || '证据'),
+          h('span', { className: 'rt-shot-label', title: shot.label || shot.note || '' },
+            shot.label || shot.target || ('#' + shot.id))),
+        zoom
+          ? h('div', { className: 'rt-shot-zoom', onClick: () => setZoom(false) },
+              h('img', { src: src, alt: shot.label || '' }),
+              h('div', { className: 'rt-shot-zoom-cap' }, (shot.label || shot.target || '')
+                + (card ? '　·　由当日记录生成（非现场截图）' : '')
+                + (shot.captured_at ? '　·　' + fmt(shot.captured_at) : '')
+                + '　·　点击任意处关闭'))
+          : null)
+    }
+
+    /** 一个得分点的证据图条：最多 3 张（超过的部分只报数，不铺开）。 */
+    const ShotStrip = ({ eng, shots, total, title }) => {
+      const list = shots || []
+      if (list.length === 0) return null
+      return h('div', { className: 'rt-shots' },
+        h('div', { className: 'rt-shots-head' },
+          h('b', null, title || '证据截图'),
+          h('span', { className: 'rt-shots-n' }, '显示 ' + list.length + ' 张'
+            + (total && total > list.length ? '（该得分点共 ' + total + ' 张，取代表图）' : ''))),
+        h('div', { className: 'rt-shot-row' }, list.map((sh) => h(ShotImage, { key: 'sh' + sh.id, eng: eng, shot: sh }))))
+    }
 
     let ui = { open: true, tab: 'assets' }
     const subs = new Set()
@@ -2043,20 +2121,22 @@ window.__ModuleLoader__.load({
           h('span', null, String(x.evidence).replace(/\n+/g, ' '))) : null,
         x.recorded_at ? h('div', { className: 'rt-rep-meta' }, h('b', null, '取得时间 '),
           h('span', null, fmt(x.recorded_at) + (x.recorded_by ? '（' + (ROLE_LABEL[x.recorded_by] || x.recorded_by) + '）' : ''))) : null,
-        /* ── 这一步怎么来的：动作步骤（含实际命令与回显）+ 凭据 + 隧道 + WebShell ─────
+        h(ShotStrip, { eng: eng, shots: x.shots, total: x.shot_total,
+          title: '证据截图' + ((x.shots || []).length > 0 ? '' : '') }),
+        /* ── 复现步骤：动作记录（含实际命令与回显）+ 凭据 + 隧道 + WebShell ─────
            报告的交付价值全在这块：账号密码怎么来的、隧道怎么搭的，用户照着就能复现。 */
         h('details', { className: 'rt-rep-trace', open: x.incomplete === true || (x.steps || []).length === 0 },
           h('summary', { className: 'rt-rep-trace-head', style: { cursor: 'pointer' } },
-            h('span', { className: 'rt-rep-trace-title' }, '这一步怎么来的（点击展开复现链）'),
+            h('span', { className: 'rt-rep-trace-title' }, '复现步骤（点击展开）'),
             (x.steps || []).length ? h('span', { className: 'rt-tag' }, (x.steps || []).length + ' 个动作') : null,
             (x.credentials || []).length ? h('span', { className: 'rt-tag' }, (x.credentials || []).length + ' 条凭据') : null,
             (x.tunnels || []).length ? h('span', { className: 'rt-tag' }, (x.tunnels || []).length + ' 条隧道') : null,
-            x.incomplete ? h('span', { className: 'rt-tag rt-tag-warn' }, '复现链不完整') : h('span', { className: 'rt-tag rt-tag-live' }, '可复现')),
+            x.incomplete ? h('span', { className: 'rt-tag rt-tag-warn' }, '复现材料待补') : h('span', { className: 'rt-tag rt-tag-live' }, '可复现')),
           h('div', { style: { paddingTop: 6 } },
           x.how ? h('div', { className: 'rt-rep-trace-how' }, x.how) : null,
           (x.steps || []).length === 0
             ? h('div', { className: 'rt-rep-missing' },
-                '⚠️ 没有关联的攻击步骤：说不清这一步是怎么做的。请用 redteam_chain_add 补上动作（title / detail / tool / result），记分时也可以带 point_code + evidence 一次完成。')
+                '本条未关联动作步骤，复现入口见上方「复现」。需要补记动作时用 redteam_chain_add（title / detail / tool / result），记分时也可带 point_code + evidence 一次完成。')
             : (x.steps || []).map((s, si) => h('div', { key: 's' + s.id, className: 'rt-rep-step' },
                 h('div', { className: 'rt-rep-step-head' },
                   h('span', { className: 'rt-rep-step-no' }, String(si + 1)),
@@ -2111,9 +2191,9 @@ window.__ModuleLoader__.load({
                   h('span', null, (w.url || '') + (w.pass_key ? ' · 口令/密钥 ' + w.pass_key : '')
                     + (w.privilege ? ' · 权限 ' + w.privilege : '') + (w.status ? ' · ' + w.status : '')))))
             : null,
-          (x.gaps || []).length ? h('div', { className: 'rt-rep-missing' }, '⚠️ 复现缺口：' + x.gaps.join('；')) : null),
+          (x.gaps || []).length ? h('div', { className: 'rt-rep-missing' }, '复现材料：' + x.gaps.join('；')) : null),
         (x.requests || []).length === 0
-          ? h('div', { className: 'rt-rep-missing' }, '⚠️ 这一项没有原始请求记录，无法直接复现 —— 请用 redteam_http_evidence_add 补上')
+          ? h('div', { className: 'rt-rep-missing' }, '本条没有原始 HTTP 报文（该成果经命令行/其他协议取得，复现入口见上方「复现步骤」）')
           : (x.requests || []).map((r, ri) => h('div', { key: 'q' + ri, className: 'rt-rep-req' },
               h('div', { className: 'rt-rep-req-head' },
                 h('span', null, '复现请求 ' + (ri + 1) + (r.source === 'auto' ? '（按目标路径自动匹配，请核对）' : '')),
@@ -2628,6 +2708,8 @@ window.__ModuleLoader__.load({
             className: 'rt-tag rt-tag-warn',
             title: hh.capped_reason || '同一资产同一端口只算分值最高的一条，这条不计分',
           }, '服务已拿满 · 不计分' + (hh.service ? '（' + hh.service + '）' : '')) : null,
+          hh.shot_count ? h('span', { className: 'rt-tag', title: '这条命中有证据截图（展开得分点即可看到代表图）' },
+            '图 ' + hh.shot_count) : null,
           h('span', { className: 'rt-hit-time' }, fmt(hh.recorded_at)),
           h('button', {
             className: 'rt-btn', style: { padding: '0 5px', fontSize: 10.5 },
@@ -2655,6 +2737,8 @@ window.__ModuleLoader__.load({
             : null,
           p.hits.length
             ? h('div', null,
+                h(ShotStrip, { eng: eng, shots: p.shots, total: p.shot_total,
+                  title: '证据截图 · ' + (p.shot_total || (p.shots || []).length) + ' 张' }),
                 h('div', { className: 'rt-section', style: { padding: '6px 0 0' } },
                   '命中记录 · ' + p.hits.length + '（只记资产与账号密码，详细复现见报告）'),
                 h('div', { className: 'rt-hits' }, hitNodes))

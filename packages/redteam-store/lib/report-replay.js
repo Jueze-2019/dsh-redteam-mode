@@ -154,6 +154,13 @@ function buildCurlCommand(options = {}) {
   const parts = ['curl -i -s' + (options.insecure ? ' -k' : '') + (options.followRedirect ? ' -L' : '')]
   if (options.method && String(options.method).toUpperCase() !== 'GET') parts.push('-X ' + String(options.method).toUpperCase())
   if (options.cookie) parts.push("-b '" + options.cookie + "'")
+  /* 报文里带的鉴权/内容类型头要原样带上：少了 Authorization，合成出来的 curl 跑起来是 401 ——
+     "等价命令"跑不通比不给命令更糟。 */
+  for (const h of (options.headers || [])) {
+    const line = String(h || '').trim()
+    if (line === '' || /^host:/i.test(line) || /^content-length:/i.test(line)) continue
+    parts.push("-H '" + line.replace(/'/g, "'\\''") + "'")
+  }
   if (options.data !== undefined && options.data !== null && options.data !== '') parts.push("-d '" + String(options.data).replace(/'/g, "'\\''") + "'")
   parts.push("'" + url + "'")
   return parts.join(' ')

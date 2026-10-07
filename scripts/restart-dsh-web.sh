@@ -12,8 +12,18 @@
 #   · **默认不动** $DSH_HOME/.agent-presets/redteam/（用户可能就地改过预设）；
 #     要强制用包内预设覆盖它，加 FORCE_PRESET=1（插件首启自举读的就是这个变量）。
 set -u
-export DSH_HOME="${DSH_HOME:-/home/jz/.dsh}"
-export PATH="/usr/local/bin:/usr/bin:/bin:/home/jz/.local/bin:$PATH"
+export DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
+export PATH="/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin:$PATH"
+# dsh 可执行文件：优先 PATH 里的 dsh，其次是 npx 缓存里的那种形态。
+# **不写死绝对路径** —— 这个脚本是进仓库的，写死等于把本机用户名与 npx 缓存目录一起公开。
+DSH_BIN="${DSH_BIN:-$(command -v dsh 2>/dev/null || true)}"
+if [ -z "$DSH_BIN" ]; then
+  DSH_BIN="$(ls -1 "$HOME"/.npm/_npx/*/node_modules/.bin/dsh 2>/dev/null | head -1 || true)"
+fi
+if [ -z "$DSH_BIN" ]; then
+  echo "找不到 dsh 可执行文件：把它加进 PATH，或用 DSH_BIN=<路径> 指定" >&2
+  exit 1
+fi
 # 本机 key/开关（FOFA_KEY 等）：存在就带上，不存在不影响启动。权限应为 600。
 if [ -f "$DSH_HOME/.env" ]; then
   set -a
@@ -70,11 +80,11 @@ fi
   if [ "${FORCE_PRESET:-0}" = "1" ]; then
     # 用包内预设覆盖用户预设（会把 {{REDTEAM_SKILLS_DIR}} 重新替换成真实路径）
     REDTEAM_PRESET_REFRESH=1 setsid nohup \
-      /home/jz/.npm/_npx/1e7f6d9597241db0/node_modules/.bin/dsh --profile web \
+      "$DSH_BIN" --profile web \
       >> "$DSH_HOME/dsh-web.log" 2>&1 < /dev/null &
   else
     setsid nohup \
-      /home/jz/.npm/_npx/1e7f6d9597241db0/node_modules/.bin/dsh --profile web \
+      "$DSH_BIN" --profile web \
       >> "$DSH_HOME/dsh-web.log" 2>&1 < /dev/null &
   fi
   echo "[$(date '+%F %T')] 新 PID=$!"

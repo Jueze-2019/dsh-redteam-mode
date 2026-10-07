@@ -997,6 +997,69 @@ export function apply(ctx) {
     },
   })))
 
+  /* ── 证据截图 ──────────────────────────────────────────────────────────────
+     得分成果最有说服力的材料是"当时那张图"。工具面只做三件事：登记、查看、删除；
+     图片落盘在 <靶标目录>/shots，库里只存元数据（图片不进 SQLite，否则库没法拷）。
+     ⚠️ kind 必须如实填：现场截的图才写 screenshot；由记录生成的证据摘录卡写 card ——
+     报告与面板会按它标不同文案，把生成的卡当现场证据是这条链上最不能出的事。 */
+  ctx.tools.register(withStructuredErrors(defineTool({
+    name: 'redteam_shot_add',
+    description: '登记一张证据截图：把图片拷进靶标目录并关联到得分点/命中（面板展开得分点即可看图，报告里也会嵌入）。批量得分点（如终端权限）每个得分点最多展示 3 张代表图，不必逐台截图。',
+    parameters: {
+      engagement: { type: 'string' },
+      agent: AGENT_PARAM,
+      path: { type: 'string', description: '图片在本机的路径（相对靶标目录或绝对路径）；与 data_base64 二选一' },
+      data_base64: { type: 'string', description: '图片内容（base64，可带 data: 前缀）；截图工具没落盘时用这个' },
+      label: { type: 'string', description: '图片说明，例如「域控 WEB-SHDC1 atexec 回显 nt authority\\system」' },
+      kind: { type: 'string', description: 'screenshot（现场截图，默认）| card（由记录生成的证据摘录卡，报告里会标注）' },
+      point_code: { type: 'string', description: '关联的得分点 code，如 terminal-access / central-system' },
+      hit_id: { type: 'number', description: '关联到具体某条得分命中（score_hit id）；给了它这张图就只挂在那一条上' },
+      asset_id: { type: 'number' },
+      target: { type: 'string', description: '这张图对应的目标（IP / URL）' },
+      note: { type: 'string', description: '补充说明：这张图证明了什么' },
+      source_ref: { type: 'string', description: '原始来源：截图的落盘路径或 runs/ 下的证据文件' },
+      captured_at: { type: 'string', description: '截图时间（ISO），缺省用当前时间' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      const result = store.addShot(id, { ...args, engagement: undefined, agent: agentOf(args) })
+      return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
+    },
+  })))
+
+  ctx.tools.register(withStructuredErrors(defineTool({
+    name: 'redteam_shot_list',
+    description: '列出已登记的证据截图（含所属得分点、目标、类型、落盘文件）。',
+    parameters: {
+      engagement: { type: 'string' },
+      point_code: { type: 'string' },
+      hit_id: { type: 'number' },
+      asset_id: { type: 'number' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      return JSON.stringify({ ok: true, engagement: id, ...store.listShots(id, {
+        point_code: args.point_code, hit_id: args.hit_id, asset_id: args.asset_id,
+      }) }, null, 2)
+    },
+  })))
+
+  ctx.tools.register(withStructuredErrors(defineTool({
+    name: 'redteam_shot_delete',
+    description: '删除一张证据截图（连同磁盘文件）。',
+    parameters: {
+      engagement: { type: 'string' },
+      id: { type: 'number', required: true, description: 'shot id（redteam_shot_list 里返回的 id）' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const eng = resolveEngagement(store, exec, args.engagement)
+      return JSON.stringify({ ok: true, engagement: eng, ...store.deleteShot(eng, args.id) }, null, 2)
+    },
+  })))
+
   ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_credential_list',
     description: '列出已收集的凭据（含明文 secret_value），用于凭据复用与横向移动。',
@@ -1449,7 +1512,7 @@ export function apply(ctx) {
 
   ctx.tools.register(withStructuredErrors(defineTool({
     name: 'redteam_chain_add',
-    description: '记录一个攻击链步骤。**报告里「这一步怎么来的」完全靠这条记录**：账号密码怎么来的、冰蝎马怎么上的、隧道怎么搭的，都要在这里用 `tool`（实际命令原文）+ `detail`（为什么这么做、线索从哪来）+ `result`（实际回显/结果）写清楚。攻击链页面与报告按 seq 排序展示。',
+    description: '记录一个攻击链步骤。**报告的「复现步骤 / 动作记录」一节完全靠这条记录**：账号密码怎么来的、冰蝎马怎么上的、隧道怎么搭的，都要在这里用 `tool`（实际命令原文）+ `detail`（为什么这么做、线索从哪来）+ `result`（实际回显/结果）写清楚。攻击链页面与报告按 seq 排序展示。',
     parameters: {
       engagement: { type: 'string' },
       agent: AGENT_PARAM,
