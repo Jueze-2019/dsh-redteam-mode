@@ -119,5 +119,30 @@ ok(appended.length >= 2, `注入了样式标签（${appended.length} 个）`)
 for (const dispose of cleanups) { try { dispose() } catch { /* 忽略 */ } }
 ok(removed.length >= 2, `卸载时把样式标签移除了（${removed.length} 个）`)
 
+console.log('— 会话标题 → 靶标 反查（落盘绑定缺失时的兜底）')
+{
+  const list = [
+    { id: '示例集团-控股-股份有限公司', name: '示例集团（控股）股份有限公司' },
+    { id: '示例税务局', name: '示例税务局' },
+    { id: '某电力公司', name: '某电力公司' },
+    { id: '示例电力集团有限公司', name: '示例电力集团有限公司' },
+  ]
+  const byTitle = moduleExports.engagementByTitle
+  ok(typeof byTitle === 'function', '导出了 engagementByTitle（纯函数，可单测）')
+  ok(byTitle('示例税务局', list) === '示例税务局',
+    '标题就是单位名：直接命中')
+  ok(byTitle('示例集团(控股)股份有限公司', list) === '示例集团-控股-股份有限公司',
+    '括号/连字符差异不影响命中（全角半角、（）、- 都压掉）')
+  ok(byTitle('某电力公司', list) === '某电力公司',
+    '短名与长名同现时命中自己（不是"国家电力投资集团…"）')
+  ok(byTitle('-home-jz-~6587~6863-~897F~85CF-~56FD~5BB6~7A0E~52A1~603B~5C40~897F~85CF~81EA~6CBB~533A~7A0E~52A1~5C40--', list)
+    === '示例税务局',
+    '标题是转义后的路径（~6587 = 文 等）：解码后照样命中')
+  ok(byTitle('示例信息科技有限公司 红队演练', list) === null,
+    '名册里没有的单位：不硬凑（返回 null，交给下一级兜底）')
+  ok(byTitle('web', list) === null, '目录基名认不出单位：老实返回 null（不猜）')
+  ok(byTitle('', list) === null && byTitle(undefined, list) === null, '空标题不炸')
+}
+
 console.log(`\n通过 ${pass}/${pass + fail}`)
 process.exit(fail === 0 ? 0 : 1)

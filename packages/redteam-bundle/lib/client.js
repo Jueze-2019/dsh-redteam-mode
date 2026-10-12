@@ -15,6 +15,41 @@ window.__ModuleLoader__.load({
     const React = require('react')
     const h = React.createElement
 
+    /**
+     * 把"名字"压成可比较的形态：只留字母/数字/汉字，并解掉 DSH 的路径转义。
+     *
+     * 用于「会话标题 → 靶标」反查：标题是**工作目录名**，靶标名来自演练单位名，
+     * 两者经常只差括号/连字符/空格（`示例集团（控股）股份有限公司` vs
+     * `示例集团-控股-股份有限公司`），目录名还可能是转义形态（`~6587~6863` = 文档）。
+     * @param value - 会话标题或靶标名。
+     * @returns 压缩后的比较键。
+     */
+    const squashName = (value) => String(value || '')
+      .replace(/~([0-9a-fA-F]{4})/g, (m, hex) => String.fromCharCode(parseInt(hex, 16)))
+      .replace(/[^0-9a-zA-Z\u4e00-\u9fff]+/g, '')
+      .toLowerCase()
+
+    /**
+     * 会话标题里出现的靶标 id（不依赖绑定表的兜底）。
+     *
+     * 实测场景：升级前建的会话在落盘绑定表里没有记录，切过去时面板一路回落到
+     * "最后一次绑定"，看着像没跟随。标题反查能覆盖这类会话 —— 前提是标题确实
+     * 指向原始路径（能解码成中文）；只有目录基名时匹配不上，属于预期内的放弃。
+     * 命中多个时取**名字最长**的（避免"电力"这类短名抢走"某某电力股份有限公司"）。
+     * @param title - 会话标题（`displayTitle`）。
+     * @param list - 靶标名册（`[{ id, name }]`）。
+     * @returns 靶标 id，或 null。
+     */
+    const engagementByTitle = (title, list) => {
+      const hay = squashName(title)
+      if (hay.length < 3) return null
+      const hits = (list || [])
+        .map((x) => ({ x: x, key: squashName(x.name || x.id) }))
+        .filter((h) => h.key.length >= 3 && (hay.includes(h.key) || h.key.includes(hay)))
+        .sort((a, b) => b.key.length - a.key.length)
+      return hits.length ? hits[0].x.id : null
+    }
+
     /*
      * 布局接缝：AppFrame 是 display:grid（sidebar | 1fr | details），
      * shell.overlay 是它内部 position:absolute;inset:0 的浮动层，带稳定属性
@@ -649,6 +684,66 @@ window.__ModuleLoader__.load({
         return () => { subs.delete(f) }
       }, [])
       return ui
+    }
+
+    /* ── 当前会话：面板要跟着会话走 ──────────────────────────────────────
+       `shell.overlay` 是根作用域的槽位，拿不到会话；而 RedTeam 的靶标绑定是
+       **按根会话隔离**的（见 redteam-tools 的 bindingKeyOf）。唯一可靠的当前会话
+       来源是同一插件注册在 `conversation.session.header.utilities` 上的那个开关 ——
+       它是 session 作用域，props 里带 sessionId（见 DSH 的 SessionStandardProps）。
+       所以由那个组件把 id 写进来，面板订阅它。 */
+    let sessionId = null
+    let sessionTitle = null
+    const sessionSubs = new Set()
+    const setSessionId = (id, title) => {
+      const next = typeof id === 'string' && id.length > 0 ? id : null
+      const nextTitle = typeof title === 'string' && title.length > 0 ? title : null
+      const idChanged = next !== sessionId
+      const titleChanged = nextTitle !== sessionTitle
+      sessionId = next
+      sessionTitle = nextTitle
+      /* 标题也算"变了"：标题是「绑定表查不到时反查靶标」的唯一输入（见 applySessionBinding），
+         会话 id 没变但标题补上了（列表延迟加载就是这种）时，必须再跑一次跟随逻辑。
+         真机里这两件事几乎同时到；测试与慢网络下会分开到，漏掉通知就会一直显示错的靶标。 */
+      if (!idChanged && !titleChanged) return
+      for (const f of Array.from(sessionSubs)) f()
+    }
+    const useSession = () => {
+      const [, force] = React.useReducer((x) => x + 1, 0)
+      React.useEffect(() => {
+        const f = () => force()
+        sessionSubs.add(f)
+        return () => { sessionSubs.delete(f) }
+      }, [])
+      return { id: sessionId, title: sessionTitle }
+    }
+
+    /* 本设备记住的「上次用过的靶标」：host 侧绑定表答不出来时用它兜底
+       （典型场景：老会话是升级前建的，绑定表里没有它）。 */
+    const LAST_ENG_KEY = 'rt-last-engagement'
+    const lastEngagement = () => {
+      try { return window.localStorage.getItem(LAST_ENG_KEY) || null } catch (e) { return null }
+    }
+    const rememberEngagement = (id) => {
+      try { if (id) window.localStorage.setItem(LAST_ENG_KEY, id) } catch (e) { /* 隐私模式：不记也能用 */ }
+    }
+
+    /** 「跟随来源」标签：面板为什么显示这个靶标，一眼可辨（排查时全靠它）。 */
+    const FOLLOW_SOURCE = {
+      bound: '落盘绑定', title: '会话标题', last: '上次选择', default: '默认单位',
+    }
+
+    /* 当前会话信息（id + 标题）：会话头部的开关是 session 作用域，由它写进来。 */
+    const sessionIdOf = (props) => (props && typeof props.sessionId === 'string' && props.sessionId ? props.sessionId : null)
+    const sessionTitleOf = (props) => {
+      const useSessions = props && props.useSessions
+      if (typeof useSessions !== 'function') return null
+      try {
+        const st = useSessions((s) => s)
+        const row = st && st.byId && props.sessionId ? st.byId[props.sessionId] : null
+        const title = row && typeof row.displayTitle === 'string' && row.displayTitle ? row.displayTitle : null
+        return title && title !== props.sessionId ? title : null
+      } catch (e) { return null }
     }
 
     /* 知识库归类（与 core.js 的 POC_CATEGORIES 一致；面板按它分组） */
@@ -2358,6 +2453,8 @@ window.__ModuleLoader__.load({
 
     function KnowledgeTab(props) {
       const refreshKey = props.refreshKey || 0
+      /* 当前靶标（面板当前选中，一般是会话绑定的那个）：知识库默认按它筛 */
+      const curEng = props.engagement || ''
       const [data, setData] = React.useState(null)
       const [err, setErr] = React.useState(null)
       const [busy, setBusy] = React.useState(false)
@@ -2365,7 +2462,7 @@ window.__ModuleLoader__.load({
       const [q, setQ] = React.useState('')
       const [kind, setKind] = React.useState('')
       const [category, setCategory] = React.useState('')
-      const [engagement, setEngagement] = React.useState('')
+      const [engagement, setEngagement] = React.useState(curEng)
       const [assetTarget, setAssetTarget] = React.useState('')
       const [grouped, setGrouped] = React.useState(true)
       const [verifiedOnly, setVerifiedOnly] = React.useState(false)
@@ -2389,8 +2486,22 @@ window.__ModuleLoader__.load({
           setErr(null); setData(r)
         }, (e) => { setBusy(false); setErr(String((e && e.message) || e)) })
       }
-      /* 首次进入与刷新键变化时拉全量（检索是显式动作，避免边打字边打接口） */
-      React.useEffect(() => { query({ q: undefined, kind: undefined, category: undefined, engagement: undefined, asset_target: undefined, verified: undefined }) }, [refreshKey])
+      /* 首次进入与刷新键变化时拉数：有当前靶标就按它筛，没有才拉全量 */
+      const engRef = React.useRef(curEng)
+      React.useEffect(() => {
+        query(engRef.current
+          ? { q: undefined, kind: undefined, category: undefined, engagement: engRef.current, asset_target: undefined, verified: undefined }
+          : { q: undefined, kind: undefined, category: undefined, engagement: undefined, asset_target: undefined, verified: undefined })
+      }, [refreshKey])
+
+      /* 换了靶标（用户切会话 / 面板换单位）→ 知识库跟着换筛选目标。
+         只在靶标**真的变了**时动，否则刷新键一变就把用户手选的"全部来源靶标"冲掉。 */
+      React.useEffect(() => {
+        if (engRef.current === curEng) return
+        engRef.current = curEng
+        setEngagement(curEng)
+        query({ engagement: curEng || undefined })
+      }, [curEng])
 
       const open = (id) => {
         if (openId === id) { setOpenId(null); setDetail(null); return }
@@ -2480,6 +2591,14 @@ window.__ModuleLoader__.load({
             ? h('span', { className: 'rt-tag rt-tag-warn', title: '这些条目还没归类：智能体回填时用 redteam_poc_add 的 category 参数标一下' }, '未归类 ' + stats.uncategorized)
             : null,
           tpl.total ? h('span', { className: 'rt-tag rt-tag-passive' }, '本机模板 ' + tpl.total) : null,
+          /* 当前筛选来源：跟随会话时点明是哪个靶标，并给一键回到全库 */
+          engagement
+            ? h('span', {
+                className: 'rt-tag rt-tag-live',
+                title: '只看这个靶标攒下的武器（跟随当前会话）；点一下回到全库',
+                onClick: () => { setEngagement(''); query({ engagement: undefined }) },
+              }, '来源靶标 ' + engagement + ' ✕')
+            : h('span', { className: 'rt-tag rt-tag-passive', title: '当前显示全部靶标的知识库；面板跟随会话后会自动筛到对应单位' }, '全库共享'),
           h('div', { className: 'rt-spacer' }),
           h('button', { className: 'rt-btn' + (grouped ? ' rt-btn-primary' : ''), title: '按归类分组显示 / 平铺显示', onClick: () => setGrouped(!grouped) }, grouped ? '按归类分组' : '平铺显示'),
           h('button', { className: 'rt-btn', disabled: busy, onClick: () => query() }, busy ? '检索中…' : '刷新')),
@@ -2508,6 +2627,11 @@ window.__ModuleLoader__.load({
             POC_CAT_ORDER.map((k) => h('option', { key: k, value: k }, POC_CAT_NAME[k]))),
           h('select', { className: 'rt-input', style: { maxWidth: 120 }, value: engagement, onChange: (e) => { setEngagement(e.target.value); query({ engagement: e.target.value || undefined }) } },
             h('option', { value: '' }, '全部来源靶标'),
+            /* 当前选中的靶标可能一条 POC 都还没攒（byEngagement 里没有它）：
+               补一个选项，否则下拉会显示成空白，用户以为筛选坏了 */
+            (engagement && !(stats.byEngagement || []).some((e) => e.engagement === engagement)
+              ? [h('option', { key: '__cur', value: engagement }, engagement + '（0）')]
+              : []),
             (stats.byEngagement || []).map((e) => h('option', { key: e.engagement, value: e.engagement }, e.engagement + '（' + e.n + '）'))),
           h('input', {
             className: 'rt-input', style: { width: 120 }, placeholder: '发现资产筛选',
@@ -3577,11 +3701,28 @@ window.__ModuleLoader__.load({
 
     function Panel() {
       const st = useUI()
+      const session = useSession()
+      const sid = session.id
+      const sesTitle = session.title
       const [engagements, setEngagements] = React.useState([])
       const [eng, setEng] = React.useState(null)
+      const [boundEng, setBoundEng] = React.useState(null)
+      /* 面板现在是不是真在跟当前会话走。
+         不能只看 boundEng === eng：用户手选到"恰好就是本会话靶标"时那两个值本来就相等，
+         但语义是手选、不是跟随 —— 状态提示得说实话，否则"我明明手选了它还说我跟着会话"。 */
+      const [following, setFollowing] = React.useState(false)
+      /* 当前显示的靶标是怎么来的：落盘绑定 / 会话标题 / 上次选择 / 默认单位 ——
+         排查"为什么不跟随"时，第一眼看的就是它（面板底部会显示）。 */
+      const [followSource, setFollowSource] = React.useState(null)
       const [snapshot, setSnapshot] = React.useState(null)
       const [err, setErr] = React.useState(null)
       const [newName, setNewName] = React.useState('')
+      /* manualPickRef：用户手选过的**会话 id**（null = 当前这个会话没被手选过）。
+         手选之后，本会话内不再自动跟随（子智能体状态刷新很频繁，不能把选中项抢回去）；
+         但**切到别的会话就该重新跟随** —— 以前的布尔开关是全局的，一次手选会永久
+         压住后续所有会话的自动跟随（实测缺陷：切到别的会话面板不跟着换）。 */
+      const manualPickRef = React.useRef(null)
+      const manualHere = () => manualPickRef.current !== null && manualPickRef.current === sessionId
       /* 面板宽度按靶标之外**全局**记住：拖一次就够，不该每次刷新都回到 620px。
          夹在 [380,900] 之间并做兜底，避免 localStorage 里的脏值把面板挤没。 */
       const [width, setWidth] = React.useState(() => {
@@ -3618,14 +3759,82 @@ window.__ModuleLoader__.load({
         }, () => {})
       }
 
+      /* 自动选中某个靶标 = 跟随会话（不是用户手点）：同时清掉本会话的手选标记 */
+      const followTo = (id, list, source) => {
+          const known = (list || engagements).some((x) => x.id === id)
+        if (!known) return false
+        manualPickRef.current = null
+        setFollowing(true)
+        setFollowSource(source || 'bound')
+        setEng(id)
+        rememberEngagement(id)
+        loadSnapshot(id)
+        return true
+      }
+
+      /**
+       * 会话切换 → 面板跟着换靶标。
+       *
+       * 命中顺序：① 这个会话绑定的靶标（host 侧 sessions.json，智能体开靶标时写入）
+       * → ② 本设备上次用过的靶标（老会话没有绑定条目时的兜底）
+       * → ③ 什么都不动（还没靶标时，面板保持"还没有靶标"的引导态）。
+       *
+       * 只在**当前靶标是自动选中的**时候才改写：用户刚在下拉里手选了别的靶标，
+       * 不能被一次会话重渲染（子智能体状态刷新很频繁）抢回去。
+       */
+      const bindSeq = React.useRef(0)
+      const applySessionBinding = (id, list, title) => {
+        const known = list || engagements
+        if (!known.length) return
+        const seq = (bindSeq.current += 1)
+        /* 本次请求属于哪个会话：响应回来时用**闭包里的**这个值比对当前会话。
+           不能读模块级的 sessionId —— 在本机这种"响应几乎立刻回来"的时序里，
+           它可能已经被本轮渲染改掉，迟到的响应就能混过检查（界面会闪上一个会话的靶标）。 */
+        const forSession = id
+        /* 先问「这个会话绑的是哪个靶标」：答不出来（老会话 / 从没绑过）再谈兜底。
+           老 host 没有这个 op → 走 catch，等于"没绑定"，行为与升级前完全一致。 */
+        api({ op: 'sessionBinding', session: id }).then((r) => {
+          if (seq !== bindSeq.current) return         /* 期间又切了会话：这一轮作废 */
+          if (sessionId !== forSession) return        /* 迟到的响应：当前会话已经不是它了 */
+          const bound = r && r.ok !== false && typeof r.bound === 'string' && r.bound ? r.bound : null
+          setBoundEng(bound)
+          /* 本会话没绑靶标：不算"跟随"，状态提示要说实话 */
+          if (bound === null) setFollowing(false)
+          if (manualHere() && eng !== null) return   /* 本会话被手选过：这次不抢 */
+          if (bound !== null && followTo(bound, known, 'bound')) return
+          /* 落盘表里没有这个会话（升级前建的会话就是这种）→ 用会话标题（= 工作目录名
+             = 靶标单位名）反查。这条兜底不依赖任何记账，命中率最高。 */
+          const byTitle = engagementByTitle(title, known)
+          if (byTitle !== null && followTo(byTitle, known, 'title')) return
+          const last = lastEngagement()
+          if (last !== null && followTo(last, known, 'last')) return
+        }, () => { if (seq === bindSeq.current) setBoundEng(null) })
+      }
+
       React.useEffect(() => {
         api({ op: 'bootstrap' }).then((r) => {
           if (!r || r.ok === false) { setErr((r && r.error) || '无法连接资产库'); return }
-          setEngagements(r.engagements || [])
-          const id = r.current || (r.engagements && r.engagements[0] && r.engagements[0].id) || null
-          if (id) { setEng(id); loadSnapshot(id) }
+          const list = r.engagements || []
+          setEngagements(list)
+          const fallback = r.current || (list[0] && list[0].id) || null
+          if (fallback) {
+            manualPickRef.current = null
+            setFollowing(false)
+            setFollowSource('default')
+            setEng(fallback)
+            loadSnapshot(fallback)
+          }
+          /* 会话 id 比 bootstrap 先到：立刻按会话绑定纠偏；还没到就等下面那个 effect
+             （HeaderButton 把 id 写进来时它自然会跑）。 */
+          if (sessionId !== null) applySessionBinding(sessionId, list, sessionTitle)
         }, (e) => setErr(String((e && e.message) || e)))
       }, [])
+
+      /* 当前会话变化（切会话 / 子智能体状态刷新）→ 把面板对齐到该会话绑定的靶标 */
+      React.useEffect(() => {
+        if (sid === null || !engagements.length) return
+        applySessionBinding(sid, engagements, sesTitle)
+      }, [sid, sesTitle, engagements.length])
 
       const openEngagement = (nameArg) => {
         const name = String(nameArg || newName).trim()
@@ -3738,8 +3947,12 @@ window.__ModuleLoader__.load({
 
       let body
       if (err) body = h('div', { className: 'rt-err' }, err)
-      /* 知识库是全局的（跨靶标共享），没有靶标也要能看/能搜 */
-      else if (st.tab === 'knowledge') body = h(KnowledgeTab, { refreshKey: refreshKey })
+      /* 知识库是全局的（跨靶标共享），但**默认跟着会话的靶标筛**：
+         打 B 单位时打开知识库，第一眼就该是 B 单位攒下的武器，而不是 200 条混在一起。
+         筛掉了也能一键切回「全部来源靶标」，共享属性没变。
+         传的是**会话绑定的靶标**（boundEng）而不是面板当前显示的那个：用户手选
+         去看别的单位时，知识库仍应对齐"本会话在打的单位"这份语境。 */
+      else if (st.tab === 'knowledge') body = h(KnowledgeTab, { refreshKey: refreshKey, engagement: boundEng || eng || '' })
       else if (!eng) {
         body = h('div', { className: 'rt-pane' },
           h('div', { className: 'rt-card' },
@@ -3778,13 +3991,58 @@ window.__ModuleLoader__.load({
           h('div', { className: 'rt-title' }, h('span', { className: 'rt-dot' }),
             full ? 'RedTeam 全面浏览' : 'RedTeam 控制台',
             full ? h('span', { className: 'rt-tag', style: { marginLeft: 6 } }, '独立窗口') : null),
+          /* 「跟随会话」状态：一眼看清面板显示的是不是当前会话的靶标。
+             判定顺序 = 手选优先 → 落盘绑定 → 标题反查 → 未绑靶标：
+             · 手选过（黄，可点回本会话靶标）：本会话内不再自动跟随，如实说"未跟随"；
+             · 绑定命中（绿）：面板显示的正是本会话绑定的靶标；
+             · 标题反查（绿）：本会话没有绑定记录，靠会话标题（工作目录名）认出来的；
+             · 其余（灰）：既不跟随也没记录 —— 不假装已绑定。 */
+          sid === null
+            ? null
+            : (manualHere()
+                ? h('span', {
+                    className: 'rt-tag ' + (boundEng !== null ? 'rt-tag-warn' : 'rt-tag-passive'),
+                    title: boundEng !== null
+                      ? '你为这个会话手选过靶标，面板不再自动跟随；点它切回本会话绑定的「' + boundEng + '」'
+                      : '你为这个会话手选过靶标，面板不再自动跟随（本会话在服务端还没有绑定记录）',
+                    onClick: boundEng !== null
+                      ? () => {
+                          manualPickRef.current = null
+                          setFollowing(true)
+                          setFollowSource('bound')
+                          setEng(boundEng); rememberEngagement(boundEng); loadSnapshot(boundEng)
+                        }
+                      : undefined,
+                  }, boundEng !== null ? '未跟随：' + boundEng : '未跟随 · 手选')
+                : (boundEng !== null && boundEng === eng
+                    ? h('span', { className: 'rt-tag rt-tag-live', title: '面板正跟随当前会话绑定的靶标：切会话会自动切换' }, '跟随会话')
+                    : (following && followSource === 'title'
+                        ? h('span', {
+                            className: 'rt-tag rt-tag-live',
+                            title: '这个会话没有落盘绑定，按**会话标题**（工作目录名 = 单位名）反查到「' + eng + '」',
+                          }, '跟随会话 · 按标题')
+                        : h('span', {
+                            className: 'rt-tag rt-tag-passive',
+                            title: '当前会话还没绑定靶标：打开靶标或让智能体开工后，面板会自动切过来。',
+                          }, '本会话未绑靶标')))),
           h('select', {
             className: 'rt-input', style: { maxWidth: '170px' }, value: eng || '',
             onChange: (e) => {
-              setEng(e.target.value)
-              loadSnapshot(e.target.value)
+              const next = e.target.value
+              /* 用户手点 = 摆脱"跟随会话"：这个会话之后就以它为准，
+                 同时写回 host 绑定表（下次切回本会话仍是它） */
+              manualPickRef.current = sid || ''
+              setFollowing(false)
+              setFollowSource(null)
+              setBoundEng(next)
+              setEng(next)
+              rememberEngagement(next)
+              loadSnapshot(next)
+              if (sid !== null) {
+                api({ op: 'bindSessionEngagement', session: sid, engagement: next }).catch(() => {})
+              }
               /* 同步「当前靶标」：原生 skill 目录按它解析技能根 */
-              api({ op: 'activateEngagement', engagement: e.target.value }).catch(() => {})
+              api({ op: 'activateEngagement', engagement: next, session: sid || undefined }).catch(() => {})
             },
           }, engagements.map((x) => h('option', { key: x.id, value: x.id }, x.name))),
           h('div', { className: 'rt-spacer' }),
@@ -3817,7 +4075,12 @@ window.__ModuleLoader__.load({
           h('span', null, '被动/主动 ' + (stats.passiveSignals || 0) + '/' + (stats.activeSignals || 0)),
           h('div', { className: 'rt-spacer' }),
           full ? h('span', null, '按 Esc 或点右上角「退出全面浏览」回到带侧栏的界面') : null,
-          h('span', null, 'SQLite · ' + (snapshot && snapshot.engagement ? snapshot.engagement.name : ''))))
+          h('span', null, 'SQLite · ' + (snapshot && snapshot.engagement ? snapshot.engagement.name : '')),
+          sid === null
+            ? null
+            : h('span', { title: '当前会话 ' + sid + (sessionTitle ? '（' + sessionTitle + '）' : '')
+                + '；面板显示的靶标来自：' + (FOLLOW_SOURCE[followSource] || '未知') },
+                '会话 ' + sid.slice(0, 8) + (followSource ? ' · ' + (FOLLOW_SOURCE[followSource] || '') : ''))))
     }
 
     /* ---------------------------------------------------------- 入口按钮 */
@@ -3830,8 +4093,15 @@ window.__ModuleLoader__.load({
       }, h('span', { style: { fontSize: 14 } }, '⛨'), props.wide ? h('span', null, 'RedTeam') : null)
     }
 
-    function HeaderButton() {
+    function HeaderButton(props) {
       const st = useUI()
+      /* 这个槽位是 session 作用域：props.sessionId 就是当前会话 id（见 DSH 的
+         standardProps 目录），而面板在根作用域拿不到它 —— 在这里交给模块级状态。
+         放 effect 而不是渲染体：渲染期不产生副作用，晚一帧对面板没有影响。 */
+      const sessionId = sessionIdOf(props)
+      /* 会话标题 = 工作目录名 = 靶标单位名：绑定表里查不到时靠它反查（见 engagementByTitle） */
+      const title = sessionTitleOf(props)
+      React.useEffect(() => { setSessionId(sessionId, title) }, [sessionId, title])
       return h('button', {
         className: 'rt-hbtn' + (st.open ? ' on' : ''),
         title: 'RedTeam 控制台（常驻右侧栏）',
@@ -3897,6 +4167,9 @@ window.__ModuleLoader__.load({
 
     exports.apply = apply
     exports.inject = inject
+    /* 纯函数导出：单测直接验"文件名 / 会话标题 / 靶标名"的匹配规则（见 test/session-root.test.mjs） */
+    exports.squashName = squashName
+    exports.engagementByTitle = engagementByTitle
     return module.exports
   },
 })

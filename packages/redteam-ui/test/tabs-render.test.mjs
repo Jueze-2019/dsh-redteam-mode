@@ -139,10 +139,14 @@ function renderTree(el, texts) {
       renderTree(inst.render(), texts)
       return
     }
-    let inst = instances.get(type)
+    /* 实例键：槽位渲染函数每次返回的是新的匿名闭包（形如 () => h(Panel)），
+       直接拿函数引用做键会让每次渲染都新建实例 —— hooks 全部丢失，测试就成了空转。
+       所以带 __rtKey 标记的类型按标记取；其余仍按函数引用（与真实 React 一致）。 */
+    const key = type.__rtKey !== undefined ? type.__rtKey : type
+    let inst = instances.get(key)
     if (inst === undefined) {
       inst = { hooks: [], hookIndex: 0, dirty: false, effects: [], effectCleanups: [], host: [] }
-      instances.set(type, inst)
+      instances.set(key, inst)
     }
     inst.hookIndex = 0
     inst.effects = []
@@ -220,14 +224,35 @@ const mod = windowStub.__def.factory((name) => {
 ok(typeof mod.apply === 'function', 'client.js 工厂可执行并导出 apply')
 
 let panelRender = null
+/** 全部注册过的槽位渲染函数（面板 + 会话头部的开关都要拿到）。
+    每个都打上 __rtKey：渲染树里按它认实例，保证 hooks 跨渲染保留。 */
+const slotRenders = new Map()
+const markRender = (id, render) => {
+  /* 把 DSH 注入的标准 props（session 作用域里的 sessionId 等）透传给占用者：
+     真机里是框架做的（client-runner 的 standardProps 目录里就列着 `sessionId: SessionId`），
+     替身里得自己补 —— 否则"会话作用域的开关收不到 sessionId"，跟随逻辑根本测不到。 */
+  const marked = (props) => {
+    const el = render(props)
+    if (props === undefined || props === null || !el || el.__el !== true) return el
+    return Object.assign({}, el, { props: Object.assign({}, el.props, props) })
+  }
+  marked.__rtKey = 'slot:' + id
+  return marked
+}
 mod.apply({
   slots: {
     inject: (name, run) => run(),
-    register: (meta, render) => { if (meta.id === 'redteam-console') panelRender = render },
+    register: (meta, render) => {
+      const marked = markRender(meta.id, render)
+      if (meta.id === 'redteam-console') panelRender = marked
+      slotRenders.set(meta.id, marked)
+    },
   },
   effect: (f) => f(),
 })
 ok(typeof panelRender === 'function', '拿到 shell.overlay 的面板渲染函数')
+ok(typeof slotRenders.get('redteam-header-toggle') === 'function',
+  '拿到会话头部的 RedTeam 开关渲染函数（它的 props 带 sessionId）')
 
 /* ══════════════════════════════════════════════════════════════════════════
    ④ 预置响应
@@ -249,6 +274,10 @@ const VULN = {
   found_at: '2026-01-02T03:04:05Z', http_evidence: [], note: '',
 }
 const ENG = { id: ENGINE, name: ENGINE, scope: [], status: 'active', created_at: '2026-01-01T00:00:00Z' }
+/* 第二个靶标 + 会话绑定表：验证「切会话 → 面板跟着换靶标」（见文末那组断言） */
+const ENGINE_B = '另一个单位'
+const ENG_B = { id: ENGINE_B, name: ENGINE_B, scope: [], status: 'active', created_at: '2026-01-02T00:00:00Z' }
+const SESSION_BOUND = { 's-A': ENGINE, 's-B': ENGINE_B }
 
 function makeResponses(shape) {
   const broken = shape === 'error'
@@ -257,8 +286,20 @@ function makeResponses(shape) {
   const w = (v) => (broken ? ERR : v)
   const arr = (items) => (empty ? [] : items)
   return {
-    bootstrap: w({ ok: true, root: '/tmp/rt', engagements: [ENG], current: ENGINE }),
-    snapshot: w({ ok: true, engagement: ENG,
+    bootstrap: w({ ok: true, root: '/tmp/rt', engagements: [ENG, ENG_B], current: ENGINE }),
+    /* 面板每次换会话都问一次：这个会话绑的是哪个靶标 */
+    sessionBinding: (body) => w({
+      ok: true, session: body.session, root_session: body.session,
+      bound: SESSION_BOUND[body.session] || null,
+      name: SESSION_BOUND[body.session] || null, current: ENGINE,
+    }),
+    sessionBindings: (body) => w({
+      ok: true, session: body.session, root_session: body.session,
+      bound: SESSION_BOUND[body.session] || null, current: ENGINE, agents: SESSION_BOUND,
+    }),
+    bindSessionEngagement: (body) => w({ ok: true, session: body.session, bound: body.engagement }),
+    /* 快照要如实回显**请求里的**靶标：切会话跟随之后，面板显示的应该是新靶标 */
+    snapshot: (body) => w({ ok: true, engagement: body.engagement === ENGINE_B ? ENG_B : ENG,
       stats: { segments: 1, assets: 1, liveAssets: 1, openPorts: 1, fingerprints: 1, vulns: 1, passiveSignals: 0, activeSignals: 1 },
       tests: { untested: 0, testing: 1, tested: 0, blocked: 0, abandoned: 0, no_surface: 0 },
       segments: arr([{ cidr: '10.1.1.0/24', assets: 1, live: 1, org: '示例', scope: 'internal', ports: 1 }]) }),
@@ -346,12 +387,16 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
  *  断言就会莫名其妙地红在'页面正确'的地方。 */
 function resetInstances() { instances.clear() }
 
-async function renderAll(rounds = 6) {
+async function renderAll(rounds = 6, extras = []) {
   let out = []
   let hosts = []
   for (let i = 0; i < rounds; i += 1) {
     out = []
     hostSink = []
+    /* 附加元素（如会话头部的 RedTeam 开关）每一轮都跟着渲染：
+       真机里它常驻，props.sessionId 变了 → 它写模块级 sessionId → 面板订阅到。
+       必须和面板在同一轮渲染，否则它的 effect 会被下一轮 renderTree 清掉。 */
+    for (const el of extras) renderTree(el, out)
     renderTree(panelRender(), out)
     /* renderTree 内部往 hostSink 收集本次渲染的宿主元素 */
     hosts = hostSink.slice()
@@ -551,6 +596,18 @@ console.log('\n— 键盘可达性（回归护栏：不要再往页面里塞没�
     '所有伪按钮都处理了 Enter / Space 键（' + withKeys.length + '/' + fakeButtons.length + '）')
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   ⑥ 会话跟随断言
+   ══════════════════════════════════════════════════════════════════════════ */
+/** 面板底部「SQLite · <靶标名>」——最可靠的"当前显示的是哪个靶标"读数。 */
+const shownEngagement = (hosts) => {
+  const el = hosts.find((x) => {
+    const kids = x.props && x.props.children
+    return typeof kids === 'string' && kids.startsWith('SQLite · ')
+  })
+  return el === undefined ? null : String(el.props.children).replace('SQLite · ', '')
+}
+
 console.log('\n— 页签栏的 ARIA 语义')
 {
   const { hosts } = await switchTab('技能库')
@@ -563,6 +620,119 @@ console.log('\n— 页签栏的 ARIA 语义')
   ok(selected.length === 1 && selected[0].props.title !== undefined, '同一时刻只有一个页签是选中态')
   const dot = hosts.find((x) => String(x.props.className || '').includes('rt-tab-dot'))
   ok(dot === undefined || dot.props['aria-label'] !== undefined, '未读红点带文字替代（纯视觉信息不能只靠颜色）')
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   面板跟随会话：用户在左侧切会话，右侧 RedTeam 面板应显示**那个会话绑定的靶标**
+   （会话本身没绑过 → 保持/回落到"最后一次绑定的靶标"，而不是清空）。
+   当前会话 id 来自 session 作用域的 HeaderButton（props.sessionId），
+   所以这里用"重新渲染带新 sessionId 的开关"来模拟切会话。
+   ══════════════════════════════════════════════════════════════════════════ */
+console.log('\n— 面板跟随会话（切会话 → 换靶标）')
+{
+  resetInstances()
+  responses = makeResponses('data')
+  fetchCalls.length = 0
+  /* 清掉前面几组用例留下的「上次用过的靶标」：这组要验的是**会话绑定**这条路径，
+     不被本设备记忆的兜底值干扰（真机上这两个来源本来就该分开验）。 */
+  ls.clear()
+  /* 开关是 session 作用域槽位的占用者：DSH 会把 sessionId 当标准 props 传进来。
+     真机里它常驻在会话头部，所以这里也每轮跟着面板一起渲染。 */
+  const headerToggle = slotRenders.get('redteam-header-toggle')
+  const firstHosts = (await renderAll(6, [headerToggle({
+    sessionId: 's-A',
+    useSessions: (sel) => sel({ byId: { 's-A': { id: 's-A', displayTitle: 's-A', blank: false } } }),
+  })])).hosts
+  const headerHost = firstHosts.find((x) => typeof x.props.className === 'string'
+    && x.props.className.indexOf('rt-hbtn') !== -1)
+  ok(headerHost !== undefined, '会话头部的 RedTeam 开关拿到了（渲染函数能跑，带 sessionId）')
+
+  /** 切换当前会话：= 把常驻开关的 sessionId 换成新的，然后重渲染几轮。
+      真机里这个槽位还会拿到 useSessions（用它读会话标题，见标题兜底）。 */
+  let currentSession = 's-A'
+  let headerTitle = null
+  const headerEl = () => headerToggle({
+    sessionId: currentSession,
+    useSessions: (sel) => sel({ byId: { [currentSession]: { id: currentSession, displayTitle: headerTitle || currentSession, blank: false } } }),
+  })
+  const switchSession = async (sid) => {
+    currentSession = sid
+    let r = null
+    for (let i = 0; i < 3; i += 1) r = await renderAll(6, [headerEl()])
+    return r
+  }
+
+  /* 切到另一个会话再切回来：验证面板确实每次都去 host 问绑定 */
+  fetchCalls.length = 0
+  await switchSession('s-B')
+  await switchSession('s-A')
+  const names = (await renderAll()).hosts
+    .filter((x) => x.tag === 'option')
+    .map((x) => x.props.children)
+  ok(fetchCalls.filter((op) => op === 'sessionBinding').length > 0,
+    '切会话时向 host 问了「这个会话绑的是哪个靶标」')
+  ok(JSON.stringify(names).includes(ENGINE) && JSON.stringify(names).includes(ENGINE_B),
+    '靶标下拉里两个单位都在（下拉不再只剩一个）')
+
+  const rB = await switchSession('s-B')
+  ok(shownEngagement(rB.hosts) === ENGINE_B,
+    '切到会话 s-B → 面板跟着显示它绑定的「' + ENGINE_B + '」（实际：' + shownEngagement(rB.hosts) + '）')
+  ok(rB.texts.includes('跟随会话'),
+    '状态提示显示「跟随会话」（面板正跟着当前会话走）')
+
+  /* 用户手选别的靶标：这次选中期间不能被一次会话重渲染抢回去 */
+  const sel = rB.hosts.find((x) => x.tag === 'select' && x.props.value === ENGINE_B)
+  sel.handlers.onChange({ target: { value: ENGINE } })
+  const afterManual = await renderAll()
+  ok(shownEngagement(afterManual.hosts) === ENGINE,
+    '用户手选靶标后，会话重渲染不会把它抢回去')
+  ok(fetchCalls.includes('bindSessionEngagement'),
+    '手选会写回 host 绑定表（下次切回本会话仍是它）')
+  const warnEl = afterManual.hosts.find((x) => String(x.props.className || '').includes('rt-tag-warn')
+    && String(x.props.children || '').startsWith('未跟随'))
+  ok(warnEl !== undefined,
+    '状态提示变成「未跟随：<本会话的靶标>」（并给出点一下切回去）')
+
+  /* 没绑过靶标的会话：回落到"最后一次绑定的靶标"，不清空。
+     这里把标题设为空 —— 有标题时会走下面那条"标题反查"的更优先路径。 */
+  headerTitle = null
+  await renderAll(6, [headerEl()])
+  const rC = await switchSession('s-C')
+  ok(shownEngagement(rC.hosts) !== null,
+    '切到没绑过靶标的会话：面板仍显示最后一次绑定的靶标（不清空）')
+  const cTags = rC.hosts.filter((x) => String(x.props.className || '').includes('rt-tag'))
+    .map((x) => String(x.props.children))
+  ok(rC.texts.includes('本会话未绑靶标'),
+    '并如实提示「本会话未绑靶标」，不假装已绑定（实际标签：' + JSON.stringify(cTags) + '）')
+
+  /* 升级前建的会话：落盘绑定表里没有它 —— 用会话标题（= 工作目录名 = 单位名）兜底 */
+  const rT = await switchSession('s-NEW-TITLE')
+  ok(fetchCalls.includes('sessionBinding'),
+    '新会话也会去问一次绑定（问不到才走兜底）')
+  /* 标题通过标准 props 交给面板：这里模拟 DSH 把 useSessions 注入 session 作用域槽位。
+     先单独渲染一轮把标题传下去（真机里标题与 id 是同一帧到的，测试替身要分两步），
+     再切一次让面板按新标题重跑跟随。 */
+  headerTitle = ENGINE
+  await renderAll(6, [headerEl()])
+  const rT2 = await switchSession('s-NEW-TITLE')
+  ok(shownEngagement(rT2.hosts) === ENGINE,
+    '绑定表里没有这个会话时，用会话标题反查到「' + ENGINE + '」（实际：' + shownEngagement(rT2.hosts) + '）')
+  const foot = rT2.hosts.find((x) => typeof x.props.className === 'string' && x.props.className.indexOf('rt-foot') !== -1)
+  const footText = foot === undefined ? '' : JSON.stringify((foot.props.children || []).map((c) => (c && c.props ? String(c.props.children) : String(c))))
+  ok(footText.includes('会话标题'),
+    '底部如实标出「跟随来源：会话标题」，不冒充绑定（实际：' + footText.slice(0, 160) + '）')
+
+  /* 知识库页默认按当前会话的靶标筛 */
+  resetInstances()
+  await renderAll(6, [headerToggle({
+    sessionId: 's-A',
+    useSessions: (sel) => sel({ byId: { 's-A': { id: 's-A', displayTitle: 's-A', blank: false } } }),
+  })])
+  fetchCalls.length = 0
+  const kb = await switchTab('知识库')
+  ok(fetchCalls.some((op) => op === 'pocSearch'), '知识库发起了检索')
+  ok(kb.texts.includes('来源靶标 ' + ENGINE),
+    '知识库默认按会话绑定的靶标筛（页签顶部标出来源，可点回全库）')
 }
 console.log(`\n通过 ${pass}/${pass + fail}`)
 process.exit(fail === 0 ? 0 : 1)

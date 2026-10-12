@@ -767,7 +767,49 @@ export function dispatch(store, req = {}) {
     }
     if (op === 'activateEngagement') {
       const activated = store.setActiveEngagement(req.engagement)
+      /* 顺手把"这个会话在用哪个靶标"记下来：面板据此跟随会话切换。
+         没有 session 时只动全局指针（命令行调用就是这种情形）。 */
+      if (activated && typeof req.session === 'string' && req.session) {
+        store.setSessionBinding(req.session, req.engagement, req.name)
+      }
       return { ok: activated, current: store.activeEngagementId() }
+    }
+    /* 会话 → 靶标：面板在会话切换时问"这个会话该看哪个靶标"。
+       答不出来（没绑过）返回 bound: null，由面板回落到"最后一次绑定的靶标"。
+       `req.resolveRoot` 是宿主注入的"沿 parentSession 走到根会话"的解析器：
+       绑定表只记根会话键，用户在界面里点开的是哪个会话（含子智能体的会话）都能对上。 */
+    if (op === 'sessionBinding' || op === 'sessionBindings') {
+      const rawSession = typeof req.session === 'string' ? req.session : ''
+      let root = rawSession
+      if (rawSession && typeof req.resolveRoot === 'function') {
+        try {
+          const resolved = req.resolveRoot(rawSession)
+          if (typeof resolved === 'string' && resolved) root = resolved
+        } catch { /* 解析器坏掉时按原样处理：最差也只是回落到"最后绑定的靶标" */ }
+      }
+      const bound = root ? store.sessionBinding(root) : undefined
+      const meta = bound ? store.listEngagements().find((e) => e.id === bound) : undefined
+      const base = {
+        ok: true,
+        session: rawSession || null,
+        root_session: root || null,
+        bound: bound || null,
+        name: bound ? ((meta && meta.name) || bound) : null,
+        current: store.activeEngagementId() || null,
+      }
+      if (op === 'sessionBinding') return base
+      const agents = store.sessionBindings()
+      const existing = new Set(store.listEngagements().map((e) => e.id))
+      const cleaned = {}
+      for (const [key, value] of Object.entries(agents)) if (existing.has(value.engagement)) cleaned[key] = value
+      return Object.assign(base, { agents: cleaned })
+    }
+    /* 界面手动切靶标 → 写入本会话绑定（面板刷新后仍跟着这个会话走） */
+    if (op === 'bindSessionEngagement') {
+      const id = typeof req.session === 'string' ? req.session : ''
+      if (!id) return { ok: false, error: 'session required' }
+      const written = store.setSessionBinding(id, req.engagement, req.name)
+      return { ok: written, session: id, bound: written ? req.engagement : null }
     }
     /* 知识库是全局的（跨靶标共享），所以这几个 op 不需要 engagement */
     if (op === 'pocSearch') {
@@ -935,6 +977,75 @@ export class RedteamStore {
     if (!id || !existsSync(this.dbPathOf(id))) return false
     mkdirSync(this.root, { recursive: true })
     writeFileSync(this.currentPath(), String(id), 'utf8')
+    return true
+  }
+
+  /* ---------- 会话 → 靶标绑定 ---------- */
+
+  /** 绑定表落盘路径：与 `current` 同级，纯文本 JSON，方便人工核对与备份。 */
+  sessionBindingsPath() { return join(this.root, 'sessions.json') }
+
+  /**
+   * 读出全部会话绑定（容错：文件缺失 / 半截 JSON 都当作"还没绑过"）。
+   *
+   * 形状 `{ v: 1, agents: { <根会话 id>: { engagement, name, at } } }`。
+   * 只记**根会话**：子智能体沿父链继承，面板拿到子会话 id 时由调用方解析到根。
+   */
+  sessionBindings() {
+    let parsed = null
+    try { parsed = JSON.parse(readFileSync(this.sessionBindingsPath(), 'utf8')) } catch { parsed = null }
+    const agents = parsed && parsed.agents && typeof parsed.agents === 'object' ? parsed.agents : {}
+    const out = {}
+    for (const [key, value] of Object.entries(agents)) {
+      if (!value || typeof value !== 'object') continue
+      const engagement = typeof value.engagement === 'string' ? value.engagement : ''
+      if (!engagement) continue
+      out[key] = {
+        engagement,
+        name: typeof value.name === 'string' && value.name ? value.name : engagement,
+        at: typeof value.at === 'string' ? value.at : null,
+      }
+    }
+    return out
+  }
+
+  /** 某个会话绑定的靶标 id（没绑过返回 undefined）。 */
+  sessionBinding(sessionId) {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) return undefined
+    const entry = this.sessionBindings()[sessionId]
+    return entry ? entry.engagement : undefined
+  }
+
+  /**
+   * 写入一条会话绑定。
+   *
+   * 写入方有两处，都只写**根会话 id**：
+   *   · 智能体工具（redteam_engagement_open / redteam_session_bind 解析出靶标时）；
+   *   · 控制台（用户在下拉里手动切靶标时）。
+   * 这样"用户在界面切到哪个靶标"与"智能体写哪个靶标库"看的是同一张表，
+   * 面板在会话切换时才有据可依（见 UI 的 sessionEngagement 跟随逻辑）。
+   *
+   * @param sessionId - 根会话 id。
+   * @param engagement - 靶标 id（目录名）。
+   * @param name - 展示名（可空，回落到 id）。
+   * @returns 是否写入成功（靶标不存在时不写，避免留下指向已删靶标的绑定）。
+   */
+  setSessionBinding(sessionId, engagement, name) {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) return false
+    if (typeof engagement !== 'string' || engagement.length === 0) return false
+    if (!existsSync(this.dbPathOf(engagement))) return false
+    const all = this.sessionBindings()
+    all[sessionId] = { engagement, name: typeof name === 'string' && name ? name : engagement, at: nowIso() }
+    /* 只留最近 200 条（按时间倒序），并顺手清掉指向已删靶标的绑定：
+       绑定表是"界面跟着会话走"的索引，不是审计记录，留着死条目只会误导面板。 */
+    const pruned = {}
+    for (const [key, value] of Object.entries(all).sort((a, b) => String(b[1].at).localeCompare(String(a[1].at))).slice(0, 200)) {
+      if (existsSync(this.dbPathOf(value.engagement))) pruned[key] = value
+    }
+    mkdirSync(this.root, { recursive: true })
+    try {
+      writeFileSync(this.sessionBindingsPath(), JSON.stringify({ v: 1, agents: pruned }, null, 2), 'utf8')
+    } catch { return false }
     return true
   }
 
