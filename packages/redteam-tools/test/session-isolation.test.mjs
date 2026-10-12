@@ -11,12 +11,13 @@
  *      缺步骤/缺命令的标 incomplete 并列 gaps。
  *   ④ **知识库归类**：category / 来源靶标 / 发现资产 / 建立时间都落库，统计按归类聚合。
  *   ⑤ **并发闸门**：没有智能体在跑时能占位，占满上限后被拒绝。
+ *   ⑥ **落盘绑定**：绑定同时写 `sessions.json`（键 = 根会话），控制台面板据此"跟随会话"。
  */
 import { register } from 'node:module'
 register(new URL('data:text/javascript,export function resolve(s,c,n){if(s==="@deepseek-ai/dsh-tools")return{shortCircuit:true,url:"data:text/javascript,export const defineTool=(t)=>t"};return n(s,c)}'), import.meta.url)
 const { apply } = await import('../lib/index.js')
-const { RedteamStore, POC_CATEGORIES } = await import('../../redteam-store/lib/core.js')
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+const { RedteamStore, POC_CATEGORIES, dispatch } = await import('../../redteam-store/lib/core.js')
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -82,6 +83,47 @@ ok(strangerErr !== null && /尚未绑定靶标|已被另一个会话占用/.test
   '未绑定的会话不会被静默塞进别人的靶标（明确报错并要求显式绑定）')
 const bound = await call('redteam_session_bind', { engagement: '乙公司' }, stranger)
 ok(bound.ok === true && bound.engagement.id === opened2.engagement.id, 'session_bind：可以把已有靶标绑到本会话')
+
+/* ── 落盘绑定：面板「跟随会话」读的那份账 ─────────────────────────────
+   工具侧 bindings 是进程内 Map，浏览器面板读不到；所以每次绑定都要写进
+   $DSH_HOME/redteam/sessions.json（键 = **根会话 id**），面板在新会话被选中时
+   才能切到它绑定的靶标。 */
+console.log('— 落盘绑定（面板跟随会话的数据源）')
+const bindFile = store.sessionBindingsPath()
+ok(existsSync(bindFile), 'open/bind 之后写出 sessions.json')
+const onDisk = JSON.parse(readFileSync(bindFile, 'utf8'))
+ok(onDisk.agents.main1 && onDisk.agents.main1.engagement === opened1.engagement.id,
+  '落盘键是根会话：main1 → 甲公司')
+ok(onDisk.agents.recon1 === undefined, '子智能体不单独落盘（沿父链继承，只记根会话）')
+ok(store.sessionBinding('main1') === opened1.engagement.id, 'sessionBinding(根会话) 读出绑定靶标')
+ok(store.sessionBinding('main3') === opened2.engagement.id, 'session_bind 也会落盘（main3 → 乙公司）')
+/* 面板的读法：dispatch 的 sessionBinding op（HTTP 桥接走同一条路径） */
+const viewChild = dispatch(store, { op: 'sessionBinding', session: 'recon1' })
+ok(viewChild.bound === null,
+  '子会话 id 问绑定（没给解析器）：返回 null，面板回落到"最后绑定的靶标"')
+/* 宿主会注入 resolveRoot（沿 parentSession 走到根）：子智能体会话也能对上父会话的靶标 */
+const viewChildRoot = dispatch(store, {
+  op: 'sessionBinding', session: 'recon1',
+  resolveRoot: (sid) => (sid === 'recon1' ? 'main1' : sid),
+})
+ok(viewChildRoot.bound === opened1.engagement.id && viewChildRoot.root_session === 'main1',
+  '子会话经 resolveRoot 解析到根会话：读到父会话的靶标（用户点开子智能体也对得上）')
+const viewRoot = dispatch(store, { op: 'sessionBinding', session: 'main1' })
+ok(viewRoot.bound === opened1.engagement.id && viewRoot.name === '甲公司',
+  'sessionBinding op：返回绑定靶标 id 与展示名')
+/* 指向已删靶标的绑定要被清掉：留着只会让面板切到一个打不开的库 */
+const doomed = store.openEngagement('待删靶标', [], { bindCurrent: false })
+store.setSessionBinding('ghost', doomed.id, '待删靶标')
+ok(store.sessionBinding('ghost') === doomed.id, '指向存在靶标的绑定可读出')
+rmSync(store.dirOf(doomed.id), { recursive: true, force: true })
+store.setSessionBinding('main1', opened1.engagement.id, '甲公司')
+ok(store.sessionBinding('ghost') === undefined, '靶标目录删掉后，指向它的绑定在下一次写入时被清理')
+ok(store.sessionBinding('main1') === opened1.engagement.id, '清理不影响其它会话的绑定')
+/* 手动切靶标（面板下拉）走 bindSessionEngagement：只改本会话绑定 */
+const switched = dispatch(store, { op: 'bindSessionEngagement', session: 'main1', engagement: opened2.engagement.id, name: '乙公司' })
+ok(switched.ok === true && store.sessionBinding('main1') === opened2.engagement.id,
+  'bindSessionEngagement：界面手选靶标只改本会话绑定')
+store.setSessionBinding('main1', opened1.engagement.id, '甲公司')
 
 console.log('— 资产发现时间')
 await call('redteam_asset_add', {

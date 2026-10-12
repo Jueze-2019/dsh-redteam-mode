@@ -697,6 +697,51 @@ async function handleUpdateOp(ctx, request) {
 }
 
 /**
+ * 沿 `parentSession` 走到根会话 id（最多 64 层，防环）。
+ *
+ * 面板「跟随会话」需要它：host 侧绑定表只记**根会话**键，但用户在界面里点开的
+ * 可能是子智能体的会话（比如派出去的「内网渗透」子智能体）—— 不解析到根，
+ * 就会误判成"这个会话没绑靶标"，面板回落到"最后绑定的靶标"，切回主会话才对上。
+ *
+ * @param ctx - 插件上下文（读 sessions 注册表；不可用时返回原 id）。
+ * @param sessionId - 任意会话 id。
+ * @returns 根会话 id（解析不了就原样返回）。
+ */
+export function resolveRootSessionId(ctx, sessionId) {
+  const id = String(sessionId || '')
+  if (!id) return id
+  let sessions = null
+  try { sessions = ctx.get('sessions') } catch { sessions = null }
+  if (sessions === undefined || sessions === null || typeof sessions.list !== 'function') return id
+  let list = []
+  try { list = sessions.list() } catch { return id }
+  const byId = new Map()
+  for (const s of Array.isArray(list) ? list : []) {
+    const sid = s && s.id !== undefined ? String(s.id) : ''
+    if (sid) byId.set(sid, s)
+  }
+  let cur = id
+  let lastKnown = id
+  for (let guard = 0; guard < 64; guard += 1) {
+    const node = byId.get(cur)
+    if (node === undefined) {
+      /* 走到注册表里不存在的会话（父会话被回收 / 冷的嵌套会话）就停在**最后一个认得的**上，
+         别把父 id 当根返回 —— 那个 id 多半没被任何会话绑过，面板会白白丢掉绑定。 */
+      return byId.has(id) ? lastKnown : cur
+    }
+    lastKnown = cur
+    const header = node.header
+    const parent = header && header.parentSession !== undefined && header.parentSession !== null
+      ? String(header.parentSession)
+      : ''
+    if (!parent) return cur
+    if (parent === cur) return cur
+    cur = parent
+  }
+  return cur
+}
+
+/**
  * @param ctx - 插件上下文（已保证 redteam / webServer / skills / agentPresets 可用）。
  */
 export function apply(ctx) {
@@ -746,8 +791,14 @@ export function apply(ctx) {
           return
         }
         const skillResult = await handleSkillOp(ctx, request)
+        /* 会话类 op 需要"沿 parentSession 走到根会话"：绑定表只记根会话键，
+           而界面里点开的可能是子智能体的会话（见 resolveRootSessionId）。
+           其他 op 不受影响 —— 只是多带一个函数，dispatch 只在 sessionBinding* 用它。 */
+        const withRoot = typeof request.session === 'string' && request.session
+          ? Object.assign({}, request, { resolveRoot: (sid) => resolveRootSessionId(ctx, sid) })
+          : request
         /* dispatchAsync 只多处理 probeSessions（连通性探测需要真实发起连接） */
-        sendJson(res, 200, skillResult === undefined ? await dispatchAsync(store, request) : skillResult)
+        sendJson(res, 200, skillResult === undefined ? await dispatchAsync(store, withRoot) : skillResult)
       } catch (error) {
         sendJson(res, 400, { ok: false, error: error && error.message ? error.message : String(error) })
       }

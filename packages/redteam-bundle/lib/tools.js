@@ -134,19 +134,25 @@ function resolveEngagement(store, exec, explicit) {
         )
       }
       for (const key of keys) bindings.set(key, active)
+      recordSessionBinding(store, exec, active)
       return active
     }
   }
   const list = store.listEngagements()
   if (list.length === 1) {
     for (const key of keys) bindings.set(key, list[0].id)
+    recordSessionBinding(store, exec, list[0].id, list[0].name)
     return list[0].id
   }
   throw new Error('尚未绑定靶标：请先调用 redteam_engagement_open 传入靶标单位名称')
 }
 
-/** 当前会话的绑定关系（redteam_session_info 与面板展示用）。 */
-function bindingViewOf(exec) {
+/**
+ * 当前会话的绑定关系（redteam_session_info 与面板展示用）。
+ * @param exec - 工具执行上下文（取会话链）。
+ * @param store - 资产库实例（读面板「跟随会话」用的落盘绑定）。
+ */
+function bindingViewOf(exec, store) {
   const info = sessionInfoOf(exec)
   const { rootId, chain } = bindingKeyOf(exec)
   return {
@@ -156,6 +162,10 @@ function bindingViewOf(exec) {
     session_chain: chain,
     is_subagent: info.parentId !== undefined,
     bound_engagement: rootId !== undefined ? (bindings.get(rootId) ?? null) : null,
+    /* 面板「跟随会话」读的落盘绑定：写的是根会话键，重启后仍在 */
+    panel_follow_engagement: rootId !== undefined && store && typeof store.sessionBinding === 'function'
+      ? (store.sessionBinding(rootId) ?? null)
+      : null,
   }
 }
 
@@ -203,6 +213,26 @@ const ROLE_HINT = '角色 code：' + ROLE_ORDER.map((r) => '`' + r + '`（' + RO
 function bindKeysOf(exec) {
   const { rootId, sessionId, chain } = bindingKeyOf(exec)
   return Array.from(new Set([rootId, sessionId, ...chain].filter(Boolean)))
+}
+
+/**
+ * 把「根会话 → 靶标」记进 store 的持久绑定表（`$DSH_HOME/redteam/sessions.json`）。
+ *
+ * 工具侧的 {@link bindings} 是进程内 Map，只服务模型调用；控制台面板在**浏览器**里，
+ * 拿不到它。于是"用户切到某个会话，面板就该显示那个会话的靶标"需要一份双方都读得到的账：
+ * 这里写，面板经 `sessionBinding` op 读（见 UI 的半侧跟随逻辑）。
+ *
+ * 只写**根会话**键：子智能体沿父链继承，面板解析到根会话后落到同一个键上。
+ * 写失败不影响工具本身的返回值（面板大不了回落到"最后一次绑定的靶标"）。
+ */
+function recordSessionBinding(store, exec, engagementId, name) {
+  if (typeof store.setSessionBinding !== 'function') return
+  const { rootId, sessionId } = bindingKeyOf(exec)
+  const key = rootId || sessionId
+  if (key === undefined || key === null || key === '') return
+  try {
+    store.setSessionBinding(String(key), String(engagementId), name === undefined ? undefined : String(name))
+  } catch { /* 面板回落，不阻断智能体 */ }
 }
 
 /** 实时并发占用：读 subagents 注册表里"真正在跑"的直接子会话数。 */
@@ -336,7 +366,8 @@ export function apply(ctx) {
       const engagement = store.openEngagement(args.target, args.scope, { bindCurrent: false })
       const keys = bindKeysOf(exec)
       for (const key of keys) bindings.set(key, engagement.id)
-      const view = bindingViewOf(exec)
+      recordSessionBinding(store, exec, engagement.id, engagement.name)
+      const view = bindingViewOf(exec, store)
       return JSON.stringify({
         ok: true,
         engagement,
@@ -373,9 +404,10 @@ export function apply(ctx) {
       }
       const keys = bindKeysOf(exec)
       for (const key of keys) bindings.set(key, hit.id)
+      recordSessionBinding(store, exec, hit.id, hit.name)
       return JSON.stringify({
         ok: true, engagement: { id: hit.id, name: hit.name },
-        session: bindingViewOf(exec),
+        session: bindingViewOf(exec, store),
         note: '本会话已绑定到「' + hit.name + '」；后续工具与报告都只作用于它。',
       }, null, 2)
     },
@@ -387,12 +419,13 @@ export function apply(ctx) {
     parameters: {},
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
     async execute(_args, exec) {
-      const view = bindingViewOf(exec)
+      const view = bindingViewOf(exec, store)
       const changed = view.bound_engagement !== null ? store.stats(view.bound_engagement) : null
       return JSON.stringify({
         ok: true, session: view, stats: changed,
         bindings_now: Array.from(bindings, ([k, v]) => ({ session: k, engagement: v })),
-        note: '绑定是进程内状态：dsh 重启后各会话需要重新绑定一次（redteam_engagement_open / redteam_session_bind）。',
+        note: '绑定是进程内状态：dsh 重启后各会话需要重新绑定一次（redteam_engagement_open / redteam_session_bind）。'
+          + '面板的"跟随会话"读的是落盘绑定表，重启后仍能对上（见 redteam_engagement_open 的写入）。',
       }, null, 2)
     },
   })))
