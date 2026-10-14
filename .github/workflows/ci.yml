@@ -1,0 +1,43 @@
+name: CI
+
+# 每次推 main / 开 PR 都跑：构建自检 + 全量回归 + 敏感内容闸门。
+#
+# 为什么要有它：`.githooks/pre-commit` 只在**本机启用过钩子**的仓库里生效
+# （`git config core.hooksPath .githooks`），换机器、走网页提交、或别人 fork 都没有这层。
+# CI 是服务端的同一道口径：同一个脚本（scripts/check-no-confidential.mjs），
+# 所以"本地过得了、CI 过不了"这种事不会发生。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 零依赖项目：不需要 npm install，只用 Node 内置模块（node:sqlite 需要 ≥ 22.13）
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 记录运行时版本
+        run: |
+          echo "node: $(node --version)"
+
+      - name: 构建产物与源码一致
+        run: node packages/redteam-bundle/tools/build.mjs --check
+
+      # 口径与规则见 scripts/check-no-confidential.mjs 与 README「数据与隐私」
+      - name: 敏感内容闸门（仓库外内容不得入库）
+        run: |
+          node scripts/check-no-confidential.mjs --selftest
+          node scripts/check-no-confidential.mjs
+
+      - name: 全量回归测试
+        run: node packages/redteam-bundle/tools/test-all.mjs

@@ -140,6 +140,19 @@ if (text.includes('{{REDTEAM_SKILLS_DIR}}')) {
 console.log(`   预设：${presetFile}`)
 console.log(`   技能目录：${result.skillsDir}`)
 
+/* ③.5 启用提交前闸门（敏感内容不得入库）—— 只配本仓库的 hooksPath，
+   不动用户全局 git 配置；已经配过就是幂等的。 */
+try {
+  const hookDir = join(repo, '.githooks')
+  if (existsSync(join(hookDir, 'pre-commit'))) {
+    const current = execFileSync('git', ['config', '--get', 'core.hooksPath'], { cwd: repo, encoding: 'utf8' }).trim()
+    if (current !== '.githooks') {
+      execFileSync('git', ['config', 'core.hooksPath', '.githooks'], { cwd: repo, stdio: 'pipe' })
+      console.log('— ③.5 已启用提交前闸门：core.hooksPath = .githooks（拦演练战绩/战果数字/内网段/凭据）')
+    }
+  }
+} catch { /* 不是 git 仓库、或没装 git：不影响部署 */ }
+
 /* ④ 提示重启 */
 console.log('\n✓ 部署完成。host 侧改动需要重启 dsh web 才生效：')
 console.log('  node scripts/deploy-local.mjs --restart        # 自动重启（会中断当前会话）')
