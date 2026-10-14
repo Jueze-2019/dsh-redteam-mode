@@ -101,6 +101,36 @@ done
 
 ---
 
+## 数据与隐私（硬约束）
+
+本仓库是**公开**的，推送即发布、无法撤回。下列内容**一律不得入库** ——
+`docs/`、`README`、提交说明、Issue/PR 正文、Release 说明都算：
+
+| 不入库 | 说明 | 该放哪 |
+| --- | --- | --- |
+| **演练战绩 / 战果统计** | 打了几家单位、发现多少资产 / 漏洞 / 凭据、几次得分命中、累计分值 | 仓库外的留档文件（如 `~/redteam-战绩.md`） |
+| **逐单位成果明细** | 某个单位多少资产 / 端口 / 漏洞 / 内网段、是否打进内网、内网突破类型 | 同上。**"行业-编号"式脱敏也不行**：脱敏只挡"是谁"，挡不住"打成什么样" |
+| **内网段清单** | 一批真实私网 C 段（单个段举例可以，成清单不行） | 同上 |
+| **凭据真值** | 口令、密钥、哈希、Cookie、`secret_value` / `pass_key` 的实际值 | 只留在本机 `$DSH_HOME/redteam/engagements/*/assets.db` |
+
+这条约束**有机检、不是靠自觉**（2026-10-12 真实事故：战绩统计曾被写进仓库根 `README` 与 `docs/`，
+只能靠改写 git 历史清除）：
+
+```bash
+node scripts/check-no-confidential.mjs --selftest   # 证明规则有效（12 拦 / 5 放）
+node scripts/check-no-confidential.mjs --all        # 自查工作区（含未跟踪文件）
+git config core.hooksPath .githooks                 # 启用提交前闸门（scripts/deploy-local.mjs 会自动配）
+```
+
+- **提交前闸门**：`.githooks/pre-commit` 扫暂存区，命中即拦（`git commit --no-verify` 可越过，但先确认是误报）。
+- **回归测试**：`packages/redteam-bundle/test/no-confidential.test.mjs` —— 跑规则自检 + 全仓扫描 +
+  确认钩子确实接在提交路径上（防"规则还在、闸门没接"）。
+- 确实需要在本仓库讨论这类内容时用**占位符写法**：`单位：<靶标单位>　规模：<N> 家　内网段：<私网 C 段>`。
+
+演练数据本身只写在本机 `$DSH_HOME/redteam/`，无遥测、无上报、无云端同步。
+
+---
+
 ## 合规
 
 面向**授权范围内**的安全评估：攻防演练、红蓝对抗、企业自检、教学研究。

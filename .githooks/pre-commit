@@ -1,0 +1,31 @@
+#!/usr/bin/env sh
+# 提交前闸门：暂存区里出现演练战绩 / 战果规模 / 内网段清单 / 凭据真值就直接拦下。
+#
+# 为什么用 .githooks 而不是 .git/hooks：本目录**随仓库版本化**，clone 后一条命令即可启用：
+#   git config core.hooksPath .githooks
+# （scripts/deploy-local.mjs 也会自动配好；CI 里不依赖钩子，而是直接跑同一个脚本。）
+#
+# 规则与背景见 scripts/check-no-confidential.mjs 与 README「数据与隐私」。
+# 紧急情况（确认内容不含敏感信息但被误拦）：git commit --no-verify
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+if [ ! -f scripts/check-no-confidential.mjs ]; then
+  echo "（跳过敏感内容闸门：找不到 scripts/check-no-confidential.mjs）" >&2
+  exit 0
+fi
+
+# 没有 node 就不拦（极简环境）：不因为工具缺失把提交卡死
+if ! command -v node >/dev/null 2>&1; then
+  echo "（跳过敏感内容闸门：本机没有 node）" >&2
+  exit 0
+fi
+
+if ! node scripts/check-no-confidential.mjs --staged; then
+  echo ""
+  echo "提交已被拦下：上面列出的内容属于『不入库』范围（演练战绩 / 战果规模 / 内网段 / 凭据）。"
+  echo "把这类内容放到仓库外留档，或改成占位符写法（见上面提示）；确认误报时用 git commit --no-verify。"
+  exit 1
+fi
