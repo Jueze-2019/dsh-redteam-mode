@@ -56,8 +56,19 @@ ok(existsSync(join(repo, '.githooks', 'pre-commit')), '.githooks/pre-commit 存�
 {
   const mode = statSync(join(repo, '.githooks', 'pre-commit')).mode
   ok((mode & 0o111) !== 0, 'pre-commit 可执行')
-  const cfg = run('git', ['config', '--get', 'core.hooksPath'])
-  ok(cfg.out.trim() === '.githooks', 'core.hooksPath 指向 .githooks（本机已启用：' + cfg.out.trim() + '）')
+  /* `core.hooksPath` 是**每台机器的本地配置**，不会随仓库分发：
+     CI 的全新 checkout 上必然没配，所以那里只验"钩子文件本身可用"。
+     本机（开发机）则要求真的启用了 —— 否则规则写了也没人执行。 */
+  const inCI = process.env.CI === 'true' || process.env.CI === '1' || process.env.GITHUB_ACTIONS === 'true'
+  const cfg = run('git', ['config', '--get', 'core.hooksPath']).out.trim()
+  if (inCI) {
+    console.log(`  · CI 环境（${cfg || '未配置'}）：core.hooksPath 是本地配置，此处不要求已启用；服务端口径由本 workflow 的闸门步骤保证`)
+  } else {
+    ok(cfg === '.githooks', 'core.hooksPath 指向 .githooks（本机已启用：' + (cfg || '未配置') + '）')
+    if (cfg !== '.githooks') {
+      console.log('    修法：git config core.hooksPath .githooks（scripts/deploy-local.mjs 也会自动配）')
+    }
+  }
 }
 
 console.log(`\n通过 ${pass}/${pass + fail}`)
