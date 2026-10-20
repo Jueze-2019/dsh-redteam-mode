@@ -100,19 +100,49 @@ ok(/^\s*name: '@deepseek-ai\/dsh-agent-preset'$/m.test(decl), '挂的是 @deepse
 ok(/^\s*id: redteam$/m.test(decl), '预设 id = redteam（会话日志与恢复按它查）')
 ok(/^\s*name: "红队模式"$/m.test(decl), '显示名 = 红队模式（与 preset/preset.yml 同源）')
 ok(/^\s*order: \d+$/m.test(decl), '给了 order（模式列表里的位置）')
+ok(/^\s*- id: preset-redteam-worker$/m.test(decl), '执行角色声明行 loader id = preset-redteam-worker')
+ok(/^\s*id: redteam-worker$/m.test(decl), '执行角色预设 id = redteam-worker')
+ok(/^\s*name: "红队执行角色"$/m.test(decl), '执行角色显示名（与 preset/worker.preset.yml 同源）')
+ok(/^\s*order: 90$/m.test(decl), '执行角色排在模式列表末尾')
 ok(!decl.includes('{{REDTEAM_SKILLS_DIR}}'), '声明行里没有未替换的占位符（留着会让整个预设激活失败）')
+ok(!decl.includes('{{cwd}}'), '声明行里没有当前 DSH 不支持的 {{cwd}} 变量（会把红队模式直接卡成“处理失败”）')
+ok((decl.match(/sampleOverCapGlobResults: false/g) || []).length >= 7,
+  '主预设 + 执行角色 + 5 个角色变体都带 tool-fs-search 的必填 sampleOverCapGlobResults（缺了会 mount 失败）')
 ok(/redteamMode/.test(decl) && /skills/.test(decl), '技能目录运行时解析（redteamMode 服务，包搬到哪都对）')
 ok(/dshHomePath\('skills'\)/.test(decl), '技能根顺序：$DSH_HOME/skills 排在包内目录前面')
 ok(/name: '@deepseek-ai\/dsh-workflow-ptc'/.test(decl) && !/name: '@deepseek-ai\/dsh-workflow-worker-thread'/.test(decl),
   'workflow 行用随基座分发的 @deepseek-ai/dsh-workflow-ptc（worker-thread 已下线）')
 const declRows = [...decl.matchAll(/^ {10}- id: (\S+)$/gm)].map((m) => m[1])
-ok(declRows.length >= 15, `带上了完整插件列表（${declRows.length} 个顶层预设行）`)
+ok(declRows.length >= 25, `带上了两份预设的完整插件列表（${declRows.length} 个顶层预设行）`)
 for (const wanted of ['persona', 'redteam-tools', 'skill-filesystem', 'delegation', 'tool-web']) {
   ok(declRows.includes(wanted), `关键顶层行在：${wanted}`)
 }
 /* 委派行嵌在 `delegation` 组里（缩进更深），单独确认没有被平铺/丢掉 */
 ok(/^\s+- id: tool-subagent$/m.test(decl) && /maxDepth: 1/.test(decl),
   '组内的 tool-subagent 行与其 maxDepth=1 硬约束随声明行一起带过来')
+ok(/agentPreset: redteam-worker/.test(decl), 'tool-subagent 用 agentPreset 指向执行角色预设')
+ok(/allowedAgentPresets:/.test(decl) && ['recon','assess','vuln-scan','exploit','internal'].every((r) => decl.includes('redteam-worker-' + r)),
+  '主预设列出 5 个按角色裁剪的执行预设（recon/assess/vuln-scan/exploit/internal）')
+for (const r of ['recon','assess','vuln-scan','exploit','internal']) {
+  ok(decl.includes('- id: preset-redteam-worker-' + r) && new RegExp('profile: ' + r).test(decl),
+    '角色预设声明存在并带 profile=' + r)
+  ok(existsSync(join(root, 'presets/redteam/worker-' + r + '.cordis.yml')),
+    '角色预设文件随包：worker-' + r + '.cordis.yml')
+}
+
+/* 执行角色预设（redteam-worker）必须真的没有委派工具：它是子智能体"连看都看不到"的
+   唯一保证。DSH 0.2.1 删除了 toolFilter，这一条取代了旧的 toolFilter.deny 断言。 */
+const workerDeclAt = decl.indexOf('- id: preset-redteam-worker')
+ok(workerDeclAt > 0, '找得到 preset-redteam-worker 声明行')
+const workerDecl = workerDeclAt > 0 ? decl.slice(workerDeclAt) : ''
+ok(workerDeclAt > 0 && !/name: '@deepseek-ai\/dsh-tool-subagent'/.test(workerDecl),
+  '执行角色预设不挂任何 dsh-tool-subagent 行（subagent / fork / codex / claude-code 都没有）')
+ok(workerDeclAt > 0 && !/name: '@deepseek-ai\/dsh-tool-workflow'/.test(workerDecl)
+  && !/name: '@deepseek-ai\/dsh-tool-ralph'/.test(workerDecl),
+  '执行角色预设不挂 workflow / ralph')
+ok(workerDeclAt > 0 && /includeDefaultRoots: false/.test(workerDecl) && /dshHomePath\('skills'\)/.test(workerDecl),
+  '执行角色预设的技能根与主预设同源（$DSH_HOME/skills + 包内 skills）')
+ok(!/^\s+toolFilter:/m.test(decl), '声明行里没有 toolFilter 配置键（0.2.1 的 apply() 会直接抛错）')
 
 console.log('— 预设')
 const preset = readFileSync(join(root, 'presets/redteam/agent.cordis.yml'), 'utf8')
@@ -131,31 +161,39 @@ ok(/assess/.test(preset) && /资产梳理/.test(preset), '人设写明六个角�
 ok(/gogo-intranet/.test(preset) && /fscan-intranet/.test(preset),
   '人设写明内网信息收集要用 gogo/fscan 技能（不要把 nmap 那套带进内网）')
 ok(!preset.includes('/home/'), '预设里没有本机绝对路径')
+ok(!/^\s+toolFilter:/m.test(preset), '主预设不再写 toolFilter（0.2.1 的 apply() 会直接抛错）')
+ok(/agentPreset: redteam-worker/.test(preset), '主预设用 agentPreset 把子会话交给 redteam-worker')
 
-console.log('— 子智能体委派的硬约束（toolFilter / maxDepth）')
+/* 执行角色的源码预设：只挂执行侧工具，委派工具一个都没有。 */
+const workerSource = readFileSync(join(root, '..', '..', 'preset', 'worker.cordis.yml'), 'utf8')
+ok(/红队（RedTeam）作战的\*\*执行角色\*\*智能体/.test(workerSource), '执行角色人设在')
+ok(/角色系统提示词/.test(workerSource) && /严格按那段角色职责执行/.test(workerSource), '执行角色人设要求按 redteam_role_prompt 的职责执行')
+ok(/叶子节点/.test(workerSource), '执行角色人设写明自己是叶子节点')
+for (const wanted of ['persona', 'redteam-tools', 'skill-filesystem', 'tool-skill', 'tool-bash', 'tool-fs', 'tool-web']) {
+  ok(new RegExp('^- id: ' + wanted + '$', 'm').test(workerSource), `执行角色预设包含：${wanted}`)
+}
+ok(!/^- id: delegation$/m.test(workerSource), '执行角色预设没有 delegation 组')
+ok(!/^- id: tool-subagent$/m.test(workerSource), '执行角色预设没有 subagent 工具行')
+ok(!/name: '@deepseek-ai\/dsh-tool-subagent'/.test(workerSource), '执行角色预设不引用 dsh-tool-subagent')
+ok(!/name: '@deepseek-ai\/dsh-tool-workflow'/.test(workerSource) && !/name: '@deepseek-ai\/dsh-tool-ralph'/.test(workerSource),
+  '执行角色预设不引用 workflow / ralph')
+ok(!workerSource.includes('{{REDTEAM_SKILLS_DIR}}'), '执行角色源预设不含落地占位符（由 build 注入）')
+ok(!/^\s+customSkillDirs:/m.test(workerSource), '执行角色源预设不含技能目录配置（由 build 注入）')
+ok(!workerSource.includes('/home/'), '执行角色预设里没有本机绝对路径')
+
+console.log('— 子智能体委派的硬约束（agentPreset / maxDepth）')
 {
-  /* 背景：v0.8.0 想用 toolFilter.deny 把委派工具从子会话里摘掉，deny 列表里写了 `subagent`——
-     但 `subagent` 是**这一行自己注册的 scoped 工具**，不在全局工具库里，tools.restrict()
-     校验时抛 `names unknown global tool "subagent"`，结果是**每一次委派都失败**（0.8.1 修）。
-     这里锁住那条教训：deny 里只能出现全局工具名。 */
-  const GLOBAL_DELEGATION_TOOLS = ['subagent_fork', 'workflow', 'ralph']
+  /* DSH 0.2.1 起 tool-subagent 移除了 persona / toolFilter（写在配置里 apply() 直接抛错）。
+     现在子会话的人设与工具集由独立的 redteam-worker 预设提供；maxDepth: 1 仍作二道保险。 */
   const subagentRow = /- id: tool-subagent\n([\s\S]*?)(?=\n    - id: )/.exec(preset)
   ok(subagentRow !== null, '找得到 tool-subagent 行')
   if (subagentRow !== null) {
     const row = subagentRow[1]
     const depth = /maxDepth: (\d+)/.exec(row)
     ok(depth !== null && Number(depth[1]) === 1, 'maxDepth = 1（子智能体不得再往下派发）')
-
-    const denyBlock = /toolFilter:\n\s+deny:\n((?:\s+- [\w-]+\n?)+)/.exec(row)
-    ok(denyBlock !== null, 'tool-subagent 行配了 toolFilter.deny')
-    if (denyBlock !== null) {
-      const names = denyBlock[1].split('\n').map((l) => l.replace(/^\s+- /, '').trim()).filter(Boolean)
-      ok(names.length > 0, `deny 列表非空（${names.join(', ')}）`)
-      ok(!names.includes('subagent'),
-        'deny 里没有 `subagent`（它是行内 scoped 工具，写进 deny 会让整个委派挂掉）')
-      const unknown = names.filter((n) => !GLOBAL_DELEGATION_TOOLS.includes(n))
-      ok(unknown.length === 0, `deny 里全是全局工具名（未知项：${unknown.join(', ') || '无'}）`)
-    }
+    ok(/agentPreset: redteam-worker/.test(row), '子会话选用 redteam-worker 预设（人设 + 执行侧工具集）')
+    ok(!/^\s+toolFilter:/m.test(row), '不再写 toolFilter（0.2.1 会直接抛错）')
+    ok(!/^\s+persona:/m.test(row), '不再写 persona（0.2.1 会直接抛错）')
   }
 }
 

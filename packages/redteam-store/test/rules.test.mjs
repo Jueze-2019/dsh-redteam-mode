@@ -386,11 +386,16 @@ try {
   ok(report.stages.every((s) => s.ordinal === realOrder.indexOf(s.code) + 1),
     '报告阶段编号保留真实位置（不因过滤空阶段而重排）：'
     + report.stages.map((s) => s.ordinal + ':' + s.code).join(' '))
-  for (const s of report.stages) {
-    const circled = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'][s.ordinal - 1]
-    ok(report.markdown.includes('## ' + circled + ' ' + s.name),
-      `报告 markdown 的阶段标题用真实序号（${circled} ${s.name}）`)
-  }
+  /* 四段式报告固定按「互联网 → 边界 → 内网 → 靶标」排；
+     report.stages 的 ordinal 仍是完整链表里的真实位置（上面已断言）。 */
+  const sectionOrder = ['### 2.1 互联网资产权限', '### 2.2 边界突破', '### 2.3 内网资产权限', '### 2.4 靶标权限']
+  ok(sectionOrder.every((h, i) => report.markdown.includes(h)
+      && (i === 0 || report.markdown.indexOf(sectionOrder[i - 1]) < report.markdown.indexOf(h))),
+    '报告四段按「互联网 → 边界 → 内网 → 靶标」排序')
+  ok(report.markdown.includes('## 一、靶标单位资产证明')
+    && report.markdown.includes('## 三、账号密码凭据权限汇总表')
+    && report.markdown.includes('## 四、得分点复现'),
+    '报告包含资产证明 / 凭据汇总 / 得分点复现三节')
 
   console.log('— 攻击链步骤带分（point_code + self_created + 服务封顶）')
   const stepSelf = store.addChainStep(id, { stage: 'vuln', title: '注册账号进后台', point_code: 'web-app', evidence: '自己注册 ztest20 并授权为管理员', self_created: true })

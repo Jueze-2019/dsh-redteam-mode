@@ -106,23 +106,31 @@ const tools = read('redteam-tools/lib/index.js')
   .replace("from '../../redteam-store/lib/skill-fixes.js'", "from './skill-fixes.js'")
 write('lib/tools.js', tools)
 
-/* 5) 预设：同一份源码生成**两个**产物。
+/* 5) 预设：源码是仓库根的 `preset/agent.cordis.yml`（指挥者）与
+      `preset/worker.cordis.yml`（执行角色）。生成两个产物：
        a) `presets/redteam/agent.cordis.yml` —— 老式「目录预设」，只有 DSH < 0.1.7
           的 `$DSH_HOME/.agent-presets/` 扫描机制会读它，留着给老版本用户。
-       b) `cordis.patch.yml` 生成区里的 `preset-redteam` 声明行 —— DSH 0.1.7-alpha.1
-          起 agent preset **只认 `@deepseek-ai/dsh-agent-preset` 声明行**（注册表既不
-          扫目录也不接受预设路径），由它把「红队模式」注册进新会话的模式列表。
+       b) `cordis.patch.yml` 生成区里的 `preset-redteam` / `preset-redteam-worker`
+          七条声明行（主预设 + 执行角色 + 5 个角色变体）—— DSH 0.1.7-alpha.1 起 agent preset **只认
+          `@deepseek-ai/dsh-agent-preset` 声明行**（注册表既不扫目录也不接受预设路径）。
+          DSH 0.2.1 起 `tool-subagent` 移除了 persona/toolFilter：执行角色的人设与
+          工具集必须由 `preset-redteam-worker` 提供，再由主预设的
+          `tool-subagent.agentPreset: redteam-worker` 选中。
           不单开补丁文件的原因见 cordis.patch.yml 里的说明（数组形式旧版会崩）。
    工具行都改成本包子路径；skill-filesystem 行注入技能目录。 */
 /* 预设：工具行改成本包子路径；skill-filesystem 行注入包内技能目录占位符。
    占位符由这里注入（而不是写在源码预设里），这样 redteam-sync-repo 从线上
    覆盖仓库预设时不会把 build 弄坏。 */
 const SKILL_ROW = "- id: skill-filesystem\n  name: '@deepseek-ai/dsh-skill-filesystem'"
-const presetSource = read('../preset/agent.cordis.yml')
-if (!presetSource.includes(SKILL_ROW)) throw new Error('预设里找不到 skill-filesystem 行')
-const preset = presetSource
-  .replace('  name: dsh-redteam-tools', '  name: dsh-redteam-mode/tools')
-  .replace(SKILL_ROW, SKILL_ROW + `
+const SKILLS_LINE = '      - {{REDTEAM_SKILLS_DIR}}'
+
+/** 读一份源预设，把工具行改成本包子路径，并注入技能目录配置。 */
+function renderPreset(rel) {
+  const source = read(rel)
+  if (!source.includes(SKILL_ROW)) throw new Error(rel + ' 里找不到 skill-filesystem 行')
+  const rendered = source
+    .replace('  name: dsh-redteam-tools', '  name: dsh-redteam-mode/tools')
+    .replace(SKILL_ROW, SKILL_ROW + `
   # 红队技能随包分发：__REDTEAM_SKILLS_DIR__ 由插件首次启动时替换成包内 skills/ 的绝对路径。
   # 技能根**顺序即优先级**（同名技能取先出现的那份）：$DSH_HOME/skills 必须排在包内目录前面，
   # 否则用户在自己那份里配好的 VPS 地址 / 密钥会被随包模板（里面是 \`<你的VPS_IP>\` 这类占位符）盖住，
@@ -135,9 +143,45 @@ const preset = presetSource
     customSkillDirs:
       - !!js dshHomePath('skills')
       - {{REDTEAM_SKILLS_DIR}}`)
-if (!preset.includes('{{REDTEAM_SKILLS_DIR}}')) throw new Error('技能目录占位符注入失败')
+  if (!rendered.includes('{{REDTEAM_SKILLS_DIR}}')) throw new Error(rel + ' 技能目录占位符注入失败')
+  return rendered
+}
+
+const preset = renderPreset('../preset/agent.cordis.yml')
+const workerPreset = renderPreset('../preset/worker.cordis.yml')
+
+/* 5 个按角色裁剪工具的执行预设：同一份 worker 模板，只改 persona 标题与
+   redteam-tools 的 config.profile。工具裁剪在插件里按排除集实现；profile 没被
+   宿主传进来时回退 all，所以即使这里配置失效也只是“多看见工具”，不会少工具。 */
+const ROLE_PROFILES = [
+  { profile: 'recon', title: '信息收集' },
+  { profile: 'assess', title: '资产梳理' },
+  { profile: 'vuln-scan', title: '漏洞发现' },
+  { profile: 'exploit', title: '漏洞利用' },
+  { profile: 'internal', title: '内网渗透' },
+]
+const workerMeta = read('../preset/worker.preset.yml')
+function renderWorkerVariant(role) {
+  let text = workerPreset
+  text = text.replace('  name: dsh-redteam-mode/tools', '  name: dsh-redteam-mode/tools\n  config:\n    profile: ' + role.profile)
+  text = text.replace('你是红队（RedTeam）作战的**执行角色**智能体',
+    '你是红队（RedTeam）作战的**' + role.title + '执行角色**智能体')
+  return text
+}
+function workerVariantMeta(role) {
+  return workerMeta
+    .replace(/^name:.*$/m, 'name: 红队执行角色 · ' + role.title)
+    .replace(/^description:.*$/m, 'description: 红队主会话派活时自动选用的' + role.title + '执行预设（按角色裁剪工具），请不要手动选择。')
+}
+const workerVariants = ROLE_PROFILES.map((role) => ({ ...role, text: renderWorkerVariant(role) }))
+for (const role of workerVariants) {
+  /* 目录预设是给 DSH <0.1.7 的旧安装路径看的；角色变体没有 installPreset 替换占位符，
+     写文件时直接落到 $DSH_HOME/skills（包内技能根由声明行负责）。 */
+  write('presets/redteam/worker-' + role.profile + '.cordis.yml',
+    role.text.replace('      - {{REDTEAM_SKILLS_DIR}}\n', ''))
+}
 write('presets/redteam/agent.cordis.yml', preset)
-const presetMeta = readFileSync(join(packagesDir, '../preset/preset.yml'), 'utf8')
+const presetMeta = read('../preset/preset.yml')
 const presetMetaPath = join(pkgRoot, 'presets/redteam/preset.yml')
 if (CHECK) {
   let current
@@ -158,26 +202,52 @@ if (CHECK) {
      两者都拿不到时宁可让 skill-filesystem 配置校验报错（预设激活失败、模式列表里
      带诊断），也不要写死一个会静默失效的绝对路径 —— v0.9.0 的事故就是这么来的。 */
 const SKILLS_EXPR = "ctx.get('redteamMode')?.paths?.skills ?? process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('dsh-redteam-mode/package.json')), 'skills')"
-const declaredPlugins = preset.replace('      - {{REDTEAM_SKILLS_DIR}}', '      - !!js ' + SKILLS_EXPR)
-if (declaredPlugins === preset) throw new Error('声明行里技能目录占位符替换失败')
-const metaName = /^name:[ \t]*(.*)$/m.exec(presetMeta)
-const metaDescription = /^description:[ \t]*(.*)$/m.exec(presetMeta)
-if (metaName === null || metaDescription === null) throw new Error('preset/preset.yml 缺少 name 或 description')
+
+/** 生成一条 `@deepseek-ai/dsh-agent-preset` 声明行。 */
+function declarePreset({ entryId, id, metaRel, metaText, order, plugins }) {
+  const meta = metaText !== undefined ? metaText : read(metaRel)
+  const metaName = /^name:[ \t]*(.*)$/m.exec(meta)
+  const metaDescription = /^description:[ \t]*(.*)$/m.exec(meta)
+  if (metaName === null || metaDescription === null) throw new Error((metaRel || entryId) + ' 缺少 name 或 description')
+  const declaredPlugins = plugins.replace(SKILLS_LINE, '      - !!js ' + SKILLS_EXPR)
+  if (declaredPlugins === plugins) throw new Error(entryId + ' 声明行里技能目录占位符替换失败')
+  return `- insert:
+    - id: ${entryId}
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: ${id}
+        name: ${JSON.stringify(metaName[1].trim())}
+        description: ${JSON.stringify(metaDescription[1].trim())}
+        order: ${order}
+        plugins:
+${declaredPlugins.split('\n').map((line) => (line.trim() === '' ? '' : '          ' + line)).join('\n')}
+`
+}
+
 /* 生成区从起始标记整段替换：标记之前的内容（迁移补丁 + 三个挂载行）是手写的，
    这里原样保留，所以 patches 文件平时仍然可以手工编辑。 */
 const DECL_START = '# >>> preset-redteam declaration'
 const DECL_END = '# <<< preset-redteam declaration <<<'
-const declBody = `- insert:
-    - id: preset-redteam
-      name: '@deepseek-ai/dsh-agent-preset'
-      config:
-        id: redteam
-        name: ${JSON.stringify(metaName[1].trim())}
-        description: ${JSON.stringify(metaDescription[1].trim())}
-        order: 10
-        plugins:
-${declaredPlugins.split('\n').map((line) => (line.trim() === '' ? '' : '          ' + line)).join('\n')}
-`
+const declBody = declarePreset({
+  entryId: 'preset-redteam',
+  id: 'redteam',
+  metaRel: '../preset/preset.yml',
+  order: 10,
+  plugins: preset,
+}) + declarePreset({
+  entryId: 'preset-redteam-worker',
+  id: 'redteam-worker',
+  metaRel: '../preset/worker.preset.yml',
+  order: 90,
+  plugins: workerPreset,
+}) + workerVariants.map((role, i) => declarePreset({
+  entryId: 'preset-redteam-worker-' + role.profile,
+  id: 'redteam-worker-' + role.profile,
+  metaRel: '../preset/worker.preset.yml',
+  metaText: workerVariantMeta(role),
+  order: 91 + i,
+  plugins: role.text,
+})).join('')
 const patchPath = join(pkgRoot, 'cordis.patch.yml')
 const patchText = readFileSync(patchPath, 'utf8')
 const startAt = patchText.indexOf(DECL_START)
@@ -276,8 +346,13 @@ if (!existsSync(join(pkgRoot, 'presets/redteam/agent.cordis.yml'))) {
   console.error('✗ 预设未生成（目录预设给 DSH < 0.1.7，声明行写在 cordis.patch.yml 里）')
   process.exit(1)
 }
-if (!readFileSync(join(pkgRoot, 'cordis.patch.yml'), 'utf8').includes('id: preset-redteam')) {
+const patchGenerated = readFileSync(join(pkgRoot, 'cordis.patch.yml'), 'utf8')
+if (!patchGenerated.includes('id: preset-redteam')) {
   console.error('✗ cordis.patch.yml 里没有生成出 preset-redteam 声明行')
+  process.exit(1)
+}
+if (!patchGenerated.includes('id: preset-redteam-worker')) {
+  console.error('✗ cordis.patch.yml 里没有生成出 preset-redteam-worker 声明行（执行角色预设）')
   process.exit(1)
 }
 if (CHECK) {
@@ -286,7 +361,7 @@ if (CHECK) {
     for (const d of drift) console.error('   ' + d)
     process.exit(1)
   }
-  console.log(`✓ 生成物与源码同步（lib/ ${generated.length} 个文件、预设 2 个、cordis.patch.yml 声明行、技能 ${skills} 个）`)
+  console.log(`✓ 生成物与源码同步（lib/ ${generated.length} 个文件、预设 7 份、cordis.patch.yml 七条声明行、技能 ${skills} 个）`)
   process.exit(0)
 }
-console.log(`✓ dsh-redteam-mode 已生成：lib/ ${generated.length} 个文件（含 core 与报告拆出的模块）、预设 2 个 + cordis.patch.yml 声明行、技能 ${skills} 个、安装脚本 ${setupCopied ? '1 个' : '缺失'}`)
+console.log(`✓ dsh-redteam-mode 已生成：lib/ ${generated.length} 个文件（含 core 与报告拆出的模块）、预设 7 份（指挥者 + 执行角色 + 5 个角色变体）+ cordis.patch.yml 七条声明行、技能 ${skills} 个、安装脚本 ${setupCopied ? '1 个' : '缺失'}`)

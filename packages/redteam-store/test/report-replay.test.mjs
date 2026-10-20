@@ -66,6 +66,14 @@ try {
   store.addScoreHit(id, { code: 'db-credential', points: 50, asset_id: int.id, target: '10.20.30.40:3306', evidence: 'MySQL root 登录成功' })
   store.addScoreHit(id, { code: 'terminal-access', points: 10, asset_id: ext.id, target: 'pc-001', evidence: '控下办公 PC' })
 
+  /* 攻击文件：报告复现必须给出可落到文件的相对路径，而不是只说"工具跑过" */
+  const attackFile = store.addAttackFile(id, {
+    target: 'oa.example.com:8080', name: 'shell.jsp', kind: 'exp',
+    description: '文件上传验证脚本', evidence: '回显 uid=33(www-data)', content: '<% out.print("ok"); %>',
+    asset_id: ext.id, vuln_id: vuln.id,
+  })
+  ok(attackFile.path.includes('/attack-files/'), '攻击文件落到 attack-files/<目标>/ 下')
+
   const rep = store.scoreReport(id)
   const byCode = new Map(rep.items.map((x) => [x.code, x]))
 
@@ -80,6 +88,12 @@ try {
   ok(shell.replay_http === REQ, 'Yakit 报文 = 抓包原文（未被截断/改写）')
   ok(shell.replay_source === 'linked', '标注为 linked（显式关联的真实证据）')
   ok(shell.replay_http_synthesized === false, '真实抓包不算"合成"')
+  ok(shell.attack_files.length === 1 && shell.attack_files[0].path.startsWith('attack-files/'),
+    '报告条目带攻击文件相对路径：' + JSON.stringify((shell.attack_files || []).map((x) => x.path)))
+  ok(rep.markdown.includes('攻击文件（复现路径）') && rep.markdown.includes(attackFile.path.split('/attack-files/')[1]),
+    '下载的 Markdown 也带攻击文件路径')
+  ok(rep.markdown.includes('完整动作记录') && rep.markdown.includes('原始请求（'),
+    '下载的 Markdown 含完整步骤与全部原始请求（不是只有最短复现入口）')
   const mdHttpBlocks = (rep.markdown.match(/```http/g) || []).length
   ok(mdHttpBlocks >= 1, 'markdown 里有可复制的 http 代码块（' + mdHttpBlocks + ' 个）')
   ok(rep.markdown.includes('POST /admin/upload HTTP/1.1'), 'markdown 里是完整报文首行')
@@ -87,7 +101,7 @@ try {
 
   console.log('\n— 简洁：响应体截断并标注长度，不把整段响应堆进报告')
   ok(!rep.markdown.includes('x'.repeat(1500)), '响应体已截断（没有把 3000 字符原样塞进 markdown）')
-  ok(/响应共 \d+ 字符/.test(rep.markdown), '截断处标明原始长度')
+  ok(rep.markdown.includes('预期回显'), '给出预期回显（截断后的响应摘要）')
 
   console.log('\n— 不相干的凭据不许挂到条目上（曾经"终端权限"下挂着 MySQL 凭据）')
   const terminal = byCode.get('terminal-access')
@@ -115,16 +129,25 @@ try {
     '命令档位只有 real / synthesized / from_step / template（实际 ' + Array.from(kinds).join(',') + '）')
   ok(shell.replay_cmd_kind === 'real' || shell.replay_cmd_kind === 'synthesized',
     '有真实抓包的条目优先用报文/真实命令，不用扫描命令顶替（实际 ' + shell.replay_cmd_kind + '）')
-  ok(rep.markdown.includes('命令行等价形式') || rep.markdown.includes('实际执行的命令'),
+  ok(rep.markdown.includes('真实抓包') || rep.markdown.includes('当日实际命令'),
     'markdown 里按档位给出如实措辞')
 
-  console.log('\n— 报告结构与简洁性')
-  ok(rep.markdown.includes('#### 复现'), '每条有独立的「复现」小节')
-  ok(rep.markdown.indexOf('#### 复现') < rep.markdown.indexOf('#### 动作记录'),
-    '「复现」排在「动作记录」之前（用户要照做的东西放最前）')
-  const head = rep.markdown.split('\n').slice(0, 30).join('\n')
-  ok(/合计得分|摘要与对账/.test(head), '抬头先给总分与对账（复现索引紧随其后）')
+  console.log('\n— 报告结构与简洁性（四段式）')
+  ok(rep.markdown.includes('## 一、靶标单位资产证明'), '第一段是靶标单位资产证明')
+  ok(rep.markdown.includes('## 二、得分汇总表'), '第二段是得分汇总表')
+  ok(rep.markdown.includes('## 三、账号密码凭据权限汇总表'), '第三段是账号密码凭据权限汇总表')
+  ok(rep.markdown.includes('## 四、得分点复现'), '第四段是得分点复现')
+  const order = ['### 2.1 互联网资产权限', '### 2.2 边界突破', '### 2.3 内网资产权限', '### 2.4 靶标权限']
+  ok(order.every((h, i) => rep.markdown.includes(h) && (i === 0 || rep.markdown.indexOf(order[i - 1]) < rep.markdown.indexOf(h))),
+    '四阶段按「互联网 → 边界 → 内网 → 靶标」排序')
+  ok(/^#### 4\.\d+\.\d+ /m.test(rep.markdown), '得分点复现按 4.x.y 编号')
+  ok(!rep.markdown.includes('#### 动作记录'), '不再把同资产动作整段重复进每条（动作记录已从正文移除）')
+  const head = rep.markdown.split('\n').slice(0, 20).join('\n')
+  ok(/计分项/.test(head) && /总分/.test(head), '抬头先给计分项与总分')
   ok(rep.markdown.length < 30000, '报告总长可控（' + rep.markdown.length + ' 字符）')
+  const legacy = store.scoreReport(id, { layout: 'legacy' })
+  ok(legacy.markdown.includes('摘要与对账') && legacy.markdown.includes('#### 复现'),
+    'layout=legacy 仍能生成旧版长报告（回退路径可用）')
 
   console.log('\n— 反例：什么都记的条目也要能用（不给假命令）')
   const bare = store.openEngagement('只有 evidence 的靶标').id
@@ -137,6 +160,26 @@ try {
   ok(bareItem.replay_cmd !== null, '仍然给出该得分项的动作模板作为兜底')
   ok(!/curl -i -s 'http:\/\/198\.51\.100\.5:6379/.test(String(bareItem.replay_cmd)),
     '兜底命令不是那条假 curl')
+
+  console.log('\n— 记分漏填 vuln_id：只从与目标对得上的步骤补，不能张冠李戴')
+  const inferredEng = store.openEngagement('步骤补漏洞').id
+  store.importBundle(inferredEng, { assets: [{ ip: '198.51.100.50', scope: 'external' }] })
+  const inferredAsset = store.listAssets(inferredEng, {}).items[0]
+  const inferredVuln = store.addVuln(inferredEng, {
+    asset_id: inferredAsset.id, title: 'SSH 弱口令', severity: 'high', status: 'exploited',
+    target: '198.51.100.50:22', gained: 'root', evidence: 'uid=0',
+  })
+  store.addChainStep(inferredEng, {
+    stage_code: 'internet', title: '198.51.100.50 SSH 登录验证', asset_id: inferredAsset.id,
+    vuln_id: inferredVuln.id, tool: 'ssh root@198.51.100.50 id', result: 'uid=0(root)',
+  })
+  store.addScoreHit(inferredEng, { code: 'server-host', points: 50, asset_id: inferredAsset.id, target: '198.51.100.50:22', evidence: 'root' })
+  const inferredItem = store.scoreReport(inferredEng).items[0]
+  ok(inferredItem.vuln !== null && inferredItem.vuln.id === inferredVuln.id && inferredItem.vuln_source === 'step',
+    '漏填 score_hit.vuln_id 时，从目标匹配的步骤补出漏洞并标注 source=step')
+  ok((inferredItem.gaps || []).length === 0, '补齐后不再误报复现缺口')
+  ok(inferredItem.replay_cmd_kind === 'from_step' && String(inferredItem.replay_cmd).includes('ssh root@198.51.100.50'),
+    '非 curl 的真实步骤命令优先于通用模板')
 } finally {
   rmSync(root, { recursive: true, force: true })
 }

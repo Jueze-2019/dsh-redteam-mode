@@ -116,6 +116,19 @@ const summary = summarizeSkills([good, missingEnv, missingPath, noContent])
 ok(summary.total === 4 && summary.available === 1 && summary.broken === 2 && summary.unknown === 1,
   `汇总正确：${JSON.stringify(summary)}`)
 
+console.log('— 新技能 deepseek-web-intel')
+{
+  const { readFileSync } = await import('node:fs')
+  const intel = readFileSync(new URL('../../../skills/deepseek-web-intel.md', import.meta.url), 'utf8')
+  ok(requiredEnvOf(intel).includes('DEEPSEEK_API_KEY'), 'DeepSeek Search/Fetch 技能要求 DEEPSEEK_API_KEY')
+  ok(!requiredEnvOf(intel).includes('DSH_HOME'), 'DSH_HOME 是可选兜底路径，不能被当成必需环境变量')
+  const verdict = checkSkill({ name: 'deepseek-web-intel', content: intel }, { env: {} })
+  ok(verdict.status === 'broken' && verdict.needs_user.some((x) => x.includes('DEEPSEEK_API_KEY')),
+    '未配置 key 时技能标记 broken，并明确向用户要 key')
+  ok(intel.includes('/v1/tools/search') && intel.includes('/v1/tools/fetch'),
+    '技能正文同时覆盖 Search 与 Fetch 两个端点')
+}
+
 console.log('— 与工具/面板共用同一份实现')
 {
   /* tools 与 UI 都必须 import 这个模块，而不是各自内联一份判定 */

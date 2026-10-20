@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 把一个靶标的得分报告导出成**可移动的交付包**：`<outDir>/<靶标>-红队成果复现报告.md` + `<outDir>/shots/`。
+ * 把一个靶标的四段式得分报告导出成**可移动的交付包**：`<outDir>/<靶标>-红队得分报告.md` + `<outDir>/shots/`。
  *
  * 为什么要这个脚本（面板上的「下载 .md」不够用）：
  *   · 面板下载的 markdown 里，证据截图走的是**绝对路径**（`~/.dsh/redteam/engagements/<靶标>/shots/x.png`）——
@@ -12,6 +12,7 @@
  *   node scripts/export-engagement-report.mjs                      # 当前靶标 → 当前目录
  *   node scripts/export-engagement-report.mjs --out ~/交付/靶标名   # 指定输出目录
  *   node scripts/export-engagement-report.mjs --engagement <id>     # 指定靶标
+ *   node scripts/export-engagement-report.mjs --secrets           # 本机交付：显示凭据明文
  */
 import { mkdirSync, writeFileSync, cpSync, rmSync, existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -43,9 +44,9 @@ if (existsSync(shotsSrc)) {
   cpSync(shotsSrc, shotsDst, { recursive: true })
 }
 
-const rep = store.scoreReport(id, { shotRef: 'relative' })
+const rep = store.scoreReport(id, { shotRef: 'relative', secrets: argv.includes('--secrets') })
 const name = String(rep.target || id).replace(/[/\\:*?"<>|]/g, '_')
-const outFile = join(outDir, name + '-红队成果复现报告.md')
+const outFile = join(outDir, name + '-红队得分报告.md')
 writeFileSync(outFile, rep.markdown, 'utf8')
 store.close()
 

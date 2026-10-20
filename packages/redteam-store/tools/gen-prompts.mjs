@@ -30,11 +30,11 @@ const END_RE = /^\/\* -+ 统一操作分发 \*\/$/
 /** 每个角色拼接哪些公共段落。顺序即正文里的出现顺序。 */
 const ROLE_COMMONS = {
   plan: ['ENV', 'AUTH'],
-  recon: ['AUTH', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF'],
-  assess: ['AUTH', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF'],
-  'vuln-scan': ['AUTH', 'SCORE_RULES', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF'],
-  exploit: ['AUTH', 'SCORE_RULES', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF'],
-  internal: ['AUTH', 'SCORE_RULES', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF'],
+  recon: ['AUTH', 'SAFETY', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF'],
+  assess: ['AUTH', 'SAFETY', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF'],
+  'vuln-scan': ['AUTH', 'SAFETY', 'SCORE_RULES', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF'],
+  exploit: ['AUTH', 'SAFETY', 'SCORE_RULES', 'BOUNDARY', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF'],
+  internal: ['AUTH', 'SAFETY', 'SCORE_RULES', 'BOUNDARY', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF'],
 }
 
 /** 从 prompts.roles.md 解析出 `role -> 正文`。 */
@@ -147,7 +147,7 @@ function main() {
   parts.push('   现在 core.js 是唯一运行时产物，运行时不读那两个源文件。 */')
   parts.push('')
   /* 公共段落的输出顺序 = 这里的顺序（也是 core.js 里 const 的声明顺序，必须在使用之前） */
-  for (const key of ['ENV', 'AUTH', 'SCORE_RULES', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF']) {
+  for (const key of ['ENV', 'AUTH', 'SAFETY', 'SCORE_RULES', 'BOUNDARY', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF']) {
     const section = commons[key]
     if (section === undefined) continue
     parts.push('const ' + section.key + ' = `' + section.raw + '`')
@@ -157,7 +157,7 @@ function main() {
   parts.push('/* ------------------------------------------------------------------ 角色提示词')
   parts.push('')
   parts.push('   六个角色 = 主会话（指挥）+ 五个执行角色。每个角色正文末尾按固定顺序')
-  parts.push('   拼接公共段落（授权 → 记分 → 查库 → 落库溯源 → 交付口径）。')
+  parts.push('   拼接公共段落（授权 → 安全边界 → 记分 → 边界判定（仅 exploit/internal）→ 查库 → 落库溯源 → 交付口径）。')
   parts.push('   角色的 code 同时是提示词文件名（agents/<code>.md）与库里的 agent 列取值。 */')
   parts.push('')
   parts.push('export const DEFAULT_PROMPTS = {')

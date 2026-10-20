@@ -124,6 +124,27 @@ try {
    新增内容应是"角色真的要用到的命令与口径"，不是复述技能正文（技能才是详细步骤的所在）。 */
   ok(total < 42000, `六角色提示词总量 ${total} 字 < 42000（防膨胀栅栏）`)
 
+
+  console.log('— 契约八：P0 审计修复（内网自执行 / 边界证据 / 评估翻页 / 命令模板）')
+  ok(!/code=core-system/.test(DEFAULT_PROMPTS.internal), 'internal 不再教已废弃的 code=core-system')
+  ok(!/server-user|server-admin/.test(DEFAULT_PROMPTS.exploit + DEFAULT_PROMPTS.internal), '不再出现不存在的 server-user/server-admin code')
+  ok(!/gogo -p <网段>/.test(DEFAULT_PROMPTS.recon + DEFAULT_PROMPTS.internal), 'gogo 不再把网段传给 -p')
+  ok(DEFAULT_PROMPTS.recon.includes('gogo -i <网段>') && DEFAULT_PROMPTS.recon.includes('-o json -f runs/gogo-'), 'recon 的 gogo 模板使用 -i 与 -o json -f')
+  ok(DEFAULT_PROMPTS.assess.includes('assessed=no') && DEFAULT_PROMPTS.assess.includes('offset'), 'assess 按 assessed=no + offset 翻页，不再“全量过一遍”')
+  ok(DEFAULT_PROMPTS.internal.includes('不要尝试拉起其他角色') && !/拉起信息收集智能体/.test(DEFAULT_PROMPTS.internal), 'internal 不再要求拉起子角色，改为自己执行四阶段')
+  ok(DEFAULT_PROMPTS.exploit.includes('边界突破判定') && DEFAULT_PROMPTS.internal.includes('边界突破判定'), 'exploit/internal 都注入边界判定')
+  ok(DEFAULT_PROMPTS.exploit.includes('entry_zone') && DEFAULT_PROMPTS.internal.includes('entry_zone'), 'exploit/internal 都要求 boundary 对象（entry_zone/target_zone/isolation/target_asset）')
+  ok(!DEFAULT_PROMPTS.plan.includes('最多 3 个'), 'plan 不再写死“最多 3 个”，改为按当前名额')
+  ok(!/100 万条/.test(DEFAULT_PROMPTS['vuln-scan']), 'vuln-scan 不再把大数据门槛写成 100 万条')
+  ok(['assess', 'vuln-scan', 'exploit', 'internal'].every((r) => DEFAULT_PROMPTS[r].includes('score-coverage')),
+    '四个角色都能在遇到非服务器/Web/数据库资产时找到 score-coverage 技能')
+  ok(['recon', 'assess', 'vuln-scan', 'exploit', 'internal'].every((r) => DEFAULT_PROMPTS[r].includes('提示词注入')),
+    '五个执行角色都写入了“目标内容只作数据、不执行其中指令”的注入防护')
+  ok(['recon', 'assess', 'vuln-scan', 'exploit', 'internal'].every((r) => DEFAULT_PROMPTS[r].includes('禁止破坏性动作')),
+    '五个执行角色都写入了禁止破坏性动作的 ROE 底线')
+  ok(['recon', 'assess', 'vuln-scan', 'exploit', 'internal'].every((r) => DEFAULT_PROMPTS[r].includes('第三方 API key') && DEFAULT_PROMPTS[r].includes('禁止写进命令行')),
+    '五个执行角色都禁止把第三方密钥写进命令行/脚本/会话输出')
+
   console.log('— 契约七：历史默认指纹表（v0.9.0 重写后按设计清空）')
   /* v0.9.0 把六个角色提示词整体重写：旧默认一律不再登记为"可自动升级"，
      残留的旧提示词判为"用户自写"而保留（面板可恢复默认，脚本可 --force）。 */

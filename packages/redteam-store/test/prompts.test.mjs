@@ -34,6 +34,8 @@ try {
     '新靶标播种的六个角色提示词 = 当前内置默认')
   ok(fresh.filter((p) => p.planner === true).length === 1 && fresh.find((p) => p.planner)?.role === 'plan',
     '六个角色里只有一个主会话（plan），它不参与派活')
+  ok(fresh.every((p) => p.stale === false && p.injected === (p.role !== 'plan')),
+    '新靶标 stale=false；只有执行角色标记 injected=true')
   ok(roles.every((r) => typeof DEFAULT_PROMPTS[r] === 'string' && DEFAULT_PROMPTS[r].trim() !== ''),
     '每个角色都有内置默认提示词（不会出现空角色）')
 
@@ -45,6 +47,7 @@ try {
   store.savePrompt(id, 'exploit', '# 我自己写的漏洞利用提示词\n只打这一个点。')
   const kept = store.listPrompts(id).find((p) => p.role === 'exploit')
   ok(kept.content.includes('我自己写的'), '用户自写的提示词不被自动覆盖')
+  ok(kept.stale === true, '用户自写/旧版提示词在面板标记 stale=true')
   const manifest2 = JSON.parse(readFileSync(manifestPath, 'utf8'))
   ok(manifest2.exploit === undefined, '用户自写后 manifest 里不再标记为默认')
   /* 3b) 用户手写的内容恰好等于内置默认时，应重新被认定为默认（可升级） */

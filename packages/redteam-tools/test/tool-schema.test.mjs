@@ -165,5 +165,38 @@ ok(/self-only|target-outbound|target-http|target-agent/.test(String(tunnelAdd.pa
   'entry_kind 描述里写明四种合法值')
 
 
+
+console.log('— 审计修复：评估翻页 / G5-G6 / 边界证据参数')
+const aq = byName.get('redteam_asset_query')
+ok(aq.parameters.offset !== undefined, 'redteam_asset_query 提供 offset 分页')
+ok(aq.parameters.assessed !== undefined && aq.parameters.assessed.enum.includes('no'), 'redteam_asset_query 提供 assessed=no 过滤')
+ok(aq.parameters.sort.enum.includes('unassessed'), 'redteam_asset_query 支持 sort=unassessed')
+const sh = byName.get('redteam_score_hit')
+ok(sh.parameters.data_scale !== undefined && sh.parameters.data_scale.enum.includes('large'), 'redteam_score_hit 提供 G5 data_scale')
+ok(sh.parameters.ip_version !== undefined && sh.parameters.ip_version.enum.includes('6'), 'redteam_score_hit 提供 G6 ip_version')
+ok(sh.parameters.boundary_evidence !== undefined, 'redteam_score_hit 提供 boundary_evidence')
+const ch = byName.get('redteam_chain_add')
+ok(ch.parameters.boundary_evidence !== undefined, 'redteam_chain_add 能透传 boundary_evidence')
+ok(ch.parameters.data_scale !== undefined && ch.parameters.ip_version !== undefined, 'redteam_chain_add 能透传 G5/G6')
+
+
+console.log('— 角色工具裁剪（profile）')
+const collect = (profile) => {
+  const map = new Map()
+  apply({ redteam: {}, tools: { register: (t) => map.set(t.name, t) } }, { profile })
+  return map
+}
+const allTools = collect('all')
+const reconTools = collect('recon')
+const assessTools = collect('assess')
+const vulnTools = collect('vuln-scan')
+ok(allTools.size === 56, 'profile=all 不裁剪（56 个工具）')
+ok(reconTools.size < allTools.size && !reconTools.has('redteam_score_hit') && !reconTools.has('redteam_tunnel_add') && reconTools.has('redteam_asset_add'),
+  'recon profile 裁掉记分/隧道等越界写操作，保留资产入库（' + reconTools.size + ' 个）')
+ok(assessTools.has('redteam_asset_assess') && !assessTools.has('redteam_vuln_add') && !assessTools.has('redteam_webshell_add'),
+  'assess profile 保留评估工具、裁掉漏洞/入口写操作（' + assessTools.size + ' 个）')
+ok(vulnTools.has('redteam_vuln_add') && vulnTools.has('redteam_score_hit') && !vulnTools.has('redteam_tunnel_add'),
+  'vuln-scan profile 保留漏洞发现/记分，裁掉隧道（' + vulnTools.size + ' 个）')
+
 console.log(`\n通过 ${pass}/${pass + fail}`)
 process.exit(fail === 0 ? 0 : 1)

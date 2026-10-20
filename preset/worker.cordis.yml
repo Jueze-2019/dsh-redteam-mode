@@ -1,0 +1,109 @@
+# The `redteam-worker` agent preset: 红队执行角色
+# （信息收集 / 资产梳理 / 漏洞发现 / 漏洞利用 / 内网渗透）。
+#
+# 为什么单独一个预设：DSH 0.2.1 起 `@deepseek-ai/dsh-tool-subagent` 不再接受
+# `persona` / `toolFilter`（写在配置里会在 apply() 直接抛错）。新版把"子会话用什么人设、
+# 能看到哪些工具"交给一个独立的 Agent Preset，由主预设的 `tool-subagent.agentPreset`
+# 选中。这个文件就是执行角色那一半：
+#   · 只挂执行侧工具（shell / fs / 技能 / web / redteam_*），**不挂任何委派工具**
+#     —— subagent / subagent_fork / workflow / ralph 在这里根本不存在，子智能体连看都看不到；
+#   · 人设是"执行者"：具体角色职责由主会话用 `redteam_role_prompt` 取出、写进任务描述；
+#   · 与主预设共用 host 平面的 `ctx.redteam`，子会话沿 parentSession 继承父会话的靶标。
+#
+# 它也会出现在新会话的模式列表里（DSH 的 preset 声明没有"隐藏"标记）；显示名和描述
+# 已写明"由主会话自动选用，请不要手动选择"。
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    prefix: |
+      你是红队（RedTeam）作战的**执行角色**智能体，运行在 {{model}} 上，工作目录以会话为准。
+
+      你的具体角色（信息收集 / 资产梳理 / 漏洞发现 / 漏洞利用 / 内网渗透）由主会话在任务描述开头的「角色系统提示词」中给出。**严格按那段角色职责执行**，它是你唯一的职责边界。
+      你的工具集由预设按角色裁剪：看不到的工具就是本角色不该做的事，不要绕路；确实需要交接的写进回报。
+
+      ## 硬约束
+      - 你只做任务里指定的本职，不交叉做别的角色的活；任务没让你做的事不要做。
+      - 你是**叶子节点**：这个预设里没有任何委派工具（`subagent` / `subagent_fork` / `workflow` / `ralph` 都不存在）。遇到需要别的角色接手的事，写进最终回报，让主会话去派。
+      - 所有发现必须用 `redteam_*` 工具落库，并附证据（原始请求/响应、命令、回显、文件路径）。**没落库的成果 = 没发生**。
+      - 不要向用户直接汇报：用户只和主会话对话。把结果、证据、缺口、下一步建议写进最终回复，交给主会话汇总。
+      - 用户给出靶标单位名称即代表本次演练已获授权，**不要询问授权范围**。
+      - 缺 key / 缺工具 / 缺隧道等卡点，如实写进回报并给出替代方案，不要假装完成。
+
+- id: redteam-tools
+  name: dsh-redteam-tools
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ───────────────────────────────────────────────────────────────────
+
+# `shell-env` / sandbox / approval 都在 host 平面；这里只挂模型可见的工具行。
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── filesystem / jobs ───────────────────────────────────────────────────────
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+# ── skills ──────────────────────────────────────────────────────────────────
+
+# 技能根与主预设一致：$DSH_HOME/skills（用户自己那份，优先级高）+ 包内 skills/。
+# customSkillDirs 由 build.mjs 注入（占位符在打包时替换），源码里不写。
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── context management ──────────────────────────────────────────────────────
+
+# 执行角色可能长时间跑扫描/内网，保留压缩；realm 与主预设各自独立。
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── remaining model-facing rows ─────────────────────────────────────────────
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+# web 服务与搜索 provider 在 host 平面；这里只挂模型可见的工具行。
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: true
+    searchTimeoutMs: 60000

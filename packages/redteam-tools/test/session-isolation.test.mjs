@@ -178,7 +178,23 @@ await call('redteam_score_hit', {
   code: 'server-host', asset_id: asset.id, vuln_id: vuln.id, step_id: step.id,
   target: 'http://10.9.9.9:8080/', evidence: '10.9.9.9｜冰蝎马可用（behinder e45）',
 }, main1)
-await call('redteam_score_hit', { code: 'boundary-logical', asset_id: asset.id, target: '10.9.9.9', evidence: '10.9.9.9｜suo5 隧道可达 10.9.9.0/24' }, main1)
+const boundaryDenied = await call('redteam_score_hit', { code: 'boundary-logical', asset_id: asset.id, target: '10.9.9.9', evidence: '10.9.9.9｜suo5 隧道可达 10.9.9.0/24' }, main1)
+ok(boundaryDenied.ok === false && /boundary/.test(boundaryDenied.error || ''),
+  '边界硬门槛：缺 boundary 对象时拒绝记 boundary-*（同区隧道只能记 internal）')
+const sameZone = await call('redteam_score_hit', {
+  code: 'boundary-logical', asset_id: asset.id, target: '10.9.9.9', evidence: '同区隧道',
+  boundary: { entry_zone: 'DMZ', target_zone: 'dmz', isolation: 'firewall', target_asset: '10.9.9.9:22' },
+}, main1)
+ok(sameZone.ok === false && /相同/.test(sameZone.error || ''), '边界硬门槛：入口区=落点区时拒绝记 boundary-*')
+const supplyNoScope = await call('redteam_score_hit', {
+  code: 'boundary-supply', asset_id: asset.id, target: '10.9.9.9', evidence: '供应商通道',
+  boundary: { entry_zone: '供应商', target_zone: '主防单位', isolation: 'supply', target_asset: '10.9.9.9:22' },
+}, main1)
+ok(supplyNoScope.ok === false && /scope_confirmed/.test(supplyNoScope.error || ''), '边界硬门槛：boundary-supply 未确认授权范围时拒绝')
+await call('redteam_score_hit', {
+  code: 'boundary-logical', asset_id: asset.id, target: '10.9.9.9', evidence: '10.9.9.9｜suo5 隧道可达 10.9.9.0/24',
+  boundary: { entry_zone: '互联网', target_zone: '办公网', isolation: 'firewall', target_asset: '10.9.9.9:22（SSH banner 实测）' },
+}, main1)
 const report = store.scoreReport(opened1.engagement.id)
 ok(report.summary.withSteps === 2 && report.summary.withCommands === 2,
   '报告：两项成果都关联到了动作步骤与实际命令（' + report.summary.withSteps + '/' + report.summary.withCommands + '）')
@@ -193,6 +209,7 @@ ok(withStep.steps[0].inferred !== true && withStep.trace.step_source === 'linked
   '报告：靠 step_id/vuln_id 精确归因，不掺同资产的无关步骤（step_source=' + withStep.trace.step_source + '）')
 const withFallback = report.items.find((x) => x.code === 'boundary-logical')
  ok(withFallback !== undefined, '报告：找到边界突破那条成果（找不到时后续断言不应崩在取值上）')
+ok(/【边界证据】/.test(String(withFallback.note || '')), '报告：结构化 boundary 对象被写进命中 note，可供复核')
 ok(withFallback.trace.step_source === 'asset' && withFallback.steps.every((x) => x.inferred === true),
   '报告：只能靠"同资产"兜底时明确标注为推断（step_source=asset）')
 ok(withStep.credentials.length === 1 && withStep.credentials[0].source === '注入拖库',
@@ -200,15 +217,17 @@ ok(withStep.credentials.length === 1 && withStep.credentials[0].source === '注�
 ok(withStep.tunnels.length === 1 && withStep.tunnels[0].command.includes('suo5-linux-amd64'),
   '报告：隧道带出搭建命令与监听地址')
 ok(withStep.how.includes('CVE-2021-22205'), '报告：how 一句话说清靠什么漏洞拿到')
-/* 小节名演进：「这一步怎么来的」→「怎么拿到的」→「动作记录」（避免口语化/内部口径）。
-   断言跟着改，但要求不变：报告必须有"这一步是怎么做的"这一节。 */
-ok(/动作记录|怎么拿到的/.test(report.markdown), '报告 markdown：包含「动作记录」小节')
-ok(/steps|执行/.test(report.markdown) && report.markdown.includes('curl -F'), '报告 markdown：把命令写进正文（可复制复现）')
-/* 附录结构在"复现手册"改版里分成了 5.1/5.2/5.3，要求不变：
-   必须有一节列出本报告涉及的资产，且带发现时间。 */
-ok(/附录/.test(report.markdown) && report.markdown.includes('本报告涉及的资产')
-  && report.markdown.includes('发现时间'),
-  '报告 markdown：附录列出资产与发现时间')
+/* 四段式改版后，每条成果的"这一步怎么做的"落在「结果 / 复现」，
+   不再单列「动作记录」。要求不变：必须有可照着做的复现入口。 */
+ok(report.markdown.includes('## 四、得分点复现') && /- \*\*结果\*\*：/.test(report.markdown),
+  '报告 markdown：包含得分点复现与结果说明')
+ok(/```(http|bash)/.test(report.markdown)
+  && (report.markdown.includes('curl -F') || report.markdown.includes('POST /')),
+  '报告 markdown：给出可复制的报文或命令')
+/* 四段式第一段是资产证明，列出得分资产；发现时间不再单列（控制台资产测绘仍保留）。 */
+ok(report.markdown.includes('## 一、靶标单位资产证明')
+  && report.markdown.includes('10.9.9.9'),
+  '报告 markdown：资产证明列出得分资产')
 const boundary = report.items.find((x) => x.code === 'boundary-logical')
 ok(boundary.repro_kind === 'cli' || boundary.repro_kind === 'http',
   '报告：边界突破条目给出可执行的复现入口（repro_kind=' + boundary.repro_kind + '）')
@@ -289,6 +308,7 @@ ok(pre.ok === false && pre.broken.length === 1 && pre.broken[0].name === 'fofa-r
 ok(pre.broken[0].needs_user.some((x) => x.includes('FOFA_KEY')), 'preflight：明确写出"要向用户要什么"')
 ok(pre.available.includes('good-skill'), 'preflight：可用的技能照常列出')
 ok(/替代方案/.test(pre.next || ''), 'preflight：给出补不齐时的替代方案指引')
+ok(pre.prompts && pre.prompts.stale_count === 0, 'preflight：返回当前靶标的提示词新鲜度（新靶标 stale_count=0）')
 /* 首次引导：没装过（无完成标记）时必须显式报出来，并要求一次性向用户要齐 */
 ok(pre.onboarding && pre.onboarding.complete === false, 'preflight：未完成首次引导时 onboarding.complete=false')
 ok(pre.onboarding.first_run === true, 'preflight：没有完成标记时标记为首次使用')

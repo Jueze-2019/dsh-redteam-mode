@@ -388,6 +388,27 @@ let skillAvailabilityCache = null
 const SKILL_AVAILABILITY_TTL_MS = 30000
 
 /**
+ * 技能可用性判定用的环境：进程环境 + $DSH_HOME/.env 兜底。
+ * 与 redteam_preflight 的口径一致；否则用户把 key 写进 .env 后，面板仍会误报缺 key。
+ */
+function envForSkillCheck() {
+  const env = { ...process.env }
+  const file = join(process.env.DSH_HOME || join(process.env.HOME || '', '.dsh'), '.env')
+  try {
+    if (existsSync(file)) {
+      for (const line of readFileSync(file, 'utf8').split('\n')) {
+        const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line)
+        if (m === null) continue
+        const value = m[2].trim().replace(/^["']|["']$/g, '')
+        if (value === '') continue
+        if (env[m[1]] === undefined || env[m[1]] === '') env[m[1]] = value
+      }
+    }
+  } catch { /* .env 读不到不影响判定 */ }
+  return env
+}
+
+/**
  * 逐个技能的可用性（读正文 → 共享判定模块）。
  * @param ctx - 插件上下文。
  * @param list - `ctx.skills.list()` 的返回（SkillSummary[]）。
@@ -420,7 +441,7 @@ async function skillAvailabilityOf(ctx, list, scope, force) {
       : (summary.resourceBase && summary.resourceBase.kind === 'directory' ? summary.resourceBase.path : null)
     const root = summary.resourceBase && summary.resourceBase.kind === 'directory' ? summary.resourceBase.path : null
     const verdict = checkSkill({ name: summary.name, content: def && def.content, path, root },
-      { env: process.env, sameNameIn: rootsWith.get(summary.name) || [] })
+      { env: envForSkillCheck(), sameNameIn: rootsWith.get(summary.name) || [] })
     byName.set(summary.name, verdict)
   }
   skillAvailabilityCache = { at: now, size: list.length, byName }

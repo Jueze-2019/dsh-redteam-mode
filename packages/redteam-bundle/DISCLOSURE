@@ -23,7 +23,7 @@ shellcode, no credential dumps and no C2 implants. It consists of:
 
   lib/            orchestration logic, a local SQLite fact base, tool schemas,
                   a right-side console UI and report rendering
-  skills/         14 Markdown instruction documents (prose runbooks) covering
+  skills/         16 Markdown instruction documents (prose runbooks) covering
                   reconnaissance, asset correlation, service and web
                   fingerprinting, directory/template scanning and first-run
                   setup — they tell an agent how to *operate* third-party tools

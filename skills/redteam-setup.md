@@ -1,6 +1,6 @@
 ---
 name: redteam-setup
-description: 首次使用引导：引导提供 FOFA_KEY 与 VPS 登录方式、验证通道可用、给出降级口径（工具链由工具箱附件按需获取）
+description: 首次使用引导：引导提供 FOFA_KEY、VPS 登录方式与可选 DeepSeek API Key，验证通道可用，给出降级口径（工具链由工具箱附件按需获取）
 whenToUse: 用户第一次使用红队模式时；或 redteam_preflight 报出 onboarding.incomplete / 有技能 broken 时；或用户说"环境没配好""工具装一下"
 role: plan
 enabled: true
@@ -25,8 +25,8 @@ WebShell / 反弹 Shell / 横向移动 / 未授权利用）。原因：npm 的�
 - **没有**（`redteam_preflight` 返回里 `onboarding.setup_script.exists=false`）→ 先去项目
   GitHub Release 下载 `dsh-redteam-mode-<版本>-toolkit.tar.gz`，解压后按其中 README
   **由用户自己执行**，再到第三节手动配 `FOFA_KEY` 与 VPS；
-- **都不要**也行：只用本包自带的 14 个侦察/检测向技能（`fofa-recon` / `active-scan` /
-  `nuclei-scan` / `web-fingerprint` / `dir-bruteforce` 等）也能开工，只是拿不到需要落地的成果。
+- **都不要**也行：只用本包自带的 16 个侦察/检测向技能（`fofa-recon` / `active-scan` /
+  `nuclei-scan` / `web-fingerprint` / `dir-bruteforce` / `deepseek-web-intel` 等）也能开工，只是拿不到需要落地的成果。
 
 > **红线**：本插件**不替用户下载或安装任何安全工具**。需要什么，说清获取位置，由用户自己取、自己执行。
 
@@ -37,6 +37,7 @@ WebShell / 反弹 Shell / 横向移动 / 未授权利用）。原因：npm 的�
 | **FOFA_KEY** | 资产测绘（`fofa-recon`）靠它铺开单位互联网资产面；没有就只能靠 crt.sh + 子域枚举，**边缘资产与未备案资产会大量漏掉** | 环境变量 `FOFA_KEY`，或写进 `$DSH_HOME/.env`（脚本会代写） | 测绘能力降级：找不全资产 → 后面四个阶段都受影响 |
 | **VPS 登录方式**（`user@ip` + 私钥路径） | 反弹 Shell 必须落到**公网可控主机**上；载荷投递、隧道中转也依赖它 | `REDTEAM_VPS_HOST`（`用户@主机`）/ `REDTEAM_VPS_KEY`（私钥路径，默认 `$DSH_HOME/redteam/toolkit/vps/id_rsa`） | 拿不到服务器权限、投递不了载荷、进不了内网 |
 | （可选）测绘平台 key | Quake / Hunter / ZoomEye 与 FOFA 结果差异大，交叉能多找出资产 | 环境变量，按需 | 少一路交叉验证 |
+| （可选）**DeepSeek API Key** | `deepseek-web-intel` 技能用官方 Search/Fetch 查公开情报、抓网页正文；用于官网/公告/招聘/采购/供应商/公众号/GitHub 线索 | 环境变量 `DEEPSEEK_API_KEY`（启动 dsh web 的同一环境；不要写进仓库/命令/报告） | 该技能标为不可用；其余技能不受影响 |
 | （可选）允许 apt 安装 | 补系统工具 | 用户自己执行 `sudo apt install …` | 相关技能降级 |
 
 **话术要求**：列完后**等用户补齐**。不要用"我先用降级方案开工"糊过去——除非用户明确说"就按现有条件打"。

@@ -12,9 +12,9 @@
 | 打包契约 | `dsh.bundle.patch: ./cordis.patch.yml` + `dsh.client.platform: web` + `exports: . / ./store / ./ui / ./tools / ./client` |
 | 自包含 | 零运行时依赖；`lib/` 由 `tools/build.mjs` 从三个源码包生成 |
 | 预设 | `cordis.patch.yml` 生成区里的 `preset-redteam` 声明行（DSH ≥0.1.7-alpha.1 只认声明行，目录预设不再被读取）；`presets/redteam/` 目录预设只留给 ≤0.1.6 的旧 DSH |
-| 技能 | `skills/` 14 个，随包分发 |
-| 发布守卫 | `prepublishOnly` = `build --check` + `bundle.test.mjs`（漂移或泄露会直接拦住 publish） |
-| 真机验收 | 干净 `DSH_HOME` + `npm pack` 出的 tarball + `dsh plugin add` → 预设可用、13 个技能可见、`POST /redteam/api` 正常 |
+| 技能 | `skills/` 16 个，随包分发 |
+| 发布守卫 | `prepublishOnly` = `build --check` + `tools/test-all.mjs`（18 个测试文件、773 条断言；漂移或泄露会直接拦住 publish） |
+| 真机验收 | 干净 `DSH_HOME` + `npm pack` 出的 tarball + `dsh plugin add` → 预设可用、16 个技能可见、`POST /redteam/api` 正常 |
 
 ## 还差两步（需要你的账号）
 
@@ -181,7 +181,7 @@ node scripts/publish-now.mjs packages/redteam-bundle   # 打印链接 → 人验
 
 **市场条目现状**：PR #5034（首次收录）与 #5575（v0.11.x 条目）**已合并**；线上条目
 `version` 字段由 npm 自动取，发新版不需要改它。条目更新在 **PR #6076**
-（14 个随包技能 + 去武器化说明 + v0.13.0 的证据截图能力），等维护者合并。
+（16 个随包技能 + 去武器化说明 + v0.13.0 的证据截图能力），等维护者合并。
 
 ### 顺带记录：绕过 2FA 的 token 还有两个副作用
 
@@ -257,8 +257,8 @@ url: https://github.com/Jueze-2019/dsh-redteam-mode/tree/main/packages/redteam-b
 name: Jueze-2019/dsh-redteam-mode#packages/redteam-bundle
 category: security
 description:
-  en: "Red-team engagement mode: ... ships 13 native skills, 53 redteam_* tools and one-command self-update."
-  zh: "红队作战模式：... 随包 13 个原生技能、53 个 redteam_* 工具与一键自更新。"
+  en: "Red-team engagement mode: ... ships 16 native skills, 56 redteam_* tools and one-command self-update."
+  zh: "红队作战模式：... 随包 16 个原生技能、56 个 redteam_* 工具与一键自更新。"
 ```
 
 > 描述里**含 `: `（冒号+空格）必须整体加引号**，否则 YAML 会当成嵌套键。
@@ -267,7 +267,7 @@ description:
 （fork 分支 `Jueze-2019:add-dsh-redteam-mode`）。对方规则的两条要点：
 
 * **CI 通过只是前置条件**：`Submission gate` / `check` 绿了不代表会合，维护者会**实际读仓库**，
-  而且是**对着描述里的数字逐个核对**（"53 个工具"会被数一遍）。
+  而且是**对着描述里的数字逐个核对**（"56 个工具"会被数一遍）。
 * 所以**每次改版都要回头更新这个条目**：角色数、工具数、技能数、页签数、关键能力点变了就要改，
   否则评审第 1 条（代码是否与条目声明一致）就会被打回。更新只改自己那一个文件，别碰 README。
 
@@ -281,7 +281,7 @@ $EDITOR data/plugins/Jueze-2019__dsh-redteam-mode--packages-redteam-bundle.yml
 git add -A && git commit -m "data: update dsh-redteam-mode entry for vX.Y.Z" && git push
 ```
 
-**发布前自检清单**（v0.9.0 起）：
+**发布前自检清单**（v0.9.0 起；当前准备版本 **0.14.0**）：
 
 - [ ] `packages/redteam-bundle/package.json` 版本号 = 本次要发的版本
 - [ ] `node tools/build.mjs --check` 通过（生成物与源码同步）

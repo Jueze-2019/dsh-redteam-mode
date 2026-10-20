@@ -332,10 +332,11 @@ function makeResponses(shape) {
         { code: 'boundary', name: '边界突破', color: '#f59e0b', goal: '进内网', ordinal: 3, points: 1000, cumulative: 1000, hits: 1, assetCount: 1, assets: [ASSET], tunnels: arr([{ id: 1, kind: 'suo5', listen: '127.0.0.1:1080', reach: '10.1.1.0/24', status: 'active' }]), tunnels_self_only: [],
           items: arr([{ id: 1, point_id: 1, point_name: '进入逻辑隔离业务内网', points: 1000, counted: true, nth_of_point: 1, target: '10.1.1.1', asset_ip: '10.1.1.1', capped: false, capped_reason: null, action: null, action_inferred: false, recorded_at: '2026-01-02T03:04:05Z', recorded_by: 'exploit', evidence: '可达内网' }]) },
       ] }),
-    scoreReport: w({ ok: true, target: ENGINE, markdown: '# 报告',
-      summary: { points: 1000, count: 1, withRequests: 1, missingRequests: 0, incomplete: 0, serviceCappedExcluded: 0, selfCreatedExcluded: 0 },
+    scoreReport: w({ ok: true, target: ENGINE, markdown: '# 红队得分报告\n\n## 一、靶标单位资产证明\n\n| 资产 | 归属证据 |\n| --- | --- |\n| `10.1.1.1` | 标题：A \\| B |\n',
+      summary: { points: 1000, count: 1, withRequests: 1, missingRequests: 0, incomplete: 1, serviceCappedExcluded: 0, selfCreatedExcluded: 0 },
+      items: [{ id: 1, seq: 1, code: 'boundary-logical', point_name: '进入逻辑隔离业务内网', points: 1000, counted: true, target: '10.1.1.1', asset_ip: '10.1.1.1', evidence: '可达内网', incomplete: true, gaps: ['没有关联 vuln_id：报告拿不到对应的原始请求'], requests: [], steps: [], shots: [] }],
       stages: arr([{ code: 'boundary', name: '边界突破', color: '#f59e0b', ordinal: 3, points: 1000, cumulative: 1000,
-        items: [{ id: 1, seq: 1, code: 'boundary-logical', point_name: '进入逻辑隔离业务内网', points: 1000, counted: true, nth_of_point: 1, target: '10.1.1.1', asset_ip: '10.1.1.1', gained: '内网可达', evidence: '可达 10.1.1.0/24', recorded_at: '2026-01-02T03:04:05Z', recorded_by: 'exploit', vuln: null, note: '', how: '靠 CVE-2026-1', incomplete: false, gaps: [], credentials: [], tunnels: [], webshells: [], accesses: [],
+        items: [{ id: 1, seq: 1, code: 'boundary-logical', point_name: '进入逻辑隔离业务内网', points: 1000, counted: true, nth_of_point: 1, target: '10.1.1.1', asset_ip: '10.1.1.1', gained: '内网可达', evidence: '可达 10.1.1.0/24', recorded_at: '2026-01-02T03:04:05Z', recorded_by: 'exploit', vuln: null, note: '**重点结论**：/admin-api/** 与 /rpc-api/**', how: '靠 CVE-2026-1', incomplete: false, gaps: [], credentials: [], tunnels: [], webshells: [], accesses: [],
           requests: [{ label: 'r', method: 'GET', url: 'http://x/', status: 200, request: 'GET / HTTP/1.1', response: 'HTTP/1.1 200 OK', source: 'linked' }],
           steps: [{ id: 1, title: '建隧道', tool: 'suo5 -t', result: 'ok', agent: 'exploit', stage_code: 'boundary', recorded_at: '2026-01-02T03:04:05Z', inferred: false }],
           shot_total: 5,
@@ -437,8 +438,8 @@ async function openFirstScoreRow() {
    · 「智能体提示词」→「智能体」（并发配置 + 提示词编辑同页）
    · 「当前测试」→「资产测绘」（左侧与 C 段分组同级的入口）
    · 「攻击文件」→「漏洞战果」（子页签 + 每条漏洞的关联文件）
-   故共 9 个页签。 */
-const TAB_LABELS = ['资产测绘', '智能体', '会话隧道', '漏洞战果', '攻击链', '得分目标', '报告', '知识库', '技能库']
+   故共 10 个页签（新增「凭据与文件」资源页）。 */
+const TAB_LABELS = ['资产测绘', '智能体', '会话隧道', '凭据与文件', '漏洞战果', '攻击链', '得分目标', '报告', '知识库', '技能库']
 
 /* ══════════════════════════════════════════════════════════════════════════
    ⑥ 断言
@@ -451,10 +452,10 @@ for (const shape of ['data', 'empty', 'error']) {
   let out = ''
   try { out = (await renderAll()).texts } catch (error) { err = error }
   ok(err === null && out.length > 0, `[${shape}] 面板渲染不抛异常且有输出（输出 ${out.length} 字符）` + (err ? '：' + err.message : ''))
-  if (shape === 'data') ok(TAB_LABELS.every((t) => out.includes(t)), '9 个页签标签都渲染出来')
+  if (shape === 'data') ok(TAB_LABELS.every((t) => out.includes(t)), '10 个页签标签都渲染出来')
 }
 
-console.log('\n— 9 个页签逐个渲染（有数据 / 空 / 报错）')
+console.log('\n— 10 个页签逐个渲染（有数据 / 空 / 报错）')
 for (const shape of ['data', 'empty', 'error']) {
   responses = makeResponses(shape)
   resetInstances()
@@ -470,28 +471,75 @@ console.log('\n— 有数据时的关键内容（渲染确实用了接口返回�
 {
   responses = makeResponses('data')
   resetInstances()
+  const before = await renderAll()
+  const overviewBtn = before.hosts.find((x) => x.handlers.onClick && x.props.children === '态势')
+  ok(overviewBtn !== undefined, '一级分区有「态势」入口')
+  if (overviewBtn) overviewBtn.handlers.onClick()
+  const ov = await renderAll()
+  ok(ov.texts.includes('下一步得分') && ov.texts.includes('入口'), '态势页：首屏给出战况/得分/入口')
+  ok(ov.texts.includes('当前得分') && ov.texts.includes('已得分'), '态势页：得分卡默认展示当前得分')
+  ok(['态势', '资产', '成果', '报告', '资源'].every((x) => ov.texts.includes(x)), '一级分区收敛为 5 个')
+  const dataR = await switchTab('资产测绘')
+  ok(dataR.hosts.some((x) => x.props.className === 'rt-dock'), '数据密集页：默认保留侧栏，不自动全屏')
   const r = await switchTab('资产测绘')
   ok(r.texts.includes('10.1.1.1'), '资产测绘：IP 渲染出来')
-  ok(r.texts.includes('10.1.1.0/24'), '资产测绘：C 段渲染出来')
+  ok(r.texts.includes('个 C 段'), '资产测绘：C 段分组头渲染出来（段默认收起）')
   ok(!r.texts.includes('图谱'), '资产测绘：不再有「图谱」入口（已移除）')
   ok(r.texts.includes('发现时间'), '资产测绘：「发现时间」视图仍在（删图谱时误伤过的那个）')
+  ok(r.texts.includes('下一步 10 台'), '资产测绘：有「下一步 10 台」队列入口')
+  ok(r.texts.includes('下一步 10 台 ·'), '资产测绘：默认进入下一步 10 台，而不是 174 行全量列表')
   const f = await switchTab('漏洞战果')
   /* 默认「按目标聚合」：顶层只显示目标，漏洞标题在展开后才出现 —— 断言按这个真实行为写，
      否则测试会因为'没找到标题'而红，但其实页面是对的。 */
   ok(f.texts.includes('http://10.1.1.1') && /1 个漏洞/.test(f.texts), '漏洞战果：按目标聚合出分组（目标 + 漏洞数）')
   ok(f.texts.includes("后台管理员"), "漏洞战果：分组右侧显示「拿到什么权限」")
+  ok(f.texts.includes('只看战果'), '漏洞战果：默认只看已利用/拿到权限的战果（有切换按钮）')
   /* 提示词编辑器现在挂在「智能体」页里，跟着该页一起渲染 */
   const s = await switchTab('智能体')
   ok(s.texts.includes('主会话') || s.texts.includes('信息收集'), '智能体页：角色列表渲染出来')
   ok(s.texts.includes('并发数量'), '智能体页：并发数量配置渲染出来')
+  ok(s.texts.includes('编队状态') || s.texts.includes('执行智能体'), '智能体页：有编队状态/在跑列表')
+  ok(!s.texts.includes('e45') && !s.texts.includes('Admin@123'), '智能体页：不包含会话口令/凭据明文')
+  /* Markdown 展示回归：这些提示文案/角色提示词本身是 Markdown，不能把 ** 和 ` 当正文露出来 */
+  ok(!s.texts.includes('**'), '智能体页：不再露出 Markdown 粗体标记 **')
+  ok(!s.texts.includes('`'), '智能体页：不再露出行内代码反引号')
+  ok(s.texts.includes('redteam_agent_slot') && s.texts.includes('同时最多 3 个执行智能体'),
+    '智能体页：粗体/行内代码里的文字仍然可读')
+  ok(!s.texts.includes('# 指挥') && s.texts.includes('指挥'), '智能体页：角色提示词默认渲染预览（不露 # 标题标记）')
+  const sess = await switchTab('会话隧道')
+  ok(sess.texts.includes('••••••••') && !sess.texts.includes('e45'), '会话隧道：WebShell 口令默认掩码，不直显')
   const k = await switchTab('技能库')
   ok(k.texts.includes('fofa-recon'), '技能库：技能名渲染出来')
-  const rep = await switchTab('报告')
-  ok(rep.texts.includes('进入逻辑隔离业务内网'), '报告：得分项渲染出来')
+  ok(!k.texts.includes('**') && !k.texts.includes('`'), '技能库：列表不露 Markdown 标记')
+  const repClosed = await switchTab('报告')
+  ok(repClosed.texts.includes('边界突破'), '报告：阶段行默认渲染（正文收起）')
+  const stageRow = repClosed.hosts.find((x) => typeof x.props.className === 'string'
+    && x.props.className.indexOf('rt-rep-stage') !== -1 && x.handlers.onClick)
+  if (stageRow) stageRow.handlers.onClick()
+  const rep = await renderAll()
+  ok(rep.texts.includes('进入逻辑隔离业务内网'), '报告：展开阶段后得分项渲染出来')
+  ok(rep.texts.includes('详细报告查看'), '报告：可展开「详细报告查看」（与下载报告同源）')
+  const clientSrc = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
+  ok(clientSrc.includes("a.download = 'report-' + safe + '.md'") && !clientSrc.includes("replace(/[^\\w.\\-]/g, '_')"),
+    '报告下载：文件名保留中文靶标名，不再把中文替换成下划线')
+  ok(clientSrc.includes('攻击文件（可复现路径）') && clientSrc.includes('x.attack_files'),
+    '报告：条目渲染攻击文件可复现路径')
+  ok(rep.texts.includes('A | B'), '报告全文：表格里的转义竖线不会把单元格切错')
+  ok(!rep.texts.includes('**重点结论**') && rep.texts.includes('重点结论'),
+    '报告：模型回报里的 Markdown 粗体按文本渲染')
+  ok(rep.texts.includes('rpc-api/**') && rep.texts.includes('/admin-api/'),
+    '报告：URL/glob 里的 ** 保持原样（不被误判成 Markdown 粗体）')
+  ok(rep.texts.includes('复现缺口 1 项'), '报告：首屏给出不可复现条目数')
+  ok(rep.texts.includes('没有关联 vuln_id'), '报告：缺口清单写出具体要补什么（不是只给一个比例）')
   ok(rep.texts.includes('证据截图'), '报告：证据截图图条渲染出来')
   ok(rep.texts.includes('隧道连通性截图') && rep.texts.includes('记录生成的证据摘录'),
     '报告：现场截图与生成的证据摘录分别标注（不能混为一谈）')
   const sc = await switchTab('得分目标')
+  ok(sc.texts.includes('已得分项目'), '得分目标：默认表头显示已得分项目，不再按分值从低到高')
+  ok(sc.texts.includes('已得分') && sc.texts.includes('高分缺口') && sc.texts.includes('全部'),
+    '得分目标：默认「已得分」，并保留高分缺口/完整列表切换')
+  ok(sc.texts.includes('默认只显示已经得分的项目'), '得分目标：首屏只列已得分项目')
+  ok(!sc.texts.includes('按分值从低到高'), '得分目标：不再显示低到高排序')
   ok(sc.texts.includes('突破网络边界') || sc.texts.includes('进入逻辑隔离业务内网'), '得分目标：分组渲染出来')
   await openFirstScoreRow()
   const sc2 = await switchTab('得分目标')
@@ -507,12 +555,13 @@ console.log('\n— 空数据态给出"下一步怎么做"的引导（不是白�
   resetInstances()
   await renderAll()
   const f = await switchTab('漏洞战果')
-  ok(/暂无漏洞记录/.test(f.texts), '漏洞战果：空态文案渲染（' + (f.texts.match(/暂无[^ ]*/) || ['无'])[0] + '）')
+  ok(/没有已利用|暂无漏洞记录/.test(f.texts), '漏洞战果：空态文案渲染（' + (f.texts.match(/没有已利用|暂无[^ ]*/) || ['无'])[0] + '）')
   /* 「攻击文件」已并入漏洞战果：切到该子页签看空态 */
   const a = await switchTab('漏洞战果')
   ok(a.texts.length > 0, '漏洞战果（含攻击文件子页签）：空态不崩')
   const c = await switchTab('攻击链')
   ok(c.texts.length > 0, '攻击链：空数据不崩')
+  ok(c.texts.includes('本阶段只做收集') && !c.texts.includes('拿到分数的资产'), '攻击链：信息收集阶段不再展示得分资产/分数')
 }
 
 console.log('\n— 页签合并后的入口（当前测试→资产测绘 / 攻击文件→漏洞战果）')
@@ -523,7 +572,8 @@ console.log('\n— 页签合并后的入口（当前测试→资产测绘 / 攻�
   const a = await switchTab('资产测绘')
   ok(/当前测试/.test(a.texts), '资产测绘页有「当前测试」入口（与 全部C段/外网资产/内网资产 同级）')
   const f = await switchTab('漏洞战果')
-  ok(/攻击文件/.test(f.texts), '漏洞战果页有「攻击文件」子页签（原独立页签）')
+  const art = await switchTab('凭据与文件')
+  ok(art.texts.includes('凭据与文件') && art.texts.includes('攻击文件'), '凭据/访问会话/攻击文件已移到资源分区的「凭据与文件」页')
 }
 
 console.log('\n— 当前测试 ⇄ 资产列表 来回切换（回归：切过去回不来）')
@@ -561,8 +611,11 @@ console.log('\n— 当前测试 ⇄ 资产列表 来回切换（回归：切过�
 
   const t2 = await clickByText('当前测试')
   ok(t2 !== null && /实时 · 5s/.test(t2.texts), '再点「当前测试」又能切过去')
-  /* 上一步点组头顺带把内网组折叠了，先展开回来，否则 C 段行根本没渲染 */
-  await clickByText('个 C 段')
+  /* C 段默认收起：确保组是展开的（不靠 toggle 次数猜状态），否则 C 段行根本没渲染 */
+  {
+    const cur = await renderAll()
+    if (!cur.texts.includes('10.1.1.0/24')) await clickByText('个 C 段')
+  }
   const t3 = await clickByText('当前测试')
   ok(t3 !== null && /实时 · 5s/.test(t3.texts), '（准备）第三次切到测试视图')
   const seg = await clickByText('10.1.1.0/24')
@@ -614,7 +667,7 @@ console.log('\n— 页签栏的 ARIA 语义')
   const tabs = hosts.filter((x) => x.props.role === 'tab')
   const list = hosts.filter((x) => x.props.role === 'tablist')
   ok(list.length === 1, '页签栏有 role=tablist（1 个）')
-  ok(tabs.length === 9, '9 个页签都是 role=tab（实际 ' + tabs.length + '）')
+  ok(tabs.length === 10, '10 个页签都是 role=tab（实际 ' + tabs.length + '）')
   ok(tabs.every((x) => x.props['aria-selected'] !== undefined), '每个页签都带 aria-selected（读屏软件据此播报选中态）')
   const selected = tabs.filter((x) => x.props['aria-selected'] === 'true')
   ok(selected.length === 1 && selected[0].props.title !== undefined, '同一时刻只有一个页签是选中态')
@@ -717,8 +770,10 @@ console.log('\n— 面板跟随会话（切会话 → 换靶标）')
   const rT2 = await switchSession('s-NEW-TITLE')
   ok(shownEngagement(rT2.hosts) === ENGINE,
     '绑定表里没有这个会话时，用会话标题反查到「' + ENGINE + '」（实际：' + shownEngagement(rT2.hosts) + '）')
-  const foot = rT2.hosts.find((x) => typeof x.props.className === 'string' && x.props.className.indexOf('rt-foot') !== -1)
-  const footText = foot === undefined ? '' : JSON.stringify((foot.props.children || []).map((c) => (c && c.props ? String(c.props.children) : String(c))))
+  const foot = rT2.hosts.find((x) => typeof x.props.className === 'string'
+    && x.props.className.indexOf('rt-foot') !== -1
+    && JSON.stringify(x.props).includes('会话标题'))
+  const footText = foot === undefined ? '' : JSON.stringify(foot.props)
   ok(footText.includes('会话标题'),
     '底部如实标出「跟随来源：会话标题」，不冒充绑定（实际：' + footText.slice(0, 160) + '）')
 
