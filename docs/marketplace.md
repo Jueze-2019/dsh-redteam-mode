@@ -179,9 +179,8 @@ node scripts/publish-now.mjs packages/redteam-bundle   # 打印链接 → 人验
 **不是失败**；packument 约 1 分钟内出现。`publish-now.mjs` / `publish-direct.mjs`
 已把 200/201/202 都按成功处理。
 
-**市场条目现状**：PR #5034（首次收录）与 #5575（v0.11.x 条目）**已合并**；线上条目
-`version` 字段由 npm 自动取，发新版不需要改它。条目更新在 **PR #6076**
-（16 个随包技能 + 去武器化说明 + v0.13.0 的证据截图能力），等维护者合并。
+**市场条目现状**：条目已收录；线上条目的 `version` 字段由 npm 自动取，发新版不需要手改。
+v0.14.0 的条目更新在 **PR #8285**（16 个随包技能 / 56 个工具 / 5 分区 10 页面），等维护者合并。
 
 ### 顺带记录：绕过 2FA 的 token 还有两个副作用
 
@@ -263,7 +262,7 @@ description:
 
 > 描述里**含 `: `（冒号+空格）必须整体加引号**，否则 YAML 会当成嵌套键。
 
-**当前 PR**：[#5034](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5034)
+**当前 PR**：[#8285](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/8285)
 （fork 分支 `Jueze-2019:add-dsh-redteam-mode`）。对方规则的两条要点：
 
 * **CI 通过只是前置条件**：`Submission gate` / `check` 绿了不代表会合，维护者会**实际读仓库**，
