@@ -518,6 +518,9 @@ console.log('\n— 有数据时的关键内容（渲染确实用了接口返回�
   if (stageRow) stageRow.handlers.onClick()
   const rep = await renderAll()
   ok(rep.texts.includes('进入逻辑隔离业务内网'), '报告：展开阶段后得分项渲染出来')
+  const panelCss = readFileSync(new URL('../lib/styles.js', import.meta.url), 'utf8')
+  ok(panelCss.includes('--dsh-frame-chrome-top') && panelCss.includes('.rt-full{position:fixed;top:var(--dsh-frame-chrome-top'),
+    '面板与全屏视图都避开桌面标题栏，不覆盖 Windows 最小化/最大化/关闭按钮')
   ok(rep.texts.includes('详细报告查看'), '报告：可展开「详细报告查看」（与下载报告同源）')
   const clientSrc = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
   ok(clientSrc.includes("a.download = 'report-' + safe + '.md'") && !clientSrc.includes("replace(/[^\\w.\\-]/g, '_')"),

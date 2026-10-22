@@ -15,7 +15,10 @@
 export const CSS = String.raw`
 :root{--rt-dock-w:620px}
 /* 右侧栏收起时给 frame 加内边距，中栏主动收窄。属性名跨 DSH 版本兼容：\n   旧版 details 栏 data-details-collapsed，新版 rightbar 栏 data-rightbar-collapsed。 */\ndiv:has(> [data-shell-overlay] .rt-dock[data-open="1"])[data-details-collapsed],\ndiv:has(> [data-shell-overlay] .rt-dock[data-open="1"])[data-rightbar-collapsed]{padding-right:var(--rt-dock-w)}
-.rt-dock{position:absolute;top:0;right:0;bottom:0;z-index:20;display:flex;flex-direction:column;
+/* Windows Electron 的桌面标题栏是 webview 上方的 chrome（含最小化/最大化/关闭）。
+   面板是 absolute overlay，不能从 y=0 起，否则会盖住系统按钮，按钮也会落在拖拽区里。
+   用 DSH 布局发布的 chrome 高度变量；普通 web 没有变量时回退 0。 */
+.rt-dock{position:absolute;top:var(--dsh-frame-chrome-top,var(--dsh-frame-top-clearance,var(--dsh-windows-titlebar-height,0px)));right:0;bottom:0;z-index:20;display:flex;flex-direction:column;
   background:var(--dsw-alias-bg-layer-1);border-left:1px solid var(--dsw-alias-border-l1);
   box-shadow:-12px 0 32px rgba(0,0,0,.14);pointer-events:auto;color:var(--dsw-alias-label-primary);
   font-size:13px;line-height:1.5;transition:transform .18s ease,opacity .18s ease}
@@ -151,7 +154,7 @@ export const CSS = String.raw`
 .rt-section{padding:8px 10px 2px;font-size:11.5px;font-weight:600;color:var(--dsw-alias-label-secondary)}
 .rt-link{color:var(--dsw-alias-brand-primary);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rt-link:hover{text-decoration:underline}
-.rt-full{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;
+.rt-full{position:fixed;top:var(--dsh-frame-chrome-top,var(--dsh-frame-top-clearance,var(--dsh-windows-titlebar-height,0px)));right:0;bottom:0;left:0;z-index:60;display:flex;flex-direction:column;
   background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.5;
   border-top:3px solid var(--dsw-alias-brand-primary)}
 .rt-full .rt-head{padding:12px 18px}
