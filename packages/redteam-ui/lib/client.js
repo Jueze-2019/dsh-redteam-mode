@@ -281,6 +281,26 @@ window.__ModuleLoader__.load({
       try { return String(window.location.hash || '') === '#redteam-full' } catch { return false }
     }
 
+    /* 桌面客户端没有浏览器标签页：window.open 在 macOS/Windows Electron 里会被主进程拦掉，
+       或打开一个没有 DSH boot/session 的外部浏览器窗口。桌面端直接用同窗全屏 overlay；
+       Web 端仍优先开新窗口，弹窗被拦时也回退到同窗。 */
+    const FULL_REQUEST_EVENT = 'rt-open-full'
+    const isDesktopShell = () => {
+      try {
+        const html = document.documentElement
+        return html.hasAttribute('data-windows-titlebar') || html.getAttribute('data-platform') === 'darwin'
+      } catch { return false }
+    }
+    const requestFullInPlace = () => {
+      try { window.dispatchEvent(new Event(FULL_REQUEST_EVENT)) } catch { /* 旧浏览器 */ }
+    }
+    const openFullView = () => {
+      if (isDesktopShell()) { requestFullInPlace(); return }
+      let win = null
+      try { win = window.open(window.location.href.split('#')[0] + '#redteam-full', '_blank') } catch { win = null }
+      if (win === null || win === undefined) requestFullInPlace()
+    }
+
     const api = (req) => fetch('/redteam/api', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -3874,6 +3894,16 @@ window.__ModuleLoader__.load({
       const [seen, setSeen] = React.useState(null)
       const [full, setFull] = React.useState(() => isFullWindow())
 
+      /* 桌面端 / 弹窗被拦：由侧栏的「全面浏览」广播，在当前窗口进入同一套 full overlay。 */
+      React.useEffect(() => {
+        const onOpen = () => {
+          setFull(true)
+          try { window.history.replaceState(null, '', window.location.pathname + window.location.search + '#redteam-full') } catch { /* ignore */ }
+        }
+        window.addEventListener(FULL_REQUEST_EVENT, onOpen)
+        return () => window.removeEventListener(FULL_REQUEST_EVENT, onOpen)
+      }, [])
+
       /* 面板宽度 → :root 自定义属性（frame 的 padding-right 依赖它） */
       React.useEffect(() => {
         setDockWidth(width)
@@ -4073,9 +4103,7 @@ window.__ModuleLoader__.load({
       const groupOf = (tab) => TAB_GROUPS.find((g) => g.tabs.indexOf(tab) !== -1) || TAB_GROUPS[1]
       const activeGroup = groupOf(st.tab)
       const goTab = (tab) => { markTabSeen(tab); setUI({ tab: tab }) }
-      const openFull = () => {
-        try { window.open(window.location.href.split('#')[0] + '#redteam-full', '_blank', 'noopener') } catch (e) { setErr('无法打开新窗口：' + ((e && e.message) || e)) }
-      }
+      const openFull = () => { openFullView() }
       const exitFull = () => {
         setFull(false)
         /* 用 window.open 打开的独立窗口能关就关；同窗全屏只清 hash，不刷新。 */
@@ -4201,7 +4229,11 @@ window.__ModuleLoader__.load({
             ? h('button', { className: 'rt-btn', title: '回到带侧栏的普通界面（或按 Esc）', onClick: exitFull }, '退出全屏')
             : null,
           h('button', { className: 'rt-btn', title: '刷新名册、快照与当前页面数据', onClick: refreshAll }, '刷新'),
-          full ? null : h('button', { className: 'rt-btn', title: '在新浏览器窗口打开完整控制台', onClick: openFull }, '全面浏览'),
+          full ? null : h('button', {
+            className: 'rt-btn',
+            title: isDesktopShell() ? '在当前窗口全屏打开完整控制台（Esc 退出）' : '在新浏览器窗口打开完整控制台',
+            onClick: openFull,
+          }, '全面浏览'),
           full ? null : h('button', { className: 'rt-btn', title: '收起面板（对话列恢复全宽）', onClick: () => setUI({ open: false }) }, '收起')),
         /* 页签栏用标准 tablist/tab 角色：读屏软件据此播报「第几个页签、是否选中」。
            键盘用户 Tab 进来后可用 Enter/Space 切换（由 clickable 提供）。 */
@@ -4269,13 +4301,13 @@ window.__ModuleLoader__.load({
 
     /** 侧栏「全面浏览」：在新浏览器窗口打开完整控制台（当前窗口不受影响）。 */
     function FullButton(props) {
-      const open = () => {
-        try { window.open(window.location.href.split('#')[0] + '#redteam-full', '_blank', 'noopener') } catch { /* 被浏览器拦截 */ }
-      }
+      const desktop = isDesktopShell()
       return h('button', {
         className: 'rt-icon-btn',
-        title: '全面浏览：在新窗口打开完整控制台（当前窗口不受影响；新窗口内按 Esc 退出）',
-        onClick: open,
+        title: desktop
+          ? '全面浏览：在当前窗口全屏打开完整控制台（Esc 退出）'
+          : '全面浏览：在新窗口打开完整控制台（当前窗口不受影响；新窗口内按 Esc 退出）',
+        onClick: openFullView,
       }, h('span', { style: { fontSize: 14 } }, '⛶'), props.wide ? h('span', null, '全面浏览') : null)
     }
 

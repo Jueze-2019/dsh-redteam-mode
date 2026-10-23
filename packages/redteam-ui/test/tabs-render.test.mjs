@@ -527,6 +527,8 @@ console.log('\n— 有数据时的关键内容（渲染确实用了接口返回�
     '报告下载：文件名保留中文靶标名，不再把中文替换成下划线')
   ok(clientSrc.includes('攻击文件（可复现路径）') && clientSrc.includes('x.attack_files'),
     '报告：条目渲染攻击文件可复现路径')
+  ok(clientSrc.includes('FULL_REQUEST_EVENT') && clientSrc.includes('data-windows-titlebar') && clientSrc.includes('requestFullInPlace'),
+    '桌面端「全面浏览」回退到同窗全屏（不依赖被 Electron 拦截的 window.open）')
   ok(rep.texts.includes('A | B'), '报告全文：表格里的转义竖线不会把单元格切错')
   ok(!rep.texts.includes('**重点结论**') && rep.texts.includes('重点结论'),
     '报告：模型回报里的 Markdown 粗体按文本渲染')
