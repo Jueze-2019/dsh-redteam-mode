@@ -2868,7 +2868,9 @@ export class RedteamStore {
     const rows = db.prepare(`SELECT h.*, p.code, p.name AS point_name, p.points AS point_default, p.category,
         p.enabled AS point_enabled, p.rule AS point_rule, p.tier AS point_tier, p.cap AS point_cap,
         p.dedup_scope AS point_dedup, p.src AS point_src, p.description AS point_desc,
-        a.ip AS asset_ip, v.title AS vuln_title, v.cve AS vuln_cve, v.gained AS vuln_gained, v.severity AS vuln_severity
+        a.ip AS asset_ip, a.scope AS asset_scope, a.segment_cidr AS asset_segment,
+        a.primary_name AS asset_name,
+        v.title AS vuln_title, v.cve AS vuln_cve, v.gained AS vuln_gained, v.severity AS vuln_severity
       FROM score_hit h
       LEFT JOIN score_point p ON p.id = h.point_id
       LEFT JOIN asset a ON a.id = h.asset_id
@@ -3211,6 +3213,9 @@ export class RedteamStore {
         nth_of_point: seen + 1,
         target: h.target || '',
         asset_ip: h.asset_ip || '',
+        asset_scope: h.asset_scope || '',
+        asset_segment: h.asset_segment || '',
+        asset_name: h.asset_name || '',
         gained: h.vuln_gained || (trace.vuln && trace.vuln.gained) || '',
         vuln: trace.vuln === null || trace.vuln === undefined
           ? (h.vuln_id === null || h.vuln_id === undefined ? null : { id: h.vuln_id, title: h.vuln_title || '', cve: h.vuln_cve || null, severity: h.vuln_severity || null })
@@ -3294,7 +3299,9 @@ export class RedteamStore {
        典型场景：一次批量动作打下 60 台终端。逐台一条会把报告撑成流水账（实测占全文 64%），
        读者反而找不到"这一步到底是怎么做的"。合并成一条 + 目标台账表，
        复现入口只写一次，台数用表格堆。 */
-    const GROUP_MIN = Math.max(2, Number(options.groupMin) || 5)
+    /* 新模板要求一行一条得分记录，不做“批量动作合并”；legacy 仍保留原来的合并逻辑。 */
+    const layout = options.layout === 'legacy' ? 'legacy' : 'simple'
+    const GROUP_MIN = layout === 'legacy' ? Math.max(2, Number(options.groupMin) || 5) : Number.POSITIVE_INFINITY
     const stepKeyOf = (x) => (x.step_id === null || x.step_id === undefined ? '' : String(x.step_id))
     const items2 = (() => {
       const buckets = new Map()
@@ -3551,11 +3558,11 @@ export class RedteamStore {
     /* ── 默认交付格式：四段式（资产证明 / 得分汇总 / 凭据汇总 / 得分点复现）──────
        旧版长报告保留为 layout:'legacy'，只用于回归测试与需要旧版式的场景。 */
     const targetName = (meta && meta.target_name) || id
-    const layout = options.layout === 'legacy' ? 'legacy' : 'simple'
     if (layout === 'simple') {
+      const report = buildReportV2(this, id, ordered, stages, summary, targetName)
       return {
-        items: items2, stages, summary,
-        markdown: renderDeliveryReport(this, id, ordered, targetName, options, summary),
+        items: items2, stages, summary, report,
+        markdown: renderTemplateReport(report, options),
         target: targetName, layout: 'simple',
       }
     }
@@ -6083,6 +6090,366 @@ function rpAssetProof(a, list, assets) {
   if (evidenceLinked && !strong && proofText === '' && domains.length > 0 && !parts.some((p) => p.includes('由得分证据关联'))) parts.push('由得分证据关联（配置/回放中出现该目标）')
   const type = a.scope === 'internal' ? '靶标内网' : strong ? '靶标直连' : domains.length > 0 ? '靶标关联' : sameSegment ? '靶标同段' : '靶标关联'
   return { type, proof: parts.join('；'), strength }
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   报告 v2：资产证明 / 得分汇总 / 得分点复现
+   ══════════════════════════════════════════════════════════════════════ */
+
+const REPORT_STAGES = [
+  ['internet', '互联网资产权限'],
+  ['boundary', '边界突破'],
+  ['internal', '内网资产权限'],
+  ['target', '靶标权限'],
+]
+
+function rpReportStageOf(x) {
+  const c = String(x && x.stage_code ? x.stage_code : 'internet')
+  return REPORT_STAGES.some(([k]) => k === c) ? c : 'internet'
+}
+
+function rpReportCredentialText(x) {
+  const list = (x.credentials || []).filter((c) => c && (c.username || c.secret_value))
+  if (list.length === 0) return '—'
+  return list.slice(0, 3).map((c) => String(c.username || '—') + '/' + String(c.secret_value === null || c.secret_value === undefined ? '' : c.secret_value)).join('；')
+}
+
+function rpReportUrlOf(x) {
+  const t = String(x.target || '').trim()
+  if (t !== '') return t
+  return String(x.asset_ip || x.asset_name || '')
+}
+
+function rpReportAssetKeyOf(x) {
+  if (x.asset_id !== null && x.asset_id !== undefined) return 'id:' + Number(x.asset_id)
+  const h = rpHostOfTarget(x.target || '') || x.asset_ip
+  return h ? 'host:' + String(h).toLowerCase() : 'item:' + x.id
+}
+
+function rpReportAssetOf(x, assetById, assetByHost) {
+  let a = null
+  if (x.asset_id !== null && x.asset_id !== undefined) a = assetById.get(Number(x.asset_id)) || null
+  if (a === null) {
+    const h = rpHostOfTarget(x.target || '') || String(x.asset_ip || '').toLowerCase()
+    if (h !== null && h !== '') a = assetByHost.get(h) || null
+  }
+  if (a !== null) return a
+  return {
+    id: x.asset_id === null || x.asset_id === undefined ? null : Number(x.asset_id),
+    ip: x.asset_ip || rpHostOfTarget(x.target || '') || '',
+    primary_name: x.asset_name || '', names: [], ports: [],
+    scope: x.asset_scope || (x.stage_code === 'internal' ? 'internal' : 'external'),
+    segment_cidr: x.asset_segment || '',
+  }
+}
+
+function rpReportSegmentOf(x, fallbackSegments) {
+  const own = String(x.asset_segment || '').trim()
+  if (own !== '') return own
+  const host = rpHostOfTarget(x.target || '') || String(x.asset_ip || '').trim()
+  if (host !== '' && /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) {
+    const parts = host.split('.')
+    return parts.slice(0, 3).join('.') + '.0/24'
+  }
+  const t = String(x.target || '')
+  if (t.includes('/')) return t
+  for (const reach of fallbackSegments) {
+    if (reach && host !== '' && String(reach).startsWith(host.split('.').slice(0, 1).join('.'))) return reach
+  }
+  return '未归属网段'
+}
+
+function rpReportShots(list, asset) {
+  const out = []
+  const seen = new Set()
+  const own = asset ? [asset.ip, asset.primary_name, ...(asset.names || []).map((n) => n.name)].filter(Boolean).map((v) => String(v).toLowerCase()) : []
+  for (const x of list) {
+    for (const sh of (x.shots || [])) {
+      if (seen.has(sh.id)) continue
+      /* 点级截图可能是同一得分点下别的资产；归属证明不能拿错图。 */
+      if (own.length > 0 && sh.target && !own.some((v) => v && String(sh.target).toLowerCase().includes(v))) continue
+      seen.add(sh.id)
+      out.push(sh)
+    }
+  }
+  return out.slice(0, 3)
+}
+
+function rpReportEntryOf(x) {
+  const t = x.tunnels && x.tunnels[0]
+  if (t && t.entry) return t.entry
+  const a = x._reportAsset
+  if (a && a.id !== null && a.id !== undefined) return a.primary_name || a.ip
+  if (a && a.scope === 'external' && !String(x.target || '').includes('/')) return x.target
+  return '未登记互联网入口'
+}
+
+function buildReportV2(store, id, items, stages, summary, targetName) {
+  const assets = (store.listAssets(id, { limit: 2000 }).items || [])
+  const assetById = new Map(assets.map((a) => [Number(a.id), a]))
+  const assetByHost = new Map()
+  for (const a of assets) {
+    if (a.ip) assetByHost.set(String(a.ip).toLowerCase(), a)
+    if (a.primary_name) assetByHost.set(String(a.primary_name).toLowerCase(), a)
+    for (const n of a.names || []) if (n.name) assetByHost.set(String(n.name).toLowerCase(), a)
+  }
+  for (const x of items) {
+    x._reportAsset = rpReportAssetOf(x, assetById, assetByHost)
+    x._replay = rpReplayOf(x)
+  }
+
+  const stageOf = (x) => rpReportStageOf(x)
+  const stageItems = {}
+  for (const [code] of REPORT_STAGES) stageItems[code] = items.filter((x) => stageOf(x) === code)
+
+  /* 资产归属证明：互联网资产 + 内网入口资产（边界入口 + 第一个内网落点） */
+  const proofBuckets = { internet: new Map(), internal_entry: new Map() }
+  const addProof = (bucket, x) => {
+    const a = x._reportAsset
+    if (a === null || a === undefined) return
+    /* 边界 target 可能是 CIDR（172.17.0.0/16）而不是具体资产；不能拿它当入口资产证明。 */
+    if ((a.id === null || a.id === undefined) && (!a.ip || /^\d+\.\d+\.\d+\.0(?:\/|$)/.test(String(a.ip)))) return
+    const key = String(a.id !== null && a.id !== undefined ? 'id:' + a.id : 'ip:' + (a.ip || a.primary_name || 'unknown'))
+    if (!proofBuckets[bucket].has(key)) proofBuckets[bucket].set(key, { asset: a, items: [] })
+    const g = proofBuckets[bucket].get(key)
+    if (!g.items.some((v) => v.id === x.id)) g.items.push(x)
+  }
+  for (const x of stageItems.internet) addProof('internet', x)
+  for (const x of stageItems.boundary) addProof('internal_entry', x)
+  const firstInternal = stageItems.internal[0]
+  if (firstInternal) addProof('internal_entry', firstInternal)
+
+  const proofOf = (bucket) => Array.from(proofBuckets[bucket].values()).map((g) => {
+    const p = rpAssetProof(g.asset, g.items, assets)
+    return {
+      asset: g.asset,
+      type: p.type,
+      proof: p.proof,
+      strength: p.strength,
+      points: g.items.reduce((n, x) => n + (Number(x.points) || 0), 0),
+      count: g.items.length,
+      shots: rpReportShots(g.items, g.asset),
+      items: g.items.map((x) => x.id),
+    }
+  }).sort((a, b) => String(a.asset.ip || '').localeCompare(String(b.asset.ip || '')))
+
+  const stageSummary = REPORT_STAGES.map(([code, name]) => {
+    const list = stageItems[code] || []
+    return { code, name, count: list.length, points: list.reduce((n, x) => n + (Number(x.points) || 0), 0) }
+  })
+  const rows = (code) => (stageItems[code] || []).map((x, i) => ({
+    seq: i + 1, id: x.id, point_name: x.point_name, points: x.points, counted: x.counted,
+    url: rpReportUrlOf(x), asset: x.asset_ip || x._reportAsset.ip || x.target || '—',
+    credential: rpReportCredentialText(x),
+    entry: rpReportEntryOf(x),
+    target: x.target || '', code: x.code, stage_code: code,
+  }))
+  const stageTables = {
+    internet: rows('internet'), boundary: rows('boundary'), internal: rows('internal'), target: rows('target'),
+  }
+
+  /* 复现分组 */
+  const groupByAsset = (list) => {
+    const m = new Map()
+    for (const x of list) {
+      const key = rpReportAssetKeyOf(x)
+      if (!m.has(key)) m.set(key, { asset: x._reportAsset, items: [] })
+      m.get(key).items.push(x)
+    }
+    return Array.from(m.values()).sort((a, b) => (a.items[0].chain_no || 0) - (b.items[0].chain_no || 0))
+  }
+  const internet = groupByAsset(stageItems.internet)
+
+  const boundaryMap = new Map()
+  for (const x of stageItems.boundary) {
+    const ts = x.tunnels || []
+    if (ts.length === 0) {
+      const key = 'item:' + x.id
+      boundaryMap.set(key, { key, tunnel: null, entry: rpReportEntryOf(x), items: [x] })
+    } else {
+      for (const t of ts) {
+        const key = 'tunnel:' + (t.id === null || t.id === undefined ? t.listen || t.entry : t.id)
+        if (!boundaryMap.has(key)) boundaryMap.set(key, { key, tunnel: t, entry: t.entry || rpReportEntryOf(x), items: [] })
+        boundaryMap.get(key).items.push(x)
+      }
+    }
+  }
+  const boundary = Array.from(boundaryMap.values()).map((g) => Object.assign(g, {
+    shots: rpReportShots(g.items),
+    count: g.items.length,
+  })).sort((a, b) => (a.items[0].chain_no || 0) - (b.items[0].chain_no || 0))
+
+  const reachSegments = []
+  for (const g of boundary) {
+    const reach = g.tunnel && g.tunnel.reach ? String(g.tunnel.reach).trim() : ''
+    if (reach !== '' && reachSegments.indexOf(reach) === -1) reachSegments.push(reach)
+  }
+  const segMap = new Map()
+  for (const x of stageItems.internal) {
+    const seg = rpReportSegmentOf(x, reachSegments)
+    if (!segMap.has(seg)) segMap.set(seg, [])
+    segMap.get(seg).push(x)
+  }
+  const segOrder = []
+  for (const s of reachSegments) if (segMap.has(s) && segOrder.indexOf(s) === -1) segOrder.push(s)
+  for (const s of Array.from(segMap.keys())) if (segOrder.indexOf(s) === -1) segOrder.push(s)
+  const internal_segments = segOrder.map((cidr, i) => {
+    const list = segMap.get(cidr) || []
+    const assetsInSeg = groupByAsset(list).map((g) => Object.assign(g, { shots: rpReportShots(g.items) }))
+    return {
+      cidr, ordinal: i + 1, label: cidr === '未归属网段' ? cidr : '网段' + ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'][i] || String(i + 1),
+      items: list, assets: assetsInSeg, count: list.length,
+      shots: rpReportShots(list),
+    }
+  })
+  const target = groupByAsset(stageItems.target).map((g) => Object.assign(g, { shots: rpReportShots(g.items) }))
+  return {
+    target: targetName,
+    generated_at: nowIso(),
+    summary,
+    stage_summary: stageSummary,
+    stage_tables: stageTables,
+    asset_proof: { internet: proofOf('internet'), internal_entry: proofOf('internal_entry') },
+    repro: {
+      internet: internet.map((g) => Object.assign(g, { shots: rpReportShots(g.items) })),
+      boundary,
+      internal_segments,
+      target,
+    },
+  }
+}
+
+function rpTemplateTable(headers, rows) {
+  const out = []
+  out.push('| ' + headers.join(' | ') + ' |')
+  out.push('| ' + headers.map(() => '---').join(' | ') + ' |')
+  for (const row of rows) out.push('| ' + row.map((v) => rpCell(v, 90)).join(' | ') + ' |')
+  return out
+}
+
+function rpTemplateReproItem(x, heading, showSecrets) {
+  const out = []
+  out.push('#### ' + heading + ' `' + rpOneLine(x.target || x.asset_ip || '', 70) + '`', '')
+  const desc = x.vuln ? [x.vuln.cve, x.vuln.title].filter(Boolean).join(' ') : (x.how || x.point_name)
+  out.push('1. **漏洞说明**：' + rpClipText(desc, 240))
+  if (x.vuln_source === 'step') out.push('   - 漏洞关联：取自攻击步骤（记分时未显式填写）')
+  const replaySource = x.replay_cmd_kind === 'real' || x.replay_cmd_kind === 'linked'
+    ? '当日实际命令'
+    : x.replay_source === 'linked' || x.replay_source === 'auto'
+      ? '真实抓包'
+      : x.replay_cmd_kind === 'synthesized' ? '按真实报文/命令重建，需核对' : null
+  if (replaySource) out.push('- **复现来源**：' + replaySource)
+  if (x.evidence) out.push('2. **结果**：' + rpClipText(x.evidence, 500))
+  const r = x._replay || null
+  const cmds = []
+  if (x.replay_cmd) cmds.push(x.replay_cmd)
+  if (r && r.command && cmds.indexOf(r.command) === -1) cmds.push(r.command)
+  if (cmds.length > 0) {
+    out.push('3. **复现命令**：')
+    for (const cmd of cmds) {
+      const kind = /^(powershell|pwsh)/i.test(cmd) ? 'powershell' : 'bash'
+      out.push(...rpCodeBlock(kind, rpClip(cmd, 20000)))
+    }
+  }
+  const reqs = (x.requests || []).filter((q) => String(q.request || '').trim() !== '')
+  const packets = reqs.slice(0, 3).map((q) => q.request)
+  if (packets.length === 0 && x.replay_http) packets.push(x.replay_http)
+  if (packets.length > 0) {
+    out.push('4. **Yakit / HTTP 报文**：')
+    for (const q of packets) out.push(...rpCodeBlock('http', rpClip(q, 20000)))
+  }
+  const firstResp = reqs.find((q) => String(q.response || '').trim() !== '')
+  if (firstResp) {
+    out.push('5. **响应摘要**：')
+    out.push(...rpCodeBlock('http', rpClip(firstResp.response, 1000)))
+  }
+  if (cmds.length === 0 && packets.length === 0) out.push('3. **复现缺口**：没有留存真实命令或 HTTP 报文，不能直接复现。')
+  if ((x.attack_files || []).length > 0) out.push('6. **攻击文件**：' + x.attack_files.map((f) => '`' + f.path + '`').join('、'))
+  const ev = Array.from(new Set((x.steps || []).map((s) => s.evidence_ref).filter(Boolean)))
+  if (ev.length > 0) out.push('7. **证据文件**：' + ev.map((p) => '`' + rpAttackPath(p) + '`').join('、'))
+  const shots = x.shots || []
+  if (shots.length > 0) {
+    out.push('')
+    for (const sh of shots) out.push('![' + (sh.label || '证据') + '](' + (sh.url || '') + ')')
+  }
+  out.push('')
+  return out
+}
+
+function renderTemplateReport(report, options = {}) {
+  const showSecrets = options.secrets !== false
+  const out = []
+  out.push('# ' + report.target + ' · 红队得分报告', '')
+  out.push('> 生成时间：' + String(report.generated_at || '').replace('T', ' ').slice(0, 16)
+    + '　·　计分项：' + report.summary.count + ' 项　·　总分：' + report.summary.points + ' 分', '')
+  out.push('## 一、资产归属证明', '')
+  for (const [key, title] of [['internet', '1.1 互联网资产归属证明'], ['internal_entry', '1.2 内网入口资产归属证明']]) {
+    out.push('### ' + title, '')
+    const list = report.asset_proof[key] || []
+    if (list.length === 0) { out.push('未采集到对应资产证据。', ''); continue }
+    for (const g of list) {
+      out.push('#### `' + (g.asset.ip || g.asset.primary_name || '未命名资产') + '`' + (g.asset.primary_name ? '（' + g.asset.primary_name + '）' : ''), '')
+      out.push('- **归属类型**：' + g.type)
+      out.push('- **证明强度**：' + g.strength)
+      out.push('- **归属证据**：' + rpClipText(g.proof, 700))
+      if (g.shots.length > 0) {
+        out.push('')
+        for (const sh of g.shots) out.push('![' + (sh.label || '归属证据') + '](' + (sh.url || '') + ')')
+      }
+      out.push('')
+    }
+  }
+  out.push('## 二、得分汇总表', '')
+  out.push(...rpTemplateTable(['阶段', '计分项', '得分'], report.stage_summary.map((s) => [s.name, s.count, '+' + s.points])), '')
+  for (const [idx, s] of report.stage_summary.entries()) {
+    const code = s.code
+    out.push('### 2.' + (idx + 1) + ' ' + s.name + '（' + s.count + ' 项 / +' + s.points + ' 分）', '')
+    const list = report.stage_tables[code] || []
+    if (list.length === 0) { out.push('本阶段无得分项。', ''); continue }
+    const headers = code === 'internet' ? ['序号', '得分点', '分值', 'URL', '登录凭据']
+      : code === 'boundary' ? ['序号', '得分点', '分值', '互联网入口点']
+        : ['序号', '得分点', '分值', '资产', '凭据']
+    out.push(...rpTemplateTable(headers, list.map((r) => {
+      const base = [r.seq, r.point_name, '+' + r.points]
+      if (code === 'internet') return base.concat([r.url, r.credential])
+      if (code === 'boundary') return base.concat([r.entry])
+      return base.concat([r.asset, r.credential])
+    })), '')
+  }
+  out.push('## 三、得分点复现', '')
+  out.push('### 3.1 互联网资产得分复现', '')
+  if (report.repro.internet.length === 0) out.push('无互联网资产得分项。', '')
+  for (const [i, g] of report.repro.internet.entries()) {
+    out.push('#### 3.1.' + (i + 1) + ' ' + (g.asset.ip || g.asset.primary_name || '未命名资产'), '')
+    for (const [j, x] of g.items.entries()) out.push(...rpTemplateReproItem(x, '3.1.' + (i + 1) + '.' + (j + 1), showSecrets))
+  }
+  out.push('### 3.2 互联网边界突破复现', '')
+  if (report.repro.boundary.length === 0) out.push('无边界突破得分项。', '')
+  for (const [i, g] of report.repro.boundary.entries()) {
+    out.push('#### 3.2.' + (i + 1) + ' 隧道' + ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'][i] || String(i + 1), '')
+    out.push('1. **入口**：`' + rpOneLine(g.entry || '—', 120) + '`')
+    if (g.tunnel) {
+      out.push('2. **隧道参数**：`' + (g.tunnel.kind || 'socks5') + ' ' + (g.tunnel.listen || '') + '`'
+        + (g.tunnel.reach ? '，可达 `' + g.tunnel.reach + '`' : ''))
+      if (g.tunnel.command) out.push(...rpCodeBlock('bash', rpClip(g.tunnel.command, 20000)))
+    } else out.push('2. **隧道记录缺失**：仅根据得分 target 归组，需补隧道搭建证据。')
+    for (const [j, x] of g.items.entries()) out.push(...rpTemplateReproItem(x, '3.2.' + (i + 1) + '.' + (j + 1), showSecrets))
+  }
+  out.push('### 3.3 内网资产得分复现', '')
+  if (report.repro.internal_segments.length === 0) out.push('无内网资产得分项。', '')
+  for (const [i, seg] of report.repro.internal_segments.entries()) {
+    out.push('#### 3.3.' + (i + 1) + ' ' + seg.label + ' “' + seg.cidr + '”', '')
+    for (const [j, a] of seg.assets.entries()) {
+      for (const [k, x] of a.items.entries()) out.push(...rpTemplateReproItem(x, '3.3.' + (i + 1) + '.' + (j + 1) + '.' + (k + 1), showSecrets))
+    }
+  }
+  out.push('### 3.4 靶标权限复现', '')
+  if (report.repro.target.length === 0) out.push('无靶标权限得分项。', '')
+  for (const [i, g] of report.repro.target.entries()) {
+    for (const [j, x] of g.items.entries()) out.push(...rpTemplateReproItem(x, '3.4.' + (i + 1) + '.' + (j + 1), showSecrets))
+  }
+  return out.join('\n')
 }
 
 function renderDeliveryReport(store, id, items, targetName, options = {}, summary = {}) {

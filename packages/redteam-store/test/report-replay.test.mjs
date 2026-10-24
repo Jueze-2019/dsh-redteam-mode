@@ -90,10 +90,10 @@ try {
   ok(shell.replay_http_synthesized === false, '真实抓包不算"合成"')
   ok(shell.attack_files.length === 1 && shell.attack_files[0].path.startsWith('attack-files/'),
     '报告条目带攻击文件相对路径：' + JSON.stringify((shell.attack_files || []).map((x) => x.path)))
-  ok(rep.markdown.includes('攻击文件（复现路径）') && rep.markdown.includes(attackFile.path.split('/attack-files/')[1]),
+  ok(rep.markdown.includes('**攻击文件**') && rep.markdown.includes(attackFile.path.split('/attack-files/')[1]),
     '下载的 Markdown 也带攻击文件路径')
-  ok(rep.markdown.includes('完整动作记录') && rep.markdown.includes('原始请求（'),
-    '下载的 Markdown 含完整步骤与全部原始请求（不是只有最短复现入口）')
+  ok(rep.markdown.includes('**结果**') && rep.markdown.includes('Yakit / HTTP 报文'),
+    '下载的 Markdown 含结果、复现命令与 HTTP 报文')
   const mdHttpBlocks = (rep.markdown.match(/```http/g) || []).length
   ok(mdHttpBlocks >= 1, 'markdown 里有可复制的 http 代码块（' + mdHttpBlocks + ' 个）')
   ok(rep.markdown.includes('POST /admin/upload HTTP/1.1'), 'markdown 里是完整报文首行')
@@ -101,7 +101,7 @@ try {
 
   console.log('\n— 简洁：响应体截断并标注长度，不把整段响应堆进报告')
   ok(!rep.markdown.includes('x'.repeat(1500)), '响应体已截断（没有把 3000 字符原样塞进 markdown）')
-  ok(rep.markdown.includes('预期回显'), '给出预期回显（截断后的响应摘要）')
+  ok(rep.markdown.includes('响应摘要'), '给出响应摘要（截断后的响应）')
 
   console.log('\n— 不相干的凭据不许挂到条目上（曾经"终端权限"下挂着 MySQL 凭据）')
   const terminal = byCode.get('terminal-access')
@@ -132,15 +132,26 @@ try {
   ok(rep.markdown.includes('真实抓包') || rep.markdown.includes('当日实际命令'),
     'markdown 里按档位给出如实措辞')
 
-  console.log('\n— 报告结构与简洁性（四段式）')
-  ok(rep.markdown.includes('## 一、靶标单位资产证明'), '第一段是靶标单位资产证明')
+  console.log('\n— 报告结构（资产证明 / 得分汇总 / 得分点复现）')
+  ok(rep.report && rep.report.asset_proof.internet.length >= 1,
+    'report model 带互联网资产归属证明')
+  ok(rep.report && rep.report.asset_proof.internal_entry.length >= 1,
+    'report model 带内网入口资产归属证明')
+  ok(rep.report && rep.report.stage_summary.length === 4 && rep.report.stage_summary[3].code === 'target',
+    '报告汇总固定包含互联网 / 边界 / 内网 / 靶标四个阶段')
+  ok(rep.markdown.includes('- **归属类型**') && rep.markdown.includes('- **证明强度**'),
+    '资产归属证明包含归属类型和证明强度')
+  ok(rep.markdown.includes('root/R00t@2024'), '得分汇总表按用户要求显示明文凭据')
+  ok(rep.report && rep.report.repro.internal_segments.length >= 1,
+    '内网复现按网段分组')
+  ok(rep.markdown.includes('## 一、资产归属证明'), '第一段是资产归属证明')
   ok(rep.markdown.includes('## 二、得分汇总表'), '第二段是得分汇总表')
-  ok(rep.markdown.includes('## 三、账号密码凭据权限汇总表'), '第三段是账号密码凭据权限汇总表')
-  ok(rep.markdown.includes('## 四、得分点复现'), '第四段是得分点复现')
+  ok(rep.markdown.includes('### 2.3 内网资产权限') && rep.markdown.includes('### 2.4 靶标权限'), '第三段含内网/靶标得分表')
+  ok(rep.markdown.includes('## 三、得分点复现'), '第三段是得分点复现')
   const order = ['### 2.1 互联网资产权限', '### 2.2 边界突破', '### 2.3 内网资产权限', '### 2.4 靶标权限']
   ok(order.every((h, i) => rep.markdown.includes(h) && (i === 0 || rep.markdown.indexOf(order[i - 1]) < rep.markdown.indexOf(h))),
     '四阶段按「互联网 → 边界 → 内网 → 靶标」排序')
-  ok(/^#### 4\.\d+\.\d+ /m.test(rep.markdown), '得分点复现按 4.x.y 编号')
+  ok(/^#### 3\.1\.\d+ /m.test(rep.markdown), '得分点复现按 3.1.x 编号')
   ok(!rep.markdown.includes('#### 动作记录'), '不再把同资产动作整段重复进每条（动作记录已从正文移除）')
   const head = rep.markdown.split('\n').slice(0, 20).join('\n')
   ok(/计分项/.test(head) && /总分/.test(head), '抬头先给计分项与总分')

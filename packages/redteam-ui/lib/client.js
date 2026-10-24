@@ -2120,6 +2120,134 @@ window.__ModuleLoader__.load({
       return groups
     }
 
+
+    /* ---------------------------------------------------------- 报告 v2：模板化页面 */
+    /**
+     * 页面结构严格按交付模板：
+     *   一、资产归属证明（互联网 / 内网入口）
+     *   二、得分汇总表（总表 + 2.1-2.4 分段表）
+     *   三、得分点复现（互联网 / 边界隧道 / 内网网段 / 靶标）
+     * 页面和下载的 Markdown 都由 host 的 report model 生成，避免两边字段漂移。
+     */
+    function ReportV2(props) {
+      const { report, eng, mdText, busy, load, copy, download, msg } = props
+      const summary = report.summary || {}
+      const table = (headers, rows) => {
+        const head = h('thead', null, h('tr', null, headers.map((v, i) => h('th', { key: 'h' + i }, v))))
+        const body = h('tbody', null, (rows || []).map((row, ri) => h('tr', { key: 'r' + ri },
+          row.map((v, ci) => h('td', { key: 'c' + ci }, v === null || v === undefined || v === '' ? '—' : v)))))
+        return h('div', { className: 'rt-r2-table-wrap' },
+          h('table', { className: 'rt-r2-table' }, head, body))
+      }
+      const proofCard = (g) => h('div', { className: 'rt-r2-proof', key: 'proof' + (g.asset.id || g.asset.ip) },
+        h('div', { className: 'rt-r2-proof-head' },
+          h('b', { className: 'rt-mono' }, g.asset.ip || g.asset.primary_name || '未命名资产'),
+          g.asset.primary_name ? h('span', { className: 'rt-r2-muted' }, g.asset.primary_name) : null,
+          h('div', { className: 'rt-spacer' }),
+          h('span', { className: 'rt-tag' }, g.type),
+          h('span', { className: 'rt-tag ' + (g.strength === '强' ? 'rt-tag-live' : 'rt-tag-warn') }, '证明 ' + g.strength)),
+        h('div', { className: 'rt-r2-proof-line' }, h('b', null, '归属证据 '), g.proof || '待补'),
+        (g.shots || []).length > 0
+          ? h(ShotStrip, { eng: eng, shots: g.shots, total: g.shots.length, title: '归属截图' })
+          : h('div', { className: 'rt-r2-empty' }, '归属截图待补'))
+      const proofSection = (title, list) => h('div', null,
+        h('h3', { className: 'rt-r2-h3' }, title),
+        (list || []).length === 0
+          ? h('div', { className: 'rt-r2-empty' }, '未采集到对应资产证据。')
+          : h('div', { className: 'rt-r2-proof-grid' }, list.map(proofCard)))
+      const code = (text, label, lang) => h('div', { className: 'rt-r2-code' },
+        h('div', { className: 'rt-r2-code-head' },
+          h('span', null, label), h('div', { className: 'rt-spacer' }),
+          h('button', { className: 'rt-btn', onClick: () => copy(String(text || ''), label) }, '复制')),
+        h('pre', { className: 'rt-r2-pre' }, String(text || '')))
+      const reproItem = (x, heading) => h('div', { className: 'rt-r2-item', key: 'ri' + heading },
+        h('h5', { className: 'rt-r2-h5' }, heading + ' ' + (x.target || x.asset_ip || '')),
+        h('div', { className: 'rt-r2-item-line' },
+          h('b', null, '漏洞说明 '),
+          x.vuln ? [x.vuln.cve, x.vuln.title].filter(Boolean).join(' ') : (x.how || x.point_name)),
+        x.vuln_source === 'step' ? h('div', { className: 'rt-r2-muted' }, '漏洞关联自攻击步骤，记分时未显式填写') : null,
+        x.evidence ? h('div', { className: 'rt-r2-item-line' }, h('b', null, '结果 '), x.evidence) : null,
+        x.replay_cmd ? code(x.replay_cmd, /^(powershell|pwsh)/i.test(x.replay_cmd) ? 'PowerShell' : 'Bash / 命令', 'cmd') : null,
+        (x.requests || []).slice(0, 3).map((q, qi) => q.request ? code(q.request, 'Yakit / HTTP 报文 ' + (qi + 1), 'http') : null),
+        (!x.replay_cmd && !(x.requests || []).some((q) => q.request))
+          ? h('div', { className: 'rt-r2-gap' }, '复现缺口：没有留存真实命令或 HTTP 报文。') : null,
+        (x.attack_files || []).length > 0
+          ? h('div', { className: 'rt-r2-item-line' }, h('b', null, '攻击文件 '),
+              h('span', { className: 'rt-mono' }, x.attack_files.map((f) => f.path).join('、'))) : null,
+        (x.steps || []).some((s) => s.evidence_ref)
+          ? h('div', { className: 'rt-r2-item-line' }, h('b', null, '证据文件 '),
+              h('span', { className: 'rt-mono' }, Array.from(new Set(x.steps.map((s) => s.evidence_ref).filter(Boolean))).join('、'))) : null,
+        (x.shots || []).length > 0 ? h(ShotStrip, { eng: eng, shots: x.shots, total: x.shots.length, title: '复现截图' }) : null,
+        (x.gaps || []).length > 0 ? h('div', { className: 'rt-r2-gap' }, '复现材料：' + x.gaps.join('；')) : null)
+      const reproList = (list, headingPrefix, kind) => (list || []).map((g, i) => {
+        if (kind === 'boundary') {
+          return h('div', { className: 'rt-r2-group', key: 'b' + i },
+            h('h4', { className: 'rt-r2-h4' }, headingPrefix + (i + 1) + ' 隧道' + (i + 1)),
+            h('div', { className: 'rt-r2-item-line' }, h('b', null, '入口 '), h('span', { className: 'rt-mono' }, g.entry || '—')),
+            g.tunnel
+              ? h('div', { className: 'rt-r2-item-line' }, h('b', null, '隧道 '), h('span', { className: 'rt-mono' },
+                  (g.tunnel.kind || 'socks5') + ' ' + (g.tunnel.listen || '') + (g.tunnel.reach ? ' → ' + g.tunnel.reach : '')))
+              : h('div', { className: 'rt-r2-gap' }, '隧道记录缺失，需补搭建证据。'),
+            g.tunnel && g.tunnel.command ? code(g.tunnel.command, '隧道建立命令', 'cmd') : null,
+            g.items.map((x, j) => reproItem(x, headingPrefix + (i + 1) + '.' + (j + 1))))
+        }
+        if (kind === 'internet' || kind === 'target') {
+          return h('div', { className: 'rt-r2-group', key: 'g' + i },
+            h('h4', { className: 'rt-r2-h4' }, headingPrefix + (i + 1) + ' ' + (g.asset.ip || g.asset.primary_name || '未命名资产')),
+            g.items.map((x, j) => reproItem(x, headingPrefix + (i + 1) + '.' + (j + 1))))
+        }
+        return h('div', { className: 'rt-r2-group', key: 's' + i },
+          h('h4', { className: 'rt-r2-h4' }, headingPrefix + (i + 1) + ' ' + (g.label || '网段') + ' “' + (g.cidr || '未归属网段') + '”'),
+          (g.assets || []).map((a, ai) => h('div', { className: 'rt-r2-asset', key: 'a' + ai },
+            h('h5', { className: 'rt-r2-h5' }, (a.asset.ip || a.asset.primary_name || '未命名资产')),
+            a.items.map((x, xi) => reproItem(x, headingPrefix + (i + 1) + '.' + (ai + 1) + '.' + (xi + 1))))))
+      })
+      const stageSection = (s, i) => {
+        const code = s.code
+        const list = (report.stage_tables && report.stage_tables[code]) || []
+        const headers = code === 'internet' ? ['序号', '得分点', '分值', 'URL', '登录凭据']
+          : code === 'boundary' ? ['序号', '得分点', '分值', '互联网入口点']
+            : ['序号', '得分点', '分值', '资产', '凭据']
+        const rows = list.map((r) => code === 'internet' ? [r.seq, r.point_name, '+' + r.points, r.url, r.credential]
+          : code === 'boundary' ? [r.seq, r.point_name, '+' + r.points, r.entry]
+            : [r.seq, r.point_name, '+' + r.points, r.asset, r.credential])
+        return h('div', { key: 'st' + code },
+          h('h3', { className: 'rt-r2-h3' }, '2.' + (i + 1) + ' ' + s.name + '（' + s.count + ' 项 / +' + s.points + ' 分）'),
+          list.length === 0 ? h('div', { className: 'rt-r2-empty' }, '本阶段无得分项。') : table(headers, rows))
+      }
+      return h('div', { className: 'rt-main rt-r2' },
+        h('div', { className: 'rt-toolbar rt-r2-toolbar' },
+          h('span', { style: { fontWeight: 700 } }, '红队得分报告'),
+          h('span', { className: 'rt-tag rt-tag-live' }, '合计 ' + summary.points + ' 分'),
+          h('span', { className: 'rt-tag' }, summary.count + ' 项得分'),
+          h('span', { className: 'rt-tag' + (summary.incomplete ? ' rt-tag-warn' : ' rt-tag-live') }, '可复现 ' + (summary.count - (summary.incomplete || 0)) + '/' + summary.count),
+          h('div', { className: 'rt-spacer' }),
+          h('button', { className: 'rt-btn', disabled: busy || !mdText, onClick: () => copy(mdText, '整份报告') }, '复制全文'),
+          h('button', { className: 'rt-btn', disabled: busy || !mdText, onClick: () => download(mdText, report.target || eng) }, '下载 .md'),
+          h('button', { className: 'rt-btn', disabled: busy, onClick: load }, busy ? '生成中…' : '重新生成')),
+        msg ? h('div', { className: msg.err ? 'rt-err' : 'rt-foot' }, msg.err || msg.ok) : null,
+        h('div', { className: 'rt-r2-scroll' },
+          h('section', { className: 'rt-r2-section', id: 'rt-r2-assets' },
+            h('h2', { className: 'rt-r2-h2' }, '一、资产归属证明'),
+            proofSection('1.1 互联网资产归属证明', report.asset_proof && report.asset_proof.internet),
+            proofSection('1.2 内网入口资产归属证明', report.asset_proof && report.asset_proof.internal_entry)),
+          h('section', { className: 'rt-r2-section', id: 'rt-r2-scores' },
+            h('h2', { className: 'rt-r2-h2' }, '二、得分汇总表'),
+            table(['阶段', '计分项', '得分'], (report.stage_summary || []).map((s) => [s.name, s.count, '+' + s.points])),
+            (report.stage_summary || []).map(stageSection)),
+          h('section', { className: 'rt-r2-section', id: 'rt-r2-repro' },
+            h('h2', { className: 'rt-r2-h2' }, '三、得分点复现'),
+            h('h3', { className: 'rt-r2-h3' }, '3.1 互联网资产得分复现'),
+            (report.repro && report.repro.internet || []).length === 0 ? h('div', { className: 'rt-r2-empty' }, '无互联网资产得分项。') : reproList(report.repro.internet, '3.1.', 'internet'),
+            h('h3', { className: 'rt-r2-h3' }, '3.2 互联网边界突破复现'),
+            (report.repro && report.repro.boundary || []).length === 0 ? h('div', { className: 'rt-r2-empty' }, '无边界突破得分项。') : reproList(report.repro.boundary, '3.2.', 'boundary'),
+            h('h3', { className: 'rt-r2-h3' }, '3.3 内网资产得分复现'),
+            (report.repro && report.repro.internal_segments || []).length === 0 ? h('div', { className: 'rt-r2-empty' }, '无内网资产得分项。') : reproList(report.repro.internal_segments, '3.3.', 'internal'),
+            h('h3', { className: 'rt-r2-h3' }, '3.4 靶标权限复现'),
+            (report.repro && report.repro.target || []).length === 0 ? h('div', { className: 'rt-r2-empty' }, '无靶标权限得分项。') : reproList(report.repro.target, '3.4.', 'target'))))
+    }
+
+
     function ReportTab(props) {
       const eng = props.engagement
       const refreshKey = props.refreshKey || 0
@@ -2177,6 +2305,14 @@ window.__ModuleLoader__.load({
       const stages = (data && data.stages) || []
       const summary = (data && data.summary) || null
       const mdText = (data && data.markdown) || ''
+      const report = (data && data.report) || null
+      /* host 新版本返回模板化 report model：页面直接按同一份数据渲染；旧 host 保持下方旧卡片。 */
+      if (report !== null) {
+        return h(ReportV2, {
+          report: report, eng: eng, mdText: mdText, busy: busy, load: load,
+          copy: copy, download: download, msg: msg,
+        })
+      }
       /* 不可复现的条目 + 具体缺什么：只给“可复现 21/51”没有行动价值，
          用户需要知道是哪 30 条、缺请求还是缺命令/截图。 */
       const gapItems = items.filter((x) => x.incomplete === true || (Array.isArray(x.gaps) && x.gaps.length > 0))

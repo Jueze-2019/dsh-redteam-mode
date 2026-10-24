@@ -529,6 +529,8 @@ console.log('\n— 有数据时的关键内容（渲染确实用了接口返回�
     '报告：条目渲染攻击文件可复现路径')
   ok(clientSrc.includes('FULL_REQUEST_EVENT') && clientSrc.includes('data-windows-titlebar') && clientSrc.includes('requestFullInPlace'),
     '桌面端「全面浏览」回退到同窗全屏（不依赖被 Electron 拦截的 window.open）')
+  ok(clientSrc.includes('function ReportV2') && clientSrc.includes('data.report') && clientSrc.includes('asset_proof'),
+    '报告页使用 v2 模板模型（资产证明 / 得分汇总 / 复现分组）')
   ok(rep.texts.includes('A | B'), '报告全文：表格里的转义竖线不会把单元格切错')
   ok(!rep.texts.includes('**重点结论**') && rep.texts.includes('重点结论'),
     '报告：模型回报里的 Markdown 粗体按文本渲染')
