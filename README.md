@@ -37,15 +37,15 @@ bash "$DSH_HOME/redteam/setup.sh"           # 装齐工具 + 引导填 FOFA_KEY 
 
 ```sh
 dsh plugin --profile web add \
-  https://github.com/Jueze-2019/dsh-redteam-mode/releases/download/v0.14.2/dsh-redteam-mode-0.14.2.tgz
+  https://github.com/Jueze-2019/dsh-redteam-mode/releases/download/v0.14.3/dsh-redteam-mode-0.14.3.tgz
 # 装完重启一次 dsh web
 ```
 
 **下载 tarball 再装**（适合离线机器，附件同在同一下载页）：
 
 ```sh
-curl -LO https://github.com/Jueze-2019/dsh-redteam-mode/releases/download/v0.14.2/dsh-redteam-mode-0.14.2.tgz
-dsh plugin --profile web add ./dsh-redteam-mode-0.14.2.tgz
+curl -LO https://github.com/Jueze-2019/dsh-redteam-mode/releases/download/v0.14.3/dsh-redteam-mode-0.14.3.tgz
+dsh plugin --profile web add ./dsh-redteam-mode-0.14.3.tgz
 ```
 
 **从源码装**：
