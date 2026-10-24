@@ -392,10 +392,10 @@ try {
   ok(sectionOrder.every((h, i) => report.markdown.includes(h)
       && (i === 0 || report.markdown.indexOf(sectionOrder[i - 1]) < report.markdown.indexOf(h))),
     '报告四段按「互联网 → 边界 → 内网 → 靶标」排序')
-  ok(report.markdown.includes('## 一、靶标单位资产证明')
-    && report.markdown.includes('## 三、账号密码凭据权限汇总表')
-    && report.markdown.includes('## 四、得分点复现'),
-    '报告包含资产证明 / 凭据汇总 / 得分点复现三节')
+  ok(report.markdown.includes('## 一、资产归属证明')
+    && report.markdown.includes('## 二、得分汇总表')
+    && report.markdown.includes('## 三、得分点复现'),
+    '报告包含资产证明 / 得分汇总 / 得分点复现三节')
 
   console.log('— 攻击链步骤带分（point_code + self_created + 服务封顶）')
   const stepSelf = store.addChainStep(id, { stage: 'vuln', title: '注册账号进后台', point_code: 'web-app', evidence: '自己注册 ztest20 并授权为管理员', self_created: true })

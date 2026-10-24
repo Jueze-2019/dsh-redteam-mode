@@ -60,7 +60,7 @@ try {
   store.addScoreHit(id, { code: 'server-host', points: 50, asset_id: a1, target: '10.20.30.11:22', evidence: 'root 权限' })
   const rep = store.scoreReport(id, { limit: 20 })
   ok(/归属证明：ICP备20260001号/.test(rep.markdown), '报告第一节带上 test_notes 里的归属证明')
-  ok(new RegExp('\\| `10\\.20\\.30\\.11`.*\\| 强 \\|').test(rep.markdown), '有 ICP/备案证明时资产行判“强”')
+  ok(rep.markdown.includes('- **证明强度**：强'), '有 ICP/备案证明时资产归属证明判“强”')
 
 
   console.log('— 五、得分点带判定标准/自证材料（SCORE_CONFIRM）')

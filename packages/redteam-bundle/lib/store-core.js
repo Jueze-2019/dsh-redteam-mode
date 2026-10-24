@@ -6371,7 +6371,10 @@ function rpTemplateReproItem(x, heading, showSecrets) {
   const shots = x.shots || []
   if (shots.length > 0) {
     out.push('')
-    for (const sh of shots) out.push('![' + (sh.label || '证据') + '](' + (sh.url || '') + ')')
+    for (const sh of shots) {
+      out.push('![' + (sh.label || '证据') + '](' + (sh.url || '') + ')')
+      if (sh.kind === 'card') out.push('> 记录生成的证据摘录（非现场截图）。')
+    }
   }
   out.push('')
   return out
@@ -6383,6 +6386,12 @@ function renderTemplateReport(report, options = {}) {
   out.push('# ' + report.target + ' · 红队得分报告', '')
   out.push('> 生成时间：' + String(report.generated_at || '').replace('T', ' ').slice(0, 16)
     + '　·　计分项：' + report.summary.count + ' 项　·　总分：' + report.summary.points + ' 分', '')
+  const excluded = []
+  if (report.summary.selfCreatedExcluded) excluded.push('自己注册/自建账号 ' + report.summary.selfCreatedExcluded + ' 条')
+  if (report.summary.serviceCappedExcluded) excluded.push('同资产同端口重复的账号/数据库权限 ' + report.summary.serviceCappedExcluded + ' 条（服务已拿满）')
+  if (report.summary.disabledExcluded) excluded.push('停用得分点 ' + report.summary.disabledExcluded + ' 条')
+  if (excluded.length > 0) out.push('> 未计入：' + excluded.join('；') + '。')
+  out.push('> 证据截图：按资产归属和复现条目附代表图（每个得分点最多 3 张）。', '')
   out.push('## 一、资产归属证明', '')
   for (const [key, title] of [['internet', '1.1 互联网资产归属证明'], ['internal_entry', '1.2 内网入口资产归属证明']]) {
     out.push('### ' + title, '')
@@ -6395,7 +6404,10 @@ function renderTemplateReport(report, options = {}) {
       out.push('- **归属证据**：' + rpClipText(g.proof, 700))
       if (g.shots.length > 0) {
         out.push('')
-        for (const sh of g.shots) out.push('![' + (sh.label || '归属证据') + '](' + (sh.url || '') + ')')
+        for (const sh of g.shots) {
+          out.push('![' + (sh.label || '归属证据') + '](' + (sh.url || '') + ')')
+          if (sh.kind === 'card') out.push('> 记录生成的证据摘录（非现场截图）。')
+        }
       }
       out.push('')
     }

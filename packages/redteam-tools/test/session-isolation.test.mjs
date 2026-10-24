@@ -219,13 +219,13 @@ ok(withStep.tunnels.length === 1 && withStep.tunnels[0].command.includes('suo5-l
 ok(withStep.how.includes('CVE-2021-22205'), '报告：how 一句话说清靠什么漏洞拿到')
 /* 四段式改版后，每条成果的"这一步怎么做的"落在「结果 / 复现」，
    不再单列「动作记录」。要求不变：必须有可照着做的复现入口。 */
-ok(report.markdown.includes('## 四、得分点复现') && /- \*\*结果\*\*：/.test(report.markdown),
+ok(report.markdown.includes('## 三、得分点复现') && /\*\*结果\*\*：/.test(report.markdown),
   '报告 markdown：包含得分点复现与结果说明')
 ok(/```(http|bash)/.test(report.markdown)
   && (report.markdown.includes('curl -F') || report.markdown.includes('POST /')),
   '报告 markdown：给出可复制的报文或命令')
 /* 四段式第一段是资产证明，列出得分资产；发现时间不再单列（控制台资产测绘仍保留）。 */
-ok(report.markdown.includes('## 一、靶标单位资产证明')
+ok(report.markdown.includes('## 一、资产归属证明')
   && report.markdown.includes('10.9.9.9'),
   '报告 markdown：资产证明列出得分资产')
 const boundary = report.items.find((x) => x.code === 'boundary-logical')
