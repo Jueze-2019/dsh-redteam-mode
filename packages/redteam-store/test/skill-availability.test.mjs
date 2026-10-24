@@ -129,6 +129,19 @@ console.log('— 新技能 deepseek-web-intel')
     '技能正文同时覆盖 Search 与 Fetch 两个端点')
 }
 
+console.log('— 新增作战规划/专项路径技能')
+{
+  const { readFileSync } = await import('node:fs')
+  for (const [file, marker] of [
+    ['campaign-planning.md', '时间盒'],
+    ['specialist-paths.md', 'AD / 身份'],
+  ]) {
+    const content = readFileSync(new URL('../../../skills/' + file, import.meta.url), 'utf8')
+    ok(requiredEnvOf(content).length === 0, file + ' 不引入新的必需环境变量')
+    ok(content.includes(marker), file + ' 覆盖关键作战约束/路径')
+  }
+}
+
 console.log('— 与工具/面板共用同一份实现')
 {
   /* tools 与 UI 都必须 import 这个模块，而不是各自内联一份判定 */

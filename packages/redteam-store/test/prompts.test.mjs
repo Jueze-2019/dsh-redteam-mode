@@ -36,6 +36,9 @@ try {
     '六个角色里只有一个主会话（plan），它不参与派活')
   ok(fresh.every((p) => p.stale === false && p.injected === (p.role !== 'plan')),
     '新靶标 stale=false；只有执行角色标记 injected=true')
+  ok(DEFAULT_PROMPTS.plan.includes('campaign-planning') && DEFAULT_PROMPTS.assess.includes('specialist-paths')
+    && DEFAULT_PROMPTS.exploit.includes('specialist-paths') && DEFAULT_PROMPTS.internal.includes('specialist-paths'),
+    '角色提示词已接入作战规划/专项路径技能')
   ok(roles.every((r) => typeof DEFAULT_PROMPTS[r] === 'string' && DEFAULT_PROMPTS[r].trim() !== ''),
     '每个角色都有内置默认提示词（不会出现空角色）')
 
