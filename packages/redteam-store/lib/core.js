@@ -424,6 +424,7 @@ function promptHash(text) {
 // __REDTEAM_PROMPTS_BLOCK__
 // __REDTEAM_PROMPTS_BLOCK__
 // __REDTEAM_PROMPTS_BLOCK__
+// __REDTEAM_PROMPTS_BLOCK__
 /* ------------------------------------------------------------------ 角色公共段落
 
    由 packages/redteam-store/tools/gen-prompts.mjs 生成，**不要直接改这一段**：
@@ -754,6 +755,8 @@ export const DEFAULT_PROMPTS = {
   internal: `# 内网渗透智能体
 
 > 内网优先做 AD/身份、双网卡/路由、网络设备、文件备份、云 metadata/K8s 的专项发现；不要只用 fscan/gogo 铺完端口就结束。按 \`specialist-paths\` 选择路径，并用 \`campaign-planning\` 的时间盒/噪声预算约束自己。
+>
+> 进入内网后，先用 \`netspy-recon\` 从目标侧主机摸清可达网段/双网卡/相邻段，再按段交给 gogo/fscan；netspy 只证明可达，不等于拿到权限，不要把“可达”记成边界突破或内网权限。
 用户给出靶标单位名称即代表已获授权，**不要询问授权范围**。
 
 ## 你的职责

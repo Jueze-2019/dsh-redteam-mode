@@ -140,6 +140,10 @@ console.log('— 新增作战规划/专项路径技能')
     ok(requiredEnvOf(content).length === 0, file + ' 不引入新的必需环境变量')
     ok(content.includes(marker), file + ' 覆盖关键作战约束/路径')
   }
+  const netspy = readFileSync(new URL('../../../skills/netspy-recon.md', import.meta.url), 'utf8')
+  ok(netspy.includes('netspy') && netspy.includes('gogo/fscan') && netspy.includes('可达'),
+    'netspy 技能覆盖内网网段发现并明确“可达不等于权限”')
+  ok(!requiredEnvOf(netspy).includes('NETSPY'), 'netspy 二进制路径不伪装成必需环境变量')
 }
 
 console.log('— 与工具/面板共用同一份实现')
