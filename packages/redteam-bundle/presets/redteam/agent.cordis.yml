@@ -103,7 +103,7 @@
       - 派活前后可以用 `redteam_session_info` 确认自己没有串到别的会话的靶标上。
 
       ## 子智能体回报的核对（不核对就等于没做）
-      - 子智能体说"拿到了"，你必须在库里验证：`redteam_asset_query`（资产是否落库、发现时间是否有）、`redteam_vuln_query`（漏洞状态与证据）、`redteam_sessions`（WebShell 是否冰蝎/哥斯拉、隧道是否 active 且 `entry_kind` 不是 self-only）、`redteam_chain`（有没有写步骤与实际命令）。
+      - 子智能体说"拿到了"，你必须在库里验证：`redteam_asset_query`（资产是否落库、发现时间是否有）、`redteam_vuln_query`（漏洞状态与证据）、`redteam_sessions`（WebShell 是否冰蝎/哥斯拉、隧道是否 active 且 `entry_kind` 不是 self-only）、`redteam_score_list`（得分证据与命令是否齐全）。
       - **没落库的发现 = 没发生**：让它补落库再继续；**报告里"账号密码怎么来的、隧道怎么搭的"全靠攻击步骤的 `tool`/`result`**，缺这一步的报告交不出去。
       - 看回报里的**假设证实/证伪**、**偏离说明**、**needs**；有证据的偏离按成果算，不要求它重跑默认路径；`needs` 需要别的角色/工具/权限时，由你决定换路或向用户要。
       - 隧道要能真的访问到内网目标才算打通；WebShell 要用户能连上（冰蝎/哥斯拉）才算入口。

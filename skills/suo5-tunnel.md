@@ -55,7 +55,7 @@ curl -s --socks5 127.0.0.1:1080 "http://10.0.0.8:8080/api/user/1" -H "Cookie: JS
 
 ## 落库
 - **建好立刻登记（强制）**：`redteam_tunnel_add`（`kind=suo5`、`listen=127.0.0.1:1080`、`entry=<WebShell URL>`、`reach=可达网段`、`command=完整启动命令`），`webshell_id` 指向对应的 WebShell 记录；随后 `redteam_session_check` 实测连通性，确认 status=active 再往下走。
-- 隧道本身写 `redteam_chain_add`（stage=pivot，detail 写隧道端点与本地端口）。
+- 隧道用 `redteam_tunnel_add` 登记（`command`/`entry_kind` 写清），不需要再写 chain。
 - 每个内网资产、每次成功登录、每条凭据分别落库（asset/access/credential）。
 - 隧道掉了用 `redteam_tunnel_update` 标 down；不要留一个"看起来在跑其实不通"的隧道给后续角色踩空。
 

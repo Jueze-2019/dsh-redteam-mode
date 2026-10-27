@@ -89,10 +89,7 @@ nuclei -l runs/alive-urls.txt -tags cve -tl
    - `title`（模板名 + 命中点）、`severity`、`cve`（模板带的 `classification.cve-id`）、`target`（**带端口**）、
      `evidence`（命中回显/响应特征/matched-at）、`confidence=confirmed`（nuclei 命中即为已确认存在于响应层面）、
      `gained`（通过它能拿到什么）、`agent=vuln-scan`。
-2. **每条确认漏洞配一条 `redteam_http_evidence_add`**：请求行 + Host + 关键请求头 + 响应摘要（模板的 `curl-command` 字段可直接用）。
-3. 每个关键动作 `redteam_chain_add`：`stage_code=recon` 或 `internet`，
-   `tool` 写**实际命令原文**（例如 `nuclei -l runs/alive-urls.txt -severity critical,high -rl 50 -jsonl -o runs/nuclei-0918.jsonl`），
-   `result` 写回显摘要（例如 `命中 3 条：CVE-2023-xxxx（critical）…`）。
+2. 确认漏洞时把完整请求/响应放进 `redteam_vuln_add` 的 `request`/`response`（自动存 HTTP 证据）；记分时把实际命令/回显放进 `redteam_score_hit` 的 `command`/`result`。
 4. 测完该资产立刻 `redteam_asset_test` 回写：`status`（testing/tested/no_surface/blocked）、`test`（追加式结论）、`surface`（还剩什么可测）。
 5. **只记能得分的面**：与得分无关的信息泄露、版本暴露、CORS/CSRF、SSL 与响应头类问题**最多记一行排除结论**，不深挖、不重复跑。
 

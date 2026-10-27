@@ -80,5 +80,5 @@ $PW -s=recon1 close                                                   # 关闭�
 
 ## 注意事项
 - `--no-sandbox` 仅在本机演练环境使用；不要把该参数带进生产。
-- 抓到的 URL/标题写回 `redteam_asset_add`（`url`/`title` 字段），接口清单写 `runs/` 并在攻击链里引用。
+- 抓到的 URL/标题写回 `redteam_asset_add`（`url`/`title` 字段），接口清单写 `runs/` 并在资产 `test`/`surface` 里引用。
 - 截图与页面内容可能含敏感数据，只落 `runs/`，不要写进资产库。

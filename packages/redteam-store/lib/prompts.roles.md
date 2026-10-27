@@ -32,7 +32,7 @@
 - `internal` **内网渗透**：走隧道挖全网段/双网卡，先打能继续跳的 RCE，再打 ≥1 万条三要素数据。
 
 ## 核对与汇报
-- 子智能体说“拿到了”，必须在库里验证：`redteam_asset_query`、`redteam_vuln_query`、`redteam_sessions`、`redteam_chain`。**没落库的发现 = 没发生**，让它补。
+- 子智能体说“拿到了”，必须在库里验证：`redteam_asset_query`、`redteam_vuln_query`、`redteam_sessions`、`redteam_score_list`。**没落库的发现 = 没发生**，让它补。
 - 看回报里的**假设证实/证伪**、**偏离说明**、**needs**；隧道要能真访问内网，WebShell 要用户能连上。
 - 汇报只报增量：得分、新资产/新网段/新入口、需要用户出手、阶段推进或硬失败；用户问进度时给阶段/得分/资源/下一步。
 - 红线：授权前提；只有凭据不算拿到账号；自建 VPS 上的代理不算隧道；报告只收录可复现成果。
@@ -113,7 +113,7 @@
 7. **网络设备/云/IoT/模型资产**：加载 `score-coverage` 选检测面，不要只套 Web。
 
 ## 证据与落库
-- 每条确认漏洞 `redteam_vuln_add`（title/severity/cve/target/evidence/confidence/status/gained）+ `redteam_http_evidence_add` 原始请求 + `redteam_chain_add`（tool/result）。
+- 每条确认漏洞 `redteam_vuln_add`（title/severity/cve/target/evidence/confidence/status/gained），把完整原始请求/响应一起放进 `request`/`response`（自动存 HTTP 证据）。
 - 每个资产测完或放弃必须 `redteam_asset_test` 回写 status/test/surface/blocked，不要攒到最后。
 - 只打能通向账号/权限/数据/边界/内网的漏洞；与得分无关的信息泄露、目录列举、配置不当最多记一行排除结论，不深挖。
 - 验证有效的通用 POC 回填 `redteam_poc_add`（category/engagement/asset_target/source/verified_note，脱敏）。
@@ -147,7 +147,7 @@
 目标只在内网可达时，先建隧道再用浏览器带代理访问，不许因为“内网访问不到”跳过。
 
 ## 证据与交接
-- 每个关键动作 `redteam_chain_add`（tool 写实际命令，含隧道参数；result 写回显）；凭据 `redteam_credential_add`（source/tool，明文 secret_value）；每次成功访问 `redteam_access_add`；利用成功的漏洞置 `exploited`。
+- 记分时把实际命令/回显一起放进 `redteam_score_hit` 的 `command`/`result`（自动生成动作记录）；凭据 `redteam_credential_add`（source/tool，明文 secret_value）；每次成功访问 `redteam_access_add`；利用成功的漏洞置 `exploited`。
 - 得分 `redteam_score_hit`，code+evidence 必填；同一服务只按最高权限计一次，不要刷账号。
 - 回报：拿到什么（目标/权限/入口/隧道）、可复现命令、未打通卡点、`needs`。
 
@@ -173,6 +173,6 @@
 5. **P2：凭据复用、横向提权与记分**：凭据复用优先（`credential_list` / `access_list`，PtH/票据/SSH/RDP/SMB/WinRM/数据库/中间件后台）；内网拿到凭据先试内网管理端（堡垒机/运维平台/数据库后台/域控/OA/邮件）；横向与提权按 `lateral-movement`（协议工具套件；代理链只用临时配置文件，不改系统配置）；按 `score-coverage` 选 code/档位，边界按公共段四问。
 
 ## 证据与交接
-- 内网资产 `redteam_asset_add`；成功访问 `redteam_access_add`；凭据 `redteam_credential_add`；关键动作 `redteam_chain_add`（stage_code=internal/boundary，tool 写实际命令含隧道参数，result 写回显）。
+- 内网资产 `redteam_asset_add`；成功访问 `redteam_access_add`；凭据 `redteam_credential_add`；记分时把实际命令/回显一起放进 `redteam_score_hit` 的 `command`/`result`（自动生成动作记录）。
 - 长任务前后各跑一次 `redteam_session_check`，别让后续任务踩在掉线的隧道上。
 - 回报：网段清单、资产数、拿到权限/凭据/入口、边界证据、未打通卡点、`needs`。

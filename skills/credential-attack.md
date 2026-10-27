@@ -152,6 +152,6 @@ john --show hashes.txt
    `evidence` 写「资产｜后台管理员 tomcat/Tomcat@2024」）。
    **登不进去就在 `redteam_asset_test` 的 `test` 里记一行卡点**（哈希未破解/需二次认证/限制来源 IP/账号已禁用），不记分。
 3. **账号权限按服务封顶**：同一资产同一端口只算一次分，拿到管理员即该服务拿满——不要在同一服务上刷多个账号。
-4. 每个关键动作 `redteam_chain_add`：`stage_code=internet`（或 `internal`），
+4. 记分时把实际命令/回显放进 `redteam_score_hit` 的 `command`/`result`，不需要再单独写 chain。
    `tool` 写实际命令、`result` 写回显摘要（如 `ssh 10.0.0.5 用 root/Root@123 登录成功，uid=0(root)`）。
 5. 哈希文件、破解结果一律放 `runs/`。

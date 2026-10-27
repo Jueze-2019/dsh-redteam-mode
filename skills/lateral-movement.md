@@ -144,7 +144,7 @@ proxychains4 -f runs/proxychains-1080.conf enum4linux -a 10.0.0.6
 3. **凭据落库**：`redteam_credential_add`，`source` 写清（`凭据转储`/`Kerberoasting`/`AS-REP`/`凭据复用`/`离线破解`），
    `tool` 写实际命令原文，明文口令写 `secret_value`，文件路径写 `secret_ref`。
 4. **访问会话落库**：`redteam_access_add`（`method=smb`/`wmi`/`pth`/`kerberos`/`ssh`/`rdp`）。
-5. 每个关键动作 `redteam_chain_add`：`stage_code=internal`（内网拿权限）或 `target`（拿靶标），
+5. 记分时把实际命令/回显放进 `redteam_score_hit` 的 `command`/`result`，不需要再单独写 chain。
    **`tool` 写实际命令原文**（含 `-hashes`、`-k -no-pass` 等关键参数，以及 `proxychains4 -f ...` 前缀），
    `result` 写回显摘要——报告要能照着复现。
 6. **回填知识库**：验证有效的通用利用脚本 `redteam_poc_add`（带 `category` + `engagement` + `asset_target` + `verified_note`，脱敏）。

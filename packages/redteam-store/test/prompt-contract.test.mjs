@@ -9,7 +9,7 @@
  * 失败原因全部没落库）。这里锁住几条契约：
  *   ① `notes` 是 `redteam_asset_test` 的兼容别名，会与 `test` 一起追加进 test_notes；
  *   ② `stage_code` 只接受 5 个合法值，非法值退回老 stage 兜底并给出可见告警；
- *   ③ `redteam_chain_add` 带 point_code 却不给 evidence 时，必须明确告知"没有记分"；
+ *   ③ `addChainStep`（score_hit 自动动作记录内部复用）带分不带证据时必须明确告知"没有记分"；
  *   ④ 提示词里不出现不存在的参数名；
  *   ⑤ 公共段落（授权 / 记分 / 查库 / 落库溯源 / 交付）只写一份、由代码拼接注入 ——
  *      v0.9.0 六个角色共用同一套副本。
@@ -54,7 +54,7 @@ try {
   ok(bad.stage_code === 'internet' && /无效的 stage_code/.test(bad.stage_hint || ''),
     '废弃值 foothold 被拦下、退回按 stage 兜底，并返回可见告警')
 
-  console.log('— 契约三：chain_add 带分不带证据必须说清楚')
+  console.log('— 契约三：动作记录带分不带证据必须说清楚')
   const noEvidence = store.addChainStep(id, { stage: 'exploit', stage_code: 'internet', title: '上传 getshell', point_code: 'server-host', asset_id: assetId })
   ok(noEvidence.hit === null && /没有记分/.test(noEvidence.score_hint || ''),
     '带 point_code 但没给 evidence：明确回报没有记分')
@@ -71,9 +71,9 @@ try {
     tool: 'suo5-linux-amd64 -t http://t/shell.jsp -l 1080', result: 'socks5 ok', agent: 'exploit',
   })
   const stepRow = store.listChain(id).find((x) => x.id === step.id)
-  ok(stepRow.tool === 'suo5-linux-amd64 -t http://t/shell.jsp -l 1080', 'chain_add 的 tool 原样落库（报告复现靠它）')
-  ok(stepRow.result === 'socks5 ok', 'chain_add 的 result 原样落库')
-  ok(stepRow.agent === 'exploit', 'chain_add 的 agent 原样落库（报告标"谁做的"）')
+  ok(stepRow.tool === 'suo5-linux-amd64 -t http://t/shell.jsp -l 1080', '动作记录的 tool 原样落库（报告复现靠它）')
+  ok(stepRow.result === 'socks5 ok', '动作记录的 result 原样落库')
+  ok(stepRow.agent === 'exploit', '动作记录的 agent 原样落库（报告标"谁做的"）')
 
   console.log('— 契约五：提示词里不再出现不存在的参数名')
   for (const [role, text] of Object.entries(DEFAULT_PROMPTS)) {

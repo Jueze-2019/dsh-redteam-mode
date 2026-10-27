@@ -15,7 +15,7 @@
  */
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { existsSync } from 'node:fs'
-import { ROLE_TITLES, PLANNER_ROLE, ROLE_ORDER } from './store-core.js'
+import { ROLE_TITLES, PLANNER_ROLE, ROLE_ORDER, scoreStageOf } from './store-core.js'
 import { maxAgentsOf, DEFAULT_MAX_AGENTS, MAX_AGENTS_LIMIT } from './settings.js'
 /* 技能可用性判定只有一份实现：面板的「技能库」页签与这里共用（见该文件头注释） */
 import { checkSkill, summarizeSkills, expandSkillPath } from './skill-availability.js'
@@ -1051,12 +1051,27 @@ export function apply(ctx, config = {}) {
       evidence: { type: 'string', description: '证据：请求/响应摘要、命令、证据文件路径' },
       found_by_agent: { type: 'string', description: '发现角色，默认 vuln-scan' },
       gained: { type: 'string', description: '【重要】通过这个漏洞拿到了什么权限/成果，写得分口径的短标签，多项用顿号或逗号分隔，例如「服务器权限、内网隧道」「后台管理员账号」「数据库权限」' },
+      method: { type: 'string', description: '【可选】HTTP 方法；填 request 时用' },
+      request: { type: 'string', description: '【可选，建议填】完整原始请求（Burp/Yakit 可重放）；带上会自动保存 HTTP 证据，不需要再单独调 redteam_http_evidence_add。' },
+      response: { type: 'string', description: '【可选】响应全文或关键片段' },
     },
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
     async execute(args, exec) {
       const id = resolveEngagement(store, exec, args.engagement)
       const result = store.addVuln(id, { ...args, engagement: undefined, agent: agentOf(args), found_by_agent: args.found_by_agent || args.agent || 'vuln-scan' })
-      return JSON.stringify({ ok: true, engagement: id, ...result, stats: store.vulnStats(id) }, null, 2)
+      let httpEvidenceId = null
+      const request = typeof args.request === 'string' ? args.request.trim() : ''
+      if (request !== '') {
+        try {
+          const evidence = store.addHttpEvidence(id, {
+            vuln_id: result.id, asset_id: args.asset_id, label: args.title,
+            method: args.method || 'GET', url: args.target, request,
+            response: args.response, captured_by: agentOf(args),
+          })
+          httpEvidenceId = evidence.id
+        } catch { /* 漏洞已落库；证据失败不阻断 */ }
+      }
+      return JSON.stringify({ ok: true, engagement: id, ...result, http_evidence_id: httpEvidenceId, stats: store.vulnStats(id) }, null, 2)
     },
   })))
 
@@ -1554,6 +1569,8 @@ export function apply(ctx, config = {}) {
       vuln_id: { type: 'number', description: '【建议填】用哪个漏洞拿到的分（报告据此附原始请求）' },
       step_id: { type: 'number', description: '对应的攻击链步骤 id（可选）' },
       evidence: { type: 'string', required: true, description: '【必填】结果：拿到的东西，例如「后台管理员 tomcat/Tomcat@2024（已实测浏览器可登录）」「数据库账号 root/xxx」「导出 132 万条用户数据」。多档条目请写明档位（如"管理员权限"）。' },
+      command: { type: 'string', description: '【可选，建议填】实际命令/请求原文；带上会自动生成动作记录供报告复现。' },
+      result: { type: 'string', description: '【可选】实际回显/结果摘要；不填用 evidence。' },
       data_scale: { type: 'string', enum: ['large', 'knowledge-base'], description: 'G5 数据规模：large=超 1 亿条或 10TB（×2）；knowledge-base=知识库系统（×2）。不填不翻倍。' },
       ip_version: { type: 'string', enum: ['4', '6'], description: 'G6：IPv6 成果 ×3（填 "6"）。target 已是 IPv6 字面量时可省略。' },
       boundary_evidence: { type: 'string', description: '兼容字段：边界四问的文字摘要。新调用请用 boundary 对象（结构化校验）。' },
@@ -1578,7 +1595,32 @@ export function apply(ctx, config = {}) {
       const id = resolveEngagement(store, exec, args.engagement)
       assertBoundaryGate(args, args.code)
       const result = store.addScoreHit(id, { ...args, engagement: undefined })
-      return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
+      let stepId = null
+      let stepHint = null
+      const command = typeof args.command === 'string' ? args.command.trim() : ''
+      if (command !== '') {
+        try {
+          const point = (store.listScorePoints(id).items || []).find((p) => Number(p.id) === Number(result.point_id))
+          let scope
+          if (args.asset_id !== undefined && args.asset_id !== null) {
+            try { scope = store.getAsset(id, args.asset_id).scope } catch { /* 资产读不到就按 target 推 */ }
+          }
+          const stageCode = scoreStageOf({ code: point && point.code, target: args.target }, scope)
+          const step = store.addChainStep(id, {
+            stage: 'exploit', stage_code: stageCode,
+            title: (point && point.name) || '得分动作',
+            tool: command,
+            result: args.result || args.evidence,
+            asset_id: args.asset_id, vuln_id: args.vuln_id,
+            agent: agentOf(args), recorded_by: args.recorded_by || args.agent,
+          })
+          stepId = step.id
+          store.linkScoreHitStep(id, result.id, stepId)
+        } catch (error) {
+          stepHint = '得分已记录，但自动动作记录失败：' + (error && error.message ? error.message : String(error))
+        }
+      }
+      return JSON.stringify({ ok: true, engagement: id, ...result, step_id: stepId, step_hint: stepHint || undefined }, null, 2)
     },
   })))
 
@@ -1646,69 +1688,6 @@ export function apply(ctx, config = {}) {
       const id = resolveEngagement(store, exec, args.engagement)
       const result = store.addHttpEvidence(id, { ...args, engagement: undefined })
       return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
-    },
-  })))
-
-  registerTool(withStructuredErrors(defineTool({
-    name: 'redteam_chain_add',
-    description: '记录一个攻击链步骤。**报告的「复现步骤 / 动作记录」一节完全靠这条记录**：账号密码怎么来的、冰蝎马怎么上的、隧道怎么搭的，都要在这里用 `tool`（实际命令原文）+ `detail`（为什么这么做、线索从哪来）+ `result`（实际回显/结果）写清楚。攻击链页面与报告按 seq 排序展示。',
-    parameters: {
-      engagement: { type: 'string' },
-      agent: AGENT_PARAM,
-      stage: { type: 'string', required: true, enum: ['recon', 'vuln', 'exploit', 'access', 'pivot', 'data', 'other'], description: '动作类型（兼容字段；阶段归属用 stage_code）' },
-      title: { type: 'string', required: true, description: '一句话描述这一步做了什么' },
-      detail: { type: 'string', description: '为什么这么做、线索从哪来' },
-      tool: { type: 'string', description: '【复现关键】实际命令原文（如 nuclei/suo5/sqlmap 命令）' },
-      result: { type: 'string', description: '【复现关键】实际回显/结果摘要' },
-      asset_id: { type: 'number' },
-      vuln_id: { type: 'number' },
-      access_id: { type: 'number' },
-      evidence_ref: { type: 'string', description: '证据文件/会话引用，例如 runs/session-vnc.md' },
-      recorded_by: { type: 'string' },
-      point_code: { type: 'string', description: '【拿了分就填】得分点 code；必须同时给 evidence，否则只入库步骤、不记分' },
-      stage_code: { type: 'string', enum: ['recon', 'internet', 'boundary', 'internal'], description: '作战阶段：recon/internet/boundary/internal（靶标系统不再单独计分，进入内网后按 internal 累计）' },
-      evidence: { type: 'string', description: '配合 point_code：目标资产 + 账号/权限/数据量' },
-      data_scale: { type: 'string', enum: ['large', 'knowledge-base'], description: 'G5：large=超 1 亿条/10TB；knowledge-base=知识库（×2）' },
-      ip_version: { type: 'string', enum: ['4', '6'], description: 'G6：IPv6 成果 ×3（填 "6"）' },
-      boundary_evidence: { type: 'string', description: '兼容字段：边界四问的文字摘要。新调用请用 boundary 对象。' },
-      boundary: {
-        type: 'object', additionalProperties: false,
-        description: '仅 boundary-* 必填：入口区/落点区/隔离方式/实际访问到的靶标内网资产；同区会被拒绝，只能记 internal。',
-        properties: {
-          entry_zone: { type: 'string', required: true, description: '入口主机所在区：互联网 / DMZ / 办公网 / 生产网 / 隔离网' },
-          target_zone: { type: 'string', required: true, description: '隧道/跳板落点所在区' },
-          isolation: { type: 'string', enum: ['firewall', 'airgap', 'physical', 'multi-homed', 'supply', 'other'], required: true, description: '跨过的隔离：防火墙/网闸/物理隔离/多网卡跳板/供应链通道/其他' },
-          target_asset: { type: 'string', required: true, description: '经通道实际访问到的靶标内网资产（IP:端口 + 回显/协议交互）' },
-          scope_confirmed: { type: 'boolean', description: 'boundary-supply 必填 true：用户已确认供应商/云服务在授权范围内' },
-          note: { type: 'string' },
-        },
-      },
-      self_created: { type: 'boolean', description: '配合 point_code：自建账号填 true（只留痕，不计分）' },
-      target: { type: 'string', description: '配合 point_code：目标资产' },
-      seq: { type: 'number', description: '不填则自动追加到链尾' },
-    },
-    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
-    async execute(args, exec) {
-      const id = resolveEngagement(store, exec, args.engagement)
-      assertBoundaryGate(args, args.point_code)
-      const result = store.addChainStep(id, { ...args, engagement: undefined, agent: agentOf(args), recorded_by: args.recorded_by || args.agent })
-      /* 步骤落库后提醒两件事：报告要用的 tool/result 有没有写、这一步的得分有没有记 */
-      const hints = []
-      if (!args.tool) hints.push('这一步没写 `tool`（实际命令）：报告里"怎么做的"会变成空白，建议补一条步骤把命令写上。')
-      if (!args.result) hints.push('这一步没写 `result`（实际回显/结果）：报告复现时会缺"打没打通"的证据。')
-      if (result && result.score_hint) hints.push(result.score_hint)
-      return JSON.stringify({ ok: true, engagement: id, ...result, hints: hints.length > 0 ? hints : undefined }, null, 2)
-    },
-  })))
-
-  registerTool(withStructuredErrors(defineTool({
-    name: 'redteam_chain',
-    description: '读取完整攻击链（按步骤顺序），用于汇报与检查链路是否闭合（入口 → 权限 → 内网突破）。',
-    parameters: { engagement: { type: 'string' } },
-    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
-    async execute(args, exec) {
-      const id = resolveEngagement(store, exec, args.engagement)
-      return JSON.stringify({ ok: true, engagement: id, items: store.listChain(id) }, null, 2)
     },
   })))
 

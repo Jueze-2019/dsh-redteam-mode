@@ -106,7 +106,7 @@ $TK/naabu/naabu -host 1.2.3.4 -p - -rate 1000 -silent
    `provenance=passive`（subfinder/dnsx 阶段）或 `active`（naabu/httpx 主动探测）、`tool`（具体工具名）。
 2. **按 /24 自动建 C 段**（`redteam_asset_add` 已自动处理）→ 用 `redteam_asset_link` 建立
    `resolves`（域名→IP）、`contains`（C 段→IP）关系，形成图谱（技能 `asset-correlation`）。
-3. 每个阶段 `redteam_chain_add`：`stage_code=recon`，`tool` 写实际命令原文，`result` 写数量摘要
+3. 关键命令/数量写进资产 `test`；记分时放进 `redteam_score_hit` 的 `command`/`result`，不需要再单独写 chain。
    （如 `subfinder 命中 42 个子域 → dnsx 存活 31 → naabu 开放 87 端口 → httpx 存活 19 个站点`）。
 4. **重点标注边缘资产**：测试/预发环境（test/dev/uat/pre/staging）、老旧系统、非标准端口、
    非备案主体但同 C 段/IP 的站点——写进 `note`，这些是资产梳理阶段的高优先级目标。

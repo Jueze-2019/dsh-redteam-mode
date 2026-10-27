@@ -157,7 +157,7 @@ netspy 只能证明**可达/存活**，不能证明有权限，也不能直接�
 
 - 对每个有响应的具体 IP，用 `redteam_asset_add` 落库：`provenance=active`、`tool=netspy`、`state=live`；
 - 在 `redteam_asset_test` 的 `test` 字段追加：“netspy 发现可达，尚未测试”，状态保持 `untested`；
-- 用 `redteam_chain_add` 记下命令、目标段、输出文件：`stage_code=internal`，`evidence_ref=输出路径`；
+- 关键命令与输出路径写进资产 `test`，或记分时放进 `redteam_score_hit` 的 `command`/`result`；
 - **不要**因为“能路由到”就记边界突破；必须实际访问到目标资产并留回显。
 
 ### 3. 交给 gogo/fscan 继续

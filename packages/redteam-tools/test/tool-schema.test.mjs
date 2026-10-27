@@ -175,10 +175,9 @@ const sh = byName.get('redteam_score_hit')
 ok(sh.parameters.data_scale !== undefined && sh.parameters.data_scale.enum.includes('large'), 'redteam_score_hit 提供 G5 data_scale')
 ok(sh.parameters.ip_version !== undefined && sh.parameters.ip_version.enum.includes('6'), 'redteam_score_hit 提供 G6 ip_version')
 ok(sh.parameters.boundary_evidence !== undefined, 'redteam_score_hit 提供 boundary_evidence')
-const ch = byName.get('redteam_chain_add')
-ok(ch.parameters.boundary_evidence !== undefined, 'redteam_chain_add 能透传 boundary_evidence')
-ok(ch.parameters.data_scale !== undefined && ch.parameters.ip_version !== undefined, 'redteam_chain_add 能透传 G5/G6')
-ok(!ch.parameters.stage_code.enum.includes('target') && ch.parameters.stage_code.enum.includes('internal'), 'redteam_chain_add 的阶段枚举已移除 target')
+ok(!byName.has('redteam_chain_add') && !byName.has('redteam_chain'), '已移除 chain_add / chain 工具，动作记录由 score_hit 自动生成')
+ok(sh.parameters.command !== undefined && sh.parameters.result !== undefined, 'redteam_score_hit 支持 command/result 自动生成动作记录')
+ok(byName.get('redteam_vuln_add').parameters.request !== undefined && byName.get('redteam_vuln_add').parameters.response !== undefined, 'redteam_vuln_add 支持 request/response 自动存 HTTP 证据')
 
 
 console.log('— 角色工具裁剪（profile）')
@@ -191,7 +190,7 @@ const allTools = collect('all')
 const reconTools = collect('recon')
 const assessTools = collect('assess')
 const vulnTools = collect('vuln-scan')
-ok(allTools.size === 56, 'profile=all 不裁剪（56 个工具）')
+ok(allTools.size === 54, 'profile=all 不裁剪（54 个工具）')
 ok(reconTools.size < allTools.size && !reconTools.has('redteam_score_hit') && !reconTools.has('redteam_tunnel_add') && reconTools.has('redteam_asset_add'),
   'recon profile 裁掉记分/隧道等越界写操作，保留资产入库（' + reconTools.size + ' 个）')
 ok(assessTools.has('redteam_asset_assess') && !assessTools.has('redteam_vuln_add') && !assessTools.has('redteam_webshell_add'),

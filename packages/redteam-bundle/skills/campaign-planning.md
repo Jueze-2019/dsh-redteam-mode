@@ -68,7 +68,7 @@ enabled: true
 - `redteam_preflight`：资源与技能可用性；
 - `redteam_score_list` / `redteam_asset_stats` / `redteam_sessions`：当前事实；
 - `redteam_asset_query` / `redteam_vuln_query`：避免重复；
-- `redteam_chain_add`：把“假设 → 动作 → 结果”写进链路；
+- `redteam_score_hit` 的 `command`/`result`：把“假设 → 动作 → 结果”随得分一起记；不需要单独写 chain；
 - `specialist-paths`：资产不属于 Web/服务器时，按类型换打法；
 - `score-coverage`：把打法映射到得分点；
 - `deepseek-web-intel`：公开情报检索与网页正文；

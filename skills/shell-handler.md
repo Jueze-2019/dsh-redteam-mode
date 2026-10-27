@@ -142,7 +142,7 @@ msf6 > exploit -j
 3. **隧道落库**（若通过它进了内网）：`redteam_tunnel_add`，`entry_kind` 必须说清目标侧那一端
    （`target-outbound`=目标反弹/目标跑 frp 客户端、`target-http`=经目标 WebShell 的 suo5、`target-agent`=经目标已控进程转发），
    然后 `redteam_session_check` 实测连通性。
-4. 每个关键动作 `redteam_chain_add`：`stage_code=internet`（互联网侧拿权限）/ `boundary`（搭隧道）/ `internal`，
+4. 记分时把实际命令/回显放进 `redteam_score_hit` 的 `command`/`result`，不需要再单独写 chain。
    `tool` 写**实际命令原文**（含完整反弹命令或 MSF 配置），`result` 写回显摘要（如 `uid=0(root) gid=0(root)`）。
 5. **交付给用户能复用的入口**：优先落地**冰蝎马/哥斯拉马**（技能 `webshell-toolkit`）——用户能在控制台直连操作；
    临时反弹会话要说明"这是一次性会话，非交付入口"。

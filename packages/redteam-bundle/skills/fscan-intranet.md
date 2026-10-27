@@ -191,7 +191,7 @@ redteam_asset_add  { engagement, ip, port, service, banner }   # 或 asset_link 
 # 爆破/未授权成功的凭据与访问
 redteam_credential_add { engagement, host, username, secret_type, secret_ref: "runs/fscan-<段>.txt" }
 redteam_access_add     { engagement, host, username, method: "ssh", privilege, session_ref }
-# 确认的漏洞（必须配 http_evidence 或等价证据）
+# 确认的漏洞（request/response 或等价证据）
 redteam_vuln_add   { engagement, target, name: "Redis 未授权访问", severity: "high", evidence_ref }
 ```
 

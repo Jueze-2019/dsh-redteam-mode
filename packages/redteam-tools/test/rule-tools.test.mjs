@@ -80,11 +80,20 @@ const list = await call('redteam_tunnel_list', {})
 ok(list.items.map((t) => String(t.legit)).join(',') === 'null,true,false',
   'tunnel_list：逐条给出 legit 判定（实际 ' + list.items.map((t) => String(t.legit)).join(',') + '）')
 
-/* 攻击链带分时同样遵守规则 */
-const stepSelf = await call('redteam_chain_add', { stage: 'vuln', title: '注册进后台', point_code: 'web-app', evidence: '自建 ztest20 授权管理员', self_created: true })
-ok(stepSelf.hit && stepSelf.hit.counted === false, 'chain_add：自建账号带分也计 0 分')
-const stepReal = await call('redteam_chain_add', { stage: 'vuln', title: '拿下后台', point_code: 'web-app', evidence: '厂商账号 svc-demo/Demo@2024' })
-ok(stepReal.hit && stepReal.hit.counted === true, 'chain_add：真实账号带分照常计分')
+/* vuln_add 带 request 时自动存 HTTP 证据，不再单独调 http_evidence_add */
+const vulnWithReq = await call('redteam_vuln_add', { title: '越权读取用户列表', severity: 'high', status: 'confirmed', target: 'http://api.example:8443/api/users', evidence: '返回 200 且含 12000 条姓名/手机号', request: 'GET /api/users HTTP/1.1\nHost: api.example:8443', response: 'HTTP/1.1 200 OK\n\n[...]' })
+ok(vulnWithReq.http_evidence_id > 0, 'vuln_add：request 自动保存 HTTP 证据')
+
+/* score_hit 带 command 时自动生成动作记录，不再单独调 chain_add */
+const stepSelf = await call('redteam_score_hit', { code: 'web-app', target: 'http://self.example:8443/admin', evidence: '自建 ztest20 授权管理员', self_created: true, command: 'curl -X POST http://self.example:8443/register' })
+ok(stepSelf.counted === false && stepSelf.step_id, 'score_hit：自建账号计 0 分，且 command 自动生成动作记录')
+const stepReal = await call('redteam_score_hit', { code: 'web-app', target: 'http://real.example:8443/admin', evidence: '厂商账号 svc-demo/Demo@2024', command: 'curl -X POST http://real.example:8443/login' })
+ok(stepReal.counted === true && stepReal.step_id, 'score_hit：真实账号照常计分，且 command 自动生成动作记录')
+const hitWithVuln = await call('redteam_score_hit', { code: 'web-app', target: 'http://api.example:8443/api/users', evidence: '越权读取 12000 条用户数据', vuln_id: vulnWithReq.id })
+ok(hitWithVuln.counted === true, 'score_hit：关联带原始请求的漏洞后正常计分')
+const repAuto = await call('redteam_score_report', { markdown: true })
+ok(String(repAuto.markdown || '').includes('curl -X POST http://real.example:8443/login'), '自动动作记录进入报告复现（不需要 chain_add）')
+ok(String(repAuto.markdown || '').includes('GET /api/users HTTP/1.1'), 'vuln_add 的 request 自动进入报告复现（不需要 http_evidence_add）')
 
 rmSync(root, { recursive: true, force: true })
 console.log(`\n通过 ${pass}/${pass + fail}`)

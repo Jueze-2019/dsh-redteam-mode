@@ -114,4 +114,4 @@ proxychains4 -f runs/proxychains-1080.conf \
    通过它横向到其它主机 → `server-host`。
 4. **交付给用户**：给出可直接粘贴的配置——`socks5://<listen>`（或 `ssh -D` / frp 映射到用户机器的方法），
    写清监听地址与端口，并说明该隧道跨越了靶标边界。
-5. 每个关键动作 `redteam_chain_add`（`stage_code=boundary-logical`），`tool` 写命令原文、`result` 写回显摘要。
+5. 记分时把实际命令/回显放进 `redteam_score_hit` 的 `command`/`result`，不需要再单独写 chain。

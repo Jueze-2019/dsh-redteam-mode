@@ -72,8 +72,7 @@ DISPLAY=:10.0 java -jar $DSH_HOME/redteam/toolkit/Godzilla/godzilla.jar
    - `redteam_webshell_add`（url / **shell_type** / **pass_key** / privilege / secret_ref）
    - `redteam_access_add`（host/账号/方式 webshell/权限/会话引用）
    - `redteam_vuln_update` 把入口漏洞置为 `exploited`
-   - `redteam_http_evidence_add` 保存上传请求与 shell 访问请求
-   - `redteam_chain_add`（stage=exploit/access）
+   - 上传请求与 shell 访问请求放进 `redteam_vuln_add` 的 `request`/`response`；记分时带 `command`/`result`
 
 ## 命令执行（临时中转时才用）
 如果只需要一次性命令执行，优先直接用已有 RCE 或隧道，不必落一句话马：
