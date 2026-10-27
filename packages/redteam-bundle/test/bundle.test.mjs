@@ -171,6 +171,7 @@ ok(/角色系统提示词/.test(workerSource) && /严格按那段角色职责执
 ok(/叶子节点/.test(workerSource), '执行角色人设写明自己是叶子节点')
 ok(/技能路由/.test(workerSource) && /外部工具\/技能/.test(workerSource), '执行角色人设有技能路由与外部能力入口')
 ok(/curl \| bash/.test(workerSource), '执行角色人设禁止无法审阅的 curl|bash 安装')
+ok(/作战优先级/.test(workerSource) && /P0/.test(workerSource) && /三要素/.test(workerSource), '执行角色人设写入 P0 进内网 / P1 三要素优先级')
 for (const wanted of ['persona', 'redteam-tools', 'skill-filesystem', 'tool-skill', 'tool-bash', 'tool-fs', 'tool-web']) {
   ok(new RegExp('^- id: ' + wanted + '$', 'm').test(workerSource), `执行角色预设包含：${wanted}`)
 }

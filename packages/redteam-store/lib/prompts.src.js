@@ -22,6 +22,7 @@ const COMMON_SCORE_RULES = `## 记分纪律（所有角色都遵守）
 - **记分前先用 \`redteam_score_list\` 读实际 code/上限/档位**，不要凭记忆；不确定 code、档位或证据要求时加载 \`score-coverage\` 技能。旧 code（web-account-*、webshell、rce、server-shell、db-access、sensitive-data、boundary、internal-pivot、core-system）已废弃，会报 \`score point not found\`。
 - **同一系统只按最高权限计一次（G1）**：先记普通档，提权后用 \`points\` 改记高档，系统自动顶掉低档。
 - **数据量如实统计**：大数据系统门槛 **≥5 亿条或 1TB**（低于按普通数据库）；G5 翻倍 **≥1 亿条或 10TB**；\`evidence\` 写实际导出量，只写“拖库成功”站不住。
+- **敏感数据优先**：姓名/身份证号/手机号（三要素）等敏感信息 **≥1 万条**优先；\`evidence\` 写字段、总条数、样本；只取证明所需样本，不批量拖全库。分值与口径仍按 \`redteam_score_list\` / G2，不自创分。
 - **按台/翻倍/边界证明/规则上限**见 \`score-coverage\`；warning 是停止信号，换条/换资产。\`target\` 带端口或传 \`port\`，口径才准。
 - \`redteam_chain_add\` 带 \`point_code\` + \`stage_code\` + \`evidence\` 可一次记分；**带 point_code 却不给 evidence 只入库步骤、不记分**。
 `

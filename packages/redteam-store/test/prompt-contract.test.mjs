@@ -130,6 +130,9 @@ try {
   ok(DEFAULT_PROMPTS.plan.includes('2–3 条攻击假设'), '主会话派活要求先写攻击假设，而不是只派阶段')
   ok(['recon', 'assess', 'vuln-scan', 'exploit', 'internal'].every((r) => DEFAULT_PROMPTS[r].includes('外部工具/技能')),
     '五个执行角色都允许“本地不适用时找外部能力”')
+  ok(['recon', 'assess', 'vuln-scan', 'exploit', 'internal'].every((r) => /P0/.test(DEFAULT_PROMPTS[r]) && /三要素/.test(DEFAULT_PROMPTS[r]) && /1 万条/.test(DEFAULT_PROMPTS[r])),
+    '五个执行角色都写入 P0 进内网 RCE / P1 三要素数据的优先级')
+  ok(DEFAULT_PROMPTS.plan.includes('P0 能进内网的 RCE'), '主会话提示词写入作战优先级')
   ok(['recon', 'assess', 'vuln-scan', 'exploit', 'internal'].every((r) => DEFAULT_PROMPTS[r].includes('curl | bash')),
     '外部安装脚本必须可审阅，禁止 curl|bash 一类盲装')
 
