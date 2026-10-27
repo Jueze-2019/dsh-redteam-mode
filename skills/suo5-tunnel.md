@@ -1,8 +1,10 @@
 ---
 name: suo5-tunnel
-description: 用 suo5 通过 WebShell/HTTP 建立 SOCKS5 隧道，把内网流量代理出来（内网突破核心工具）
+description: 【隧道】用 suo5 通过 WebShell/HTTP 建立 SOCKS5 隧道，把内网流量代理出来（内网突破核心工具）
 whenToUse: 已拿到一台机器（WebShell/RCE）需要进入内网扫描与横向时
 role: internal
+category: 隧道
+tags: [tunnel, webshell, socks5]
 enabled: true
 ---
 

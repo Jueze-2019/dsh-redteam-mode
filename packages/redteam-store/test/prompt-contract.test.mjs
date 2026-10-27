@@ -119,7 +119,7 @@ try {
   ok(coreSrc.includes('gen-prompts.mjs'), 'core.js 里注明提示词由生成器维护')
 
   const total = roles.reduce((sum, role) => sum + DEFAULT_PROMPTS[role].length, 0)
-  /* 本次把角色正文里的命令配方下沉到技能，总量从 ~38.8k 降到 ~26k；
+  /* 本次把角色正文里的命令配方下沉到技能，总量从 ~38.8k 降到 ~29k；
      栅栏下调到 34000，防止再次无节制膨胀：新增内容应是角色真的要用到的口径，
      不是复述技能正文（技能才是详细步骤的所在）。 */
   ok(total < 34000, `六角色提示词总量 ${total} 字 < 34000（防膨胀栅栏）`)
@@ -128,13 +128,18 @@ try {
   ok(['recon', 'assess', 'vuln-scan', 'exploit', 'internal'].every((r) => DEFAULT_PROMPTS[r].includes('needs: role=')),
     '五个执行角色回报都带 needs 行，便于主会话补能力')
   ok(DEFAULT_PROMPTS.plan.includes('2–3 条攻击假设'), '主会话派活要求先写攻击假设，而不是只派阶段')
+  ok(['recon', 'assess', 'vuln-scan', 'exploit', 'internal'].every((r) => DEFAULT_PROMPTS[r].includes('外部工具/技能')),
+    '五个执行角色都允许“本地不适用时找外部能力”')
+  ok(['recon', 'assess', 'vuln-scan', 'exploit', 'internal'].every((r) => DEFAULT_PROMPTS[r].includes('curl | bash')),
+    '外部安装脚本必须可审阅，禁止 curl|bash 一类盲装')
 
 
   console.log('— 契约八：P0 审计修复（内网自执行 / 边界证据 / 评估翻页 / 命令模板）')
   ok(!/code=core-system/.test(DEFAULT_PROMPTS.internal), 'internal 不再教已废弃的 code=core-system')
   ok(!/server-user|server-admin/.test(DEFAULT_PROMPTS.exploit + DEFAULT_PROMPTS.internal), '不再出现不存在的 server-user/server-admin code')
   ok(!/gogo -p <网段>/.test(DEFAULT_PROMPTS.recon + DEFAULT_PROMPTS.internal), 'gogo 不再把网段传给 -p')
-  ok(DEFAULT_PROMPTS.recon.includes('gogo -i <网段>') && DEFAULT_PROMPTS.recon.includes('-o json -f runs/gogo-'), 'recon 的 gogo 模板使用 -i 与 -o json -f')
+  const gogoSkill = readFileSync(new URL('../../../skills/gogo-intranet.md', import.meta.url), 'utf8')
+  ok(DEFAULT_PROMPTS.recon.includes('gogo-intranet') && gogoSkill.includes('gogo -i') && gogoSkill.includes('--proxy socks5://'), 'recon 指向 gogo 技能，命令模板留在技能正文（-i + --proxy）')
   ok(DEFAULT_PROMPTS.assess.includes('assessed=no') && DEFAULT_PROMPTS.assess.includes('offset'), 'assess 按 assessed=no + offset 翻页，不再“全量过一遍”')
   ok(DEFAULT_PROMPTS.internal.includes('不要尝试拉起其他角色') && !/拉起信息收集智能体/.test(DEFAULT_PROMPTS.internal), 'internal 不再要求拉起子角色，改为自己执行四阶段')
   ok(DEFAULT_PROMPTS.exploit.includes('边界突破判定') && DEFAULT_PROMPTS.internal.includes('边界突破判定'), 'exploit/internal 都注入边界判定')
@@ -149,6 +154,31 @@ try {
     '五个执行角色都写入了禁止破坏性动作的 ROE 底线')
   ok(['recon', 'assess', 'vuln-scan', 'exploit', 'internal'].every((r) => DEFAULT_PROMPTS[r].includes('第三方 API key') && DEFAULT_PROMPTS[r].includes('禁止写进命令行')),
     '五个执行角色都禁止把第三方密钥写进命令行/脚本/会话输出')
+
+  console.log('— 契约九：技能分类（模型侧可见的分类前缀）')
+  const skillNames = [
+    'active-scan', 'asset-correlation', 'browser-automation', 'campaign-planning',
+    'chisel-tunnel', 'cn-proxy-pool', 'credential-attack', 'deepseek-web-intel',
+    'dir-bruteforce', 'fofa-recon', 'frp-tunnel', 'fscan-intranet', 'gogo-intranet',
+    'kimi-webbridge', 'lateral-movement', 'netspy-recon', 'nuclei-scan', 'passive-recon',
+    'recon-pipeline', 'redteam-setup', 'score-coverage', 'shell-handler', 'specialist-paths',
+    'suo5-tunnel', 'unauth-exploit', 'vps-reverse-shell', 'web-fingerprint', 'webshell-toolkit',
+  ]
+  const allowedCategories = new Set(['规划', '侦察', '验证', '访问', '内网', '隧道', '得分', '基础设施'])
+  let categorized = 0
+  for (const name of skillNames) {
+    const source = readFileSync(new URL('../../../skills/' + name + '.md', import.meta.url), 'utf8')
+    const fm = /^---\n([\s\S]*?)\n---/.exec(source)
+    const category = fm === null ? null : /^category: (.+)$/m.exec(fm[1])
+    const tags = fm === null ? null : /^tags: \[(.+)\]$/m.exec(fm[1])
+    const description = fm === null ? null : /^description: (.+)$/m.exec(fm[1])
+    const okRow = category !== null && allowedCategories.has(category[1].trim())
+      && tags !== null && tags[1].trim().length > 0
+      && description !== null && description[1].startsWith('【' + category[1].trim() + '】')
+    if (okRow) categorized += 1
+    ok(okRow, name + '：category/tags/描述前缀齐全且分类合法')
+  }
+  ok(categorized === skillNames.length, '28 个随包技能全部分类完成（' + categorized + '/' + skillNames.length + '）')
 
   console.log('— 契约七：历史默认指纹表（v0.9.0 重写后按设计清空）')
   /* v0.9.0 把六个角色提示词整体重写：旧默认一律不再登记为"可自动升级"，

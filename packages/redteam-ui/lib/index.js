@@ -31,6 +31,14 @@ const sameDir = (a, b) => {
   try { return resolve(a) === resolve(b) } catch { return false }
 }
 
+/** 技能分类放在 description 的 `【分类】` 前缀里。
+ *  原因：DSH 模型侧技能目录只渲染 name + description，frontmatter 的 category 不会进清单；
+ *  把分类写进描述，模型检索和面板分组才能同时看到。 */
+const skillCategoryOf = (description) => {
+  const m = /^【([^】]{1,12})】/.exec(String(description || ''))
+  return m === null ? '未分类' : m[1]
+}
+
 /** Cordis 插件名。 */
 export const name = 'redteam-ui'
 
@@ -541,6 +549,7 @@ async function readSkillOp(ctx, request, scope) {
       return {
         name: s.name,
         description: s.description,
+        category: skillCategoryOf(s.description),
         whenToUse: s.whenToUse || '',
         provider: s.provider,
         source: s.source,
@@ -584,6 +593,7 @@ async function readSkillOp(ctx, request, scope) {
     ok: true,
     name: skill.name,
     description: skill.description,
+    category: skillCategoryOf(skill.description),
     whenToUse: skill.whenToUse || '',
     provider: skill.provider,
     source: skill.source,

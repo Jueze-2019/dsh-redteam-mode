@@ -1,8 +1,10 @@
 ---
 name: active-scan
-description: 主动端口与服务扫描（nmap/masscan），严格遵守授权范围
+description: 【侦察】主动端口与服务扫描（nmap/masscan），严格遵守授权范围
 whenToUse: 需要确认资产存活与开放端口时
 role: recon
+category: 侦察
+tags: [external, scan, nmap]
 enabled: true
 ---
 

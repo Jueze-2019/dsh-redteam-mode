@@ -169,6 +169,8 @@ const workerSource = readFileSync(join(root, '..', '..', 'preset', 'worker.cordi
 ok(/红队（RedTeam）作战的\*\*执行角色\*\*智能体/.test(workerSource), '执行角色人设在')
 ok(/角色系统提示词/.test(workerSource) && /严格按那段角色职责执行/.test(workerSource), '执行角色人设要求按 redteam_role_prompt 的职责执行')
 ok(/叶子节点/.test(workerSource), '执行角色人设写明自己是叶子节点')
+ok(/技能路由/.test(workerSource) && /外部工具\/技能/.test(workerSource), '执行角色人设有技能路由与外部能力入口')
+ok(/curl \| bash/.test(workerSource), '执行角色人设禁止无法审阅的 curl|bash 安装')
 for (const wanted of ['persona', 'redteam-tools', 'skill-filesystem', 'tool-skill', 'tool-bash', 'tool-fs', 'tool-web']) {
   ok(new RegExp('^- id: ' + wanted + '$', 'm').test(workerSource), `执行角色预设包含：${wanted}`)
 }
@@ -247,6 +249,16 @@ const badSkill = skills.find((f) => {
   return !/^---\n[\s\S]*?name:\s*\S+/m.test(text) || !/description:/.test(text)
 })
 ok(badSkill === undefined, '每个技能都有 front-matter（name + description）')
+const uncategorized = skills.filter((f) => {
+  const text = readFileSync(join(root, 'skills', f), 'utf8')
+  const fm = /^---\n([\s\S]*?)\n---/.exec(text)
+  if (fm === null) return true
+  const cat = /^category: (.+)$/m.exec(fm[1])
+  const tags = /^tags: \[(.+)\]$/m.exec(fm[1])
+  const desc = /^description: (.+)$/m.exec(fm[1])
+  return cat === null || tags === null || desc === null || !desc[1].startsWith('【' + cat[1].trim() + '】')
+})
+ok(uncategorized.length === 0, '每个随包技能都有 category/tags/【分类】描述前缀：' + (uncategorized.join(', ') || '全部通过'))
 
 console.log('— 公开包不能夹带敏感信息')
 /* 检查"打出来的包有没有夹带本机敏感值"。检查对象是包内文件（lib/ presets/ skills/

@@ -1,8 +1,10 @@
 ---
 name: webshell-toolkit
-description: 冰蝎 / 哥斯拉 / 中国蚁剑 的启动与用法，用于上传并管理 WebShell、维持访问、操作目标服务器
+description: 【访问】冰蝎 / 哥斯拉 / 中国蚁剑 的启动与用法，用于上传并管理 WebShell、维持访问、操作目标服务器
 whenToUse: 已获得上传点/文件写入/命令执行，需要落地并操作 WebShell 时
 role: exploit
+category: 访问
+tags: [webshell, behinder, godzilla]
 enabled: true
 ---
 

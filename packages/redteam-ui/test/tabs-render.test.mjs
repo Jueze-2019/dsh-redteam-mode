@@ -363,8 +363,8 @@ function makeResponses(shape) {
     skillCatalog: w({ ok: true, total: 1, fromPlugin: 1, note: '',
       availability: { summary: { available: 1, broken: 0, unknown: 0 }, checked_at: '2026-01-01T00:00:00Z', cached: false, broken: [], note: '' },
       byDir: [{ key: '/tmp/skills', n: 1 }], bySource: [{ key: 'plugin', n: 1 }],
-      items: arr([{ name: 'fofa-recon', description: 'FOFA 测绘', whenToUse: '信息收集', provider: 'redteam', source: 'plugin', dir: '/tmp/skills', fromPlugin: true, modelInvocable: true, userInvocable: true, availability: 'available', problems: [], needs_user: [] }]) }),
-    skillRead: w({ ok: true, name: 'fofa-recon', description: 'FOFA 测绘', whenToUse: '信息收集', provider: 'redteam', source: 'plugin', path: '/tmp/skills/fofa.md', content: '# FOFA' }),
+      items: arr([{ name: 'fofa-recon', description: '【侦察】FOFA 测绘', category: '侦察', whenToUse: '信息收集', provider: 'redteam', source: 'plugin', dir: '/tmp/skills', fromPlugin: true, modelInvocable: true, userInvocable: true, availability: 'available', problems: [], needs_user: [] }]) }),
+    skillRead: w({ ok: true, name: 'fofa-recon', description: '【侦察】FOFA 测绘', category: '侦察', whenToUse: '信息收集', provider: 'redteam', source: 'plugin', path: '/tmp/skills/fofa.md', content: '# FOFA' }),
     consoleDigest: w({ ok: true, sections: {
       assets: { count: 1, at: '2026-01-02T03:04:05Z' }, findings: { count: 1, at: '2026-01-02T03:04:05Z' },
       scores: { count: 1, at: '2026-01-02T03:04:05Z' }, sessions: { count: 1, at: '2026-01-02T03:04:05Z' },
@@ -510,6 +510,7 @@ console.log('\n— 有数据时的关键内容（渲染确实用了接口返回�
   ok(sess.texts.includes('••••••••') && !sess.texts.includes('e45'), '会话隧道：WebShell 口令默认掩码，不直显')
   const k = await switchTab('技能库')
   ok(k.texts.includes('fofa-recon'), '技能库：技能名渲染出来')
+  ok(k.texts.includes('全部分类') && k.texts.includes('侦察'), '技能库：分类筛选与分类标签渲染出来')
   ok(!k.texts.includes('**') && !k.texts.includes('`'), '技能库：列表不露 Markdown 标记')
   const repClosed = await switchTab('报告')
   ok(repClosed.texts.includes('边界突破'), '报告：阶段行默认渲染（正文收起）')

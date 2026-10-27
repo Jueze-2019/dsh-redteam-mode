@@ -1,8 +1,10 @@
 ---
 name: score-coverage
-description: 25 类得分点的识别、路径选择与证据要求；服务器/Web/数据库之外的网络设备、云、物联网、工业互联网、安全设备、文件存储、模型/算力、域名、终端与边界突破都从这里选打法
+description: 【得分】25 类得分点的识别、路径选择与证据要求；服务器/Web/数据库之外的网络设备、云、物联网、工业互联网、安全设备、文件存储、模型/算力、域名、终端与边界突破都从这里选打法
 whenToUse: 资产不是普通服务器/Web/数据库，或需要判断"这台设备/平台能记哪个 code、先打哪里"时
 role: exploit
+category: 得分
+tags: [score, routing, evidence]
 enabled: true
 ---
 

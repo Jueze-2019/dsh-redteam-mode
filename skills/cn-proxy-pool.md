@@ -1,8 +1,10 @@
 ---
 name: cn-proxy-pool
-description: 国内免费 HTTP/SOCKS5 代理池：抓取、验活、按需轮换；只用命令级代理参数，绝不改动本机网络与代理配置
+description: 【基础设施】国内免费 HTTP/SOCKS5 代理池：抓取、验活、按需轮换；只用命令级代理参数，绝不改动本机网络与代理配置
 whenToUse: 目标有 WAF/封 IP 风险，或需要高频请求（接口爆破、目录扫描、口令喷洒）时
 role: vuln-scan
+category: 基础设施
+tags: [proxy, egress, rate-limit]
 enabled: true
 ---
 

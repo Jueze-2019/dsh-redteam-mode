@@ -1,8 +1,10 @@
 ---
 name: deepseek-web-intel
-description: 用 DeepSeek 官方 Search / Fetch API 检索公开互联网情报并抓取网页正文；只读、限速、结果落盘，适合官网/公告/招聘/采购/供应商/GitHub/漏洞公告等公开信息
+description: 【侦察】用 DeepSeek 官方 Search / Fetch API 检索公开互联网情报并抓取网页正文；只读、限速、结果落盘，适合官网/公告/招聘/采购/供应商/GitHub/漏洞公告等公开信息
 whenToUse: 需要公开情报检索、网页正文取证、供应链/招聘/备案/公众号线索，或需要给报告补可引用的公开来源时
 role: recon
+category: 侦察
+tags: [osint, web, search]
 enabled: true
 ---
 

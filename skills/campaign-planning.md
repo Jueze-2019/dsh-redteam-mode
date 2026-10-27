@@ -1,8 +1,10 @@
 ---
 name: campaign-planning
-description: 红队作战规划：把“靶标名称”转成目标、范围白名单、攻击假设、时间盒、噪声预算、停止条件和清理计划；在动手前先定打法，避免只按得分清单机械扫描
+description: 【规划】红队作战规划：把“靶标名称”转成目标、范围白名单、攻击假设、时间盒、噪声预算、停止条件和清理计划；在动手前先定打法，避免只按得分清单机械扫描
 whenToUse: 开始一个新靶标、阶段推进、连续失败、需要决定“下一步打哪条路”时
 role: plan
+category: 规划
+tags: [planning, hypothesis, scope]
 enabled: true
 ---
 

@@ -1,8 +1,10 @@
 ---
 name: recon-pipeline
-description: ProjectDiscovery 信息收集流水线：subfinder→dnsx→naabu→httpx→katana 一键铺开域名资产面
+description: 【侦察】ProjectDiscovery 信息收集流水线：subfinder→dnsx→naabu→httpx→katana 一键铺开域名资产面
 whenToUse: 信息收集阶段拿到域名/单位名后，系统化铺开子域→解析→端口→存活→页面与接口
 role: recon
+category: 侦察
+tags: [external, subdomain, pipeline]
 enabled: true
 ---
 

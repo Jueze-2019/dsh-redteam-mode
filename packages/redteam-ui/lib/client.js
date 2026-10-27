@@ -1351,6 +1351,7 @@ window.__ModuleLoader__.load({
       const [meta, setMeta] = React.useState({})
       const [err, setErr] = React.useState(null)
       const [q, setQ] = React.useState('')
+      const [cat, setCat] = React.useState('')
       const [srcOnly, setSrcOnly] = React.useState(false)
       const [active, setActive] = React.useState(null)
       const [detail, setDetail] = React.useState(null)
@@ -1381,9 +1382,11 @@ window.__ModuleLoader__.load({
       }
 
       const needle = q.trim().toLowerCase()
+      const cats = Array.from(new Set(items.map((s) => s.category || '未分类')))
       let filtered = needle
-        ? items.filter((s) => (s.name + ' ' + s.description + ' ' + s.whenToUse).toLowerCase().indexOf(needle) >= 0)
+        ? items.filter((s) => (s.name + ' ' + s.description + ' ' + s.whenToUse + ' ' + (s.category || '')).toLowerCase().indexOf(needle) >= 0)
         : items
+      if (cat) filtered = filtered.filter((s) => (s.category || '未分类') === cat)
       if (srcOnly) filtered = filtered.filter((s) => s.fromPlugin === true)
       if (brokenOnly) filtered = filtered.filter((s) => s.availability === 'broken' || s.availability === 'unknown')
       /* 目录聚合：一眼看出"这么多技能是哪来的"（本项目/别的插件/自带根…） */
@@ -1409,6 +1412,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'rt-skill-name' }, s.name,
             s.modelInvocable === false ? h('span', { className: 'rt-tag', style: { marginLeft: 5 } }, '仅人工') : null),
           h('div', { className: 'rt-skill-desc' }, s.description || '（无描述）')),
+        h('span', { className: 'rt-tag' }, s.category || '未分类'),
         h('span', { className: 'rt-tag' }, s.fromPlugin ? '插件' : '用户'),
         (s.problems || []).length > 0 && s.availability !== 'available'
           ? h('span', { className: 'rt-avail rt-avail-broken', title: String((s.issues && s.issues[0] && s.issues[0].detail) || s.problems[0]) }, '!')
@@ -1420,6 +1424,13 @@ window.__ModuleLoader__.load({
             className: 'rt-input', style: { width: '100%', marginBottom: 8, boxSizing: 'border-box' },
             placeholder: '过滤技能', value: q, onChange: (e) => setQ(e.target.value),
           }),
+          h('select', {
+            className: 'rt-input', style: { width: '100%', marginBottom: 8, boxSizing: 'border-box' },
+            value: cat, onChange: (e) => setCat(e.target.value),
+          },
+            h('option', { value: '' }, '全部分类（' + items.length + '）'),
+            cats.map((c) => h('option', { key: c, value: c },
+              c + '（' + items.filter((s) => (s.category || '未分类') === c).length + '）'))),
           h('label', { className: 'rt-kb-check', style: { display: 'flex', margin: '0 0 6px' } },
             h('input', { type: 'checkbox', checked: srcOnly, onChange: (e) => setSrcOnly(e.target.checked) }),
             '只看本插件自带（' + (meta.fromPlugin || 0) + ' 个）'),
@@ -1459,6 +1470,7 @@ window.__ModuleLoader__.load({
           detail
             ? h('div', { className: 'rt-pane' },
                 h('div', { className: 'rt-kv' }, h('b', null, '描述'), h('span', null, detail.description || '—')),
+                h('div', { className: 'rt-kv' }, h('b', null, '分类'), h('span', null, detail.category || '未分类')),
                 h('div', { className: 'rt-kv' }, h('b', null, '何时使用'), h('span', null, detail.whenToUse || '—')),
                 h('div', { className: 'rt-kv' }, h('b', null, '来源'), h('span', null, (detail.provider || '—') + ' / ' + (detail.source || '—'))),
                 (() => {

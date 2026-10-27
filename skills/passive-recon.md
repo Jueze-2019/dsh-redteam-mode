@@ -1,8 +1,10 @@
 ---
 name: passive-recon
-description: 被动信息收集：不接触目标主机，仅使用公开数据源
+description: 【侦察】被动信息收集：不接触目标主机，仅使用公开数据源
 whenToUse: 需要在不暴露自身的情况下收集目标资产情报时
 role: recon
+category: 侦察
+tags: [osint, passive, dns]
 enabled: true
 ---
 

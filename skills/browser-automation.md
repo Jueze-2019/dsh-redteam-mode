@@ -1,8 +1,10 @@
 ---
 name: browser-automation
-description: 无依赖驱动 Chrome/Chromium 抓取 JS 渲染页面、截图、执行 JS、抓接口清单（headless 兜底 + playwright-cli）
+description: 【侦察】无依赖驱动 Chrome/Chromium 抓取 JS 渲染页面、截图、执行 JS、抓接口清单（headless 兜底 + playwright-cli）
 whenToUse: 需要渲染 SPA / 取 JS 生成的内容 / 截图留证 / 批量抓页面时（Kimi 扩展不可用时首选）
 role: recon
+category: 侦察
+tags: [browser, js, screenshot]
 enabled: true
 ---
 

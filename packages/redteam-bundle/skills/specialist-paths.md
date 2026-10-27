@@ -1,8 +1,10 @@
 ---
 name: specialist-paths
-description: 非 Web/服务器资产的专项路径选择：AD/身份、VPN/VDI/Exchange、网络与安全设备、云/K8s、IoT/OT、文件备份、AI/Agent；先识别资产类型，再决定用哪套打法，避免所有资产都退回 Web 扫描
+description: 【规划】非 Web/服务器资产的专项路径选择：AD/身份、VPN/VDI/Exchange、网络与安全设备、云/K8s、IoT/OT、文件备份、AI/Agent；先识别资产类型，再决定用哪套打法，避免所有资产都退回 Web 扫描
 whenToUse: 资产是集权系统、边界设备、云平台、网络设备、IoT/OT、文件存储、AI/Agent，或 Web 扫描连续失败时
 role: assess
+category: 规划
+tags: [routing, ad, cloud]
 enabled: true
 ---
 

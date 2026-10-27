@@ -1,8 +1,10 @@
 ---
 name: fscan-intranet
-description: fscan v2.2.1 内网综合扫描：存活探测、端口/服务识别、28 类弱口令爆破、未授权访问与高危漏洞（MS17-010/SMBGhost）、Redis 利用与 SOCKS5 隧道
+description: 【内网】fscan v2.2.1 内网综合扫描：存活探测、端口/服务识别、28 类弱口令爆破、未授权访问与高危漏洞（MS17-010/SMBGhost）、Redis 利用与 SOCKS5 隧道
 whenToUse: 进入内网（跳板机/WebShell/socks5 隧道）后快速铺开资产面、找弱口令与未授权、把可达性变成可打点
 role: internal
+category: 内网
+tags: [internal, scan, credential]
 enabled: true
 ---
 

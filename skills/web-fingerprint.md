@@ -1,8 +1,10 @@
 ---
 name: web-fingerprint
-description: Web 服务指纹识别：框架、中间件、CMS、组件版本
+description: 【侦察】Web 服务指纹识别：框架、中间件、CMS、组件版本
 whenToUse: 已发现 HTTP/HTTPS 服务，需要识别技术栈时
 role: recon
+category: 侦察
+tags: [web, fingerprint, httpx]
 enabled: true
 ---
 

@@ -1,8 +1,10 @@
 ---
 name: shell-handler
-description: 反弹 Shell 与载荷投递：VPS 上起 MSF/nc/socat 监听接收 shell，或从目标主动拉取载荷落地
+description: 【访问】反弹 Shell 与载荷投递：VPS 上起 MSF/nc/socat 监听接收 shell，或从目标主动拉取载荷落地
 whenToUse: 需要 RCE/命令执行回连、投递后续载荷、把一次性命令执行变成可交互会话时
 role: exploit
+category: 访问
+tags: [shell, session, handler]
 enabled: true
 ---
 

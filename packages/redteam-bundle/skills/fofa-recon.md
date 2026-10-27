@@ -1,8 +1,10 @@
 ---
 name: fofa-recon
-description: 用 FOFA API 批量测绘靶标资产（域名/IP/端口/标题/指纹）；内置限速客户端，严格单线程 + 最小间隔 + 退避重试，避免触发 45012
+description: 【侦察】用 FOFA API 批量测绘靶标资产（域名/IP/端口/标题/指纹）；内置限速客户端，严格单线程 + 最小间隔 + 退避重试，避免触发 45012
 whenToUse: 信息收集阶段需要快速铺开某单位/域名的互联网资产面时
 role: recon
+category: 侦察
+tags: [external, asset, fofa]
 enabled: true
 ---
 

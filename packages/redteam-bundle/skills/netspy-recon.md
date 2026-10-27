@@ -1,8 +1,10 @@
 ---
 name: netspy-recon
-description: 用 netspy v0.0.5 在已控内网主机上快速发现可达网段/双网卡/相邻网段；支持 ICMP/ping/ARP/TCP/UDP 探测，输出存活 /24 网段，作为 gogo/fscan 的前置侦察
+description: 【内网】用 netspy v0.0.5 在已控内网主机上快速发现可达网段/双网卡/相邻网段；支持 ICMP/ping/ARP/TCP/UDP 探测，输出存活 /24 网段，作为 gogo/fscan 的前置侦察
 whenToUse: 已拿到内网立足点，需要确认“这台机器还能通哪些段”、寻找双网卡/相邻网段/新内网时
 role: internal
+category: 内网
+tags: [internal, segment, icmp]
 enabled: true
 ---
 
