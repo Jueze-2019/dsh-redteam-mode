@@ -178,6 +178,7 @@ ok(sh.parameters.boundary_evidence !== undefined, 'redteam_score_hit 提供 boun
 const ch = byName.get('redteam_chain_add')
 ok(ch.parameters.boundary_evidence !== undefined, 'redteam_chain_add 能透传 boundary_evidence')
 ok(ch.parameters.data_scale !== undefined && ch.parameters.ip_version !== undefined, 'redteam_chain_add 能透传 G5/G6')
+ok(!ch.parameters.stage_code.enum.includes('target') && ch.parameters.stage_code.enum.includes('internal'), 'redteam_chain_add 的阶段枚举已移除 target')
 
 
 console.log('— 角色工具裁剪（profile）')

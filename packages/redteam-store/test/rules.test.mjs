@@ -388,10 +388,10 @@ try {
     + report.stages.map((s) => s.ordinal + ':' + s.code).join(' '))
   /* 四段式报告固定按「互联网 → 边界 → 内网 → 靶标」排；
      report.stages 的 ordinal 仍是完整链表里的真实位置（上面已断言）。 */
-  const sectionOrder = ['### 2.1 互联网资产权限', '### 2.2 边界突破', '### 2.3 内网资产权限', '### 2.4 靶标权限']
+  const sectionOrder = ['### 2.1 互联网资产权限', '### 2.2 边界突破', '### 2.3 内网资产权限']
   ok(sectionOrder.every((h, i) => report.markdown.includes(h)
       && (i === 0 || report.markdown.indexOf(sectionOrder[i - 1]) < report.markdown.indexOf(h))),
-    '报告四段按「互联网 → 边界 → 内网 → 靶标」排序')
+    '报告三阶段按「互联网 → 边界 → 内网」排序')
   ok(report.markdown.includes('## 一、资产归属证明')
     && report.markdown.includes('## 二、得分汇总表')
     && report.markdown.includes('## 三、得分点复现'),

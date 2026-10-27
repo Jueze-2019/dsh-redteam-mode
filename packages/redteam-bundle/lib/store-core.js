@@ -212,11 +212,11 @@ function writeMeta(path, meta) {
 
 /* ------------------------------------------------------------------ 默认内容 */
 
-/* ------------------------------------------------------------------ 攻击链（五阶段） */
+/* ------------------------------------------------------------------ 攻击链（四阶段） */
 
 /**
- * 攻击链的五个阶段：按「攻击面位置」串起来 —— 互联网侧收集 → 互联网侧拿权限 →
- * 打穿边界 → 内网拿权限 → 拿靶标。得分归属由 scoreStageOf() 自动推导。
+ * 攻击链的四个阶段：按「攻击面位置」串起来 —— 互联网侧收集 → 互联网侧拿权限 →
+ * 打穿边界 → 内网拿权限。得分归属由 scoreStageOf() 自动推导；靶标系统不再单独计分。
  *
  * sections = 该阶段的打法要点（数据仍保留给提示词与面板编辑用；攻击链页面已不再展示，
  * 避免执行细节淹没"打到哪了、拿了多少分"）；tools = 常用工具。
@@ -263,35 +263,16 @@ export const DEFAULT_STAGES = [
       { label: '数据', items: ['批量导出敏感信息，落 runs/ 并记引用'] },
     ],
     tools: 'gogo / fscan（走隧道）、Impacket、Mimikatz / LaZagne、BloodHound、suo5',
-    transition: '定位内网核心靶标',
-  },
-  {
-    code: 'target', name: '靶标权限', subtitle: 'TARGET SYSTEM', color: '#10b981', scored: 1,
-    goal: '获取内网重要资产（靶标）的权限',
-    sections: [
-      { label: '靶标定位', items: ['按演练规则确认靶标系统 / 服务器范围', '明确得分判定口径'] },
-      { label: '拿靶标', items: ['root / SYSTEM / 管理员 / 云 AK', '业务数据读写与配置变更能力'] },
-      { label: '成果固化', items: ['证据链归档（配置 / 数据 / 主机信息 / 截图）', '攻击时间线回顾'] },
-    ],
-    tools: '凭据复用、内网横向工具、证据链归档与报告',
-    transition: '',
+    transition: '收口内网成果，准备交付',
   },
 ]
 
 /** 特殊得分点 → 固定阶段（优先级高于按资产内外网推导）。 */
 export const POINT_STAGE_OVERRIDE = {
   /* 旧 code 的兜底（老数据仍可能有） */
-  'core-system': 'target',
   boundary: 'boundary',
-  /* 新口径：按《突破入侵类得分规则》的规则号判阶段。
-     规则 5/6/7 = 邮箱系统 / 办公业务系统 / 集权系统 —— 这些就是演练的"靶标"，
-     拿到它们即算打到核心目标，归入 ⑤ 靶标权限；
-     规则 22-25 = 突破网络边界，归入 ③ 边界突破（§二 明确规定是"进入内网"）。 */
-  'mail-admin': 'target', 'mail-user': 'target',
-  'biz-admin': 'target', 'biz-user': 'target',
-  'central-admin': 'target', 'central-user': 'target', 'central-managed': 'target',
-  /* 合并版 code：邮箱/业务系统、集权系统 = 演练的靶标 → ⑤ 靶标权限 */
-  'web-app': 'target', 'central-system': 'target',
+  /* 突破网络边界归 ③ 边界突破（§二 明确规定是"进入内网"）。
+     其余得分点按资产内外网归属推导，不再按"核心系统"强制归到靶标阶段。 */
   'boundary-logical': 'boundary', 'boundary-strong': 'boundary',
   'boundary-physical': 'boundary', 'boundary-supply': 'boundary',
 }
@@ -335,13 +316,16 @@ export const POINT_SHORT_NAME = {
 
 /**
  * 自动推导一条得分属于哪个阶段（用户已确认：自动推导，允许显式覆盖）：
- *   ① 显式 stage_code 优先
- *   ② 类型特判（POINT_STAGE_OVERRIDE：集权/邮箱/业务系统 → target，突破网络边界 → boundary）
+ *   ① 显式 stage_code 优先（旧值 target 兼容为内网/互联网）
+ *   ② 类型特判（突破网络边界 → boundary）
  *   ③ 按命中资产的内外网归属（asset.scope）
  *   ④ 没有 asset_id 时按 target 里的地址判断（私有 IP → 内网，公网/域名 → 互联网）
  */
 export function scoreStageOf(hit, assetScope) {
-  if (hit && typeof hit.stage_code === 'string' && hit.stage_code !== '') return hit.stage_code
+  const explicit = hit && typeof hit.stage_code === 'string' ? hit.stage_code : ''
+  if (explicit !== '' && explicit !== 'target') return explicit
+  /* 旧版 target 阶段已移除：历史命中按资产归属落到互联网/内网，不再有独立阶段。 */
+  if (explicit === 'target') return assetScope === 'external' ? 'internet' : 'internal'
   const override = POINT_STAGE_OVERRIDE[hit && hit.code]
   if (override !== undefined) return override
   if (assetScope === 'internal') return 'internal'
@@ -359,11 +343,12 @@ export const LEGACY_STAGE_MAP = {
 }
 
 /**
- * 攻击链步骤允许的作战阶段 code —— 只有这 5 个会被攻击链页面分桶。
- * 写入其它值（尤其外部工具常见的 external / foothold / tunnel / privilege）会被忽略
+ * 攻击链步骤允许的作战阶段 code —— 只有这 4 个会被攻击链页面分桶。
+ * 靶标系统不再单独计分，也不再作为阶段：进入内网后按内网资产权限累计。
+ * 写入其它值（尤其外部工具常见的 external / foothold / tunnel / privilege / target）会被忽略
  * 并退回按 stage 兜底，步骤就不落在任何阶段，所以服务端显式校验并回告警。
  */
-export const VALID_STAGE_CODES = ['recon', 'internet', 'boundary', 'internal', 'target']
+export const VALID_STAGE_CODES = ['recon', 'internet', 'boundary', 'internal']
 
 /* ------------------------------------------------------------------ 提示词版本 */
 
@@ -390,6 +375,8 @@ function promptHash(text) {
   return createHash('sha1').update(String(text === undefined || text === null ? '' : text).trim()).digest('hex').slice(0, 12)
 }
 
+// __REDTEAM_PROMPTS_BLOCK__
+// __REDTEAM_PROMPTS_BLOCK__
 // __REDTEAM_PROMPTS_BLOCK__
 // __REDTEAM_PROMPTS_BLOCK__
 // __REDTEAM_PROMPTS_BLOCK__
@@ -509,7 +496,7 @@ const COMMON_DB_LOOKUP = `## 打之前先查库（禁止重复打）
 
 const COMMON_EVIDENCE = `## 落库与溯源（强制：没落库的发现 = 没发生）
 1. 每条发现落库：资产 \`redteam_asset_add\`、漏洞 \`redteam_vuln_add\`、原始请求 \`redteam_http_evidence_add\`、凭据 \`redteam_credential_add\`、会话 \`redteam_access_add\`、WebShell \`redteam_webshell_add\`、隧道 \`redteam_tunnel_add\`、步骤 \`redteam_chain_add\`、得分 \`redteam_score_hit\`。
-2. 每个关键动作写 \`redteam_chain_add\`：\`tool\`=实际命令原文，\`detail\`=为什么/线索，\`result\`=回显摘要，\`agent\`=角色 code，\`stage_code\` 只能是 recon/internet/boundary/internal/target。报告复现靠它。
+2. 每个关键动作写 \`redteam_chain_add\`：\`tool\`=实际命令原文，\`detail\`=为什么/线索，\`result\`=回显摘要，\`agent\`=角色 code，\`stage_code\` 只能是 recon/internet/boundary/internal（靶标系统不再单独计分）。报告复现靠它。
 3. 凭据写 \`source\`（弱口令/注入拖库/配置泄露/凭据复用/默认口令）、\`tool\`、\`secret_ref\`；明文写 \`secret_value\`。
 4. WebShell 用冰蝎/哥斯拉 + \`pass_key\`；隧道写全 \`kind/listen/entry/reach/entry_kind/command\`，并 \`redteam_session_check\` 实测——**真的能访问到内网目标才算数**。
 5. 报告只认可复现的成果：目标 → 拿到什么 → 怎么拿到的（步骤 + 命令）→ 原始请求；缺证据会被标“无法复现”。
@@ -640,7 +627,7 @@ export const DEFAULT_PROMPTS = {
 - 回报：确认漏洞清单（目标/证据/预期得分）、剩余 surface、\`needs\`。\n\n${COMMON_AUTH}\n\n${COMMON_SAFETY}\n\n${COMMON_DEVIATION}\n\n${COMMON_EXTERNAL}\n\n${COMMON_SCORE_RULES}\n\n${COMMON_DB_LOOKUP}\n\n${COMMON_EVIDENCE}\n\n${COMMON_HANDOFF}`,
   exploit: `# 漏洞利用智能体
 
-> 拿到入口后先按 \`specialist-paths\` 判断是不是集权/身份/云/边界设备，不要只盯着单台 Web。域控/云控制面/备份/网络设备往往比再刷一个 Web 账号更接近靶标权限；高价值结果必须独立复核。
+> 拿到入口后先按 \`specialist-paths\` 判断是不是集权/身份/云/边界设备，不要只盯着单台 Web。域控/云控制面/备份/网络设备往往比再刷一个 Web 账号更接近核心资产；高价值结果必须独立复核。
 用户给出靶标单位名称即代表已获授权，**不要询问授权范围**。
 
 ## 你的职责
@@ -681,7 +668,7 @@ export const DEFAULT_PROMPTS = {
 5. **得分**：按 \`score-coverage\` 选 code/档位；域控/堡垒机/SSO/终端管理→central-system，邮箱/OA/业务→web-app，大数据→bigdata-system，数据库/代码仓库/备份→server-host，网络设备/云/IoT/安全/文件→对应 code；边界按公共段四问。
 
 ## 证据与交接
-- 内网资产 \`redteam_asset_add\`；成功访问 \`redteam_access_add\`；凭据 \`redteam_credential_add\`；关键动作 \`redteam_chain_add\`（stage_code=internal/boundary/target，tool 写实际命令含隧道参数，result 写回显）。
+- 内网资产 \`redteam_asset_add\`；成功访问 \`redteam_access_add\`；凭据 \`redteam_credential_add\`；关键动作 \`redteam_chain_add\`（stage_code=internal/boundary，tool 写实际命令含隧道参数，result 写回显）。
 - 长任务前后各跑一次 \`redteam_session_check\`，别让后续任务踩在掉线的隧道上。
 - 回报：网段清单、资产数、拿到权限/凭据/入口、边界证据、未打通卡点、\`needs\`。\n\n${COMMON_AUTH}\n\n${COMMON_SAFETY}\n\n${COMMON_DEVIATION}\n\n${COMMON_EXTERNAL}\n\n${COMMON_SCORE_RULES}\n\n${COMMON_BOUNDARY}\n\n${COMMON_DB_LOOKUP}\n\n${COMMON_EVIDENCE}\n\n${COMMON_HANDOFF}`,
 
@@ -1472,12 +1459,14 @@ export class RedteamStore {
   /* ---------- 得分目标（攻防演练得分点 + 得分记录） ---------- */
 
   /** 首次打开靶标时播种默认得分点（已有则不动）。 */
-  /** 作战阶段：首次读取时补种默认五阶段（与得分点同策略，老靶标自动获得）。 */
+  /** 作战阶段：首次读取时补种默认四阶段（与得分点同策略，老靶标自动获得）。 */
   seedStages(id) {
     const db = this.db(id)
+    /* 靶标系统不再作为得分阶段：老库里的 target 行直接移除。 */
+    const removed = db.prepare("DELETE FROM stage WHERE code = 'target'").run().changes
     /* 自愈式补种：缺哪个补哪个（老库被上一版迁移误删的阶段会自动补回来） */
     const have = new Set(db.prepare('SELECT code FROM stage').all().map((r) => r.code))
-    if (DEFAULT_STAGES.every((st) => have.has(st.code))) return { seeded: 0 }
+    if (DEFAULT_STAGES.every((st) => have.has(st.code))) return { seeded: 0, removed }
     let order = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS n FROM stage').get().n + 1
     const stmt = db.prepare(`INSERT INTO stage(code, name, subtitle, color, goal, sections, tools, transition, sort_order, updated_at)
       VALUES(?,?,?,?,?,?,?,?,?,?)`)
@@ -1488,7 +1477,7 @@ export class RedteamStore {
         st.tools, st.transition, order++, nowIso())
       seeded += 1
     }
-    return { seeded: seeded }
+    return { seeded: seeded, removed }
   }
 
   listStages(id) {
@@ -3650,7 +3639,7 @@ export class RedteamStore {
     /* ── ② 攻击链（按依赖顺序）──────────────────────────────────────────── */
     md.push('---', '')
     md.push('## 2. 攻击链（按依赖顺序）', '')
-    md.push('> 序号即文档顺序（按攻击链阶段 ① → ⑤、阶段内按取得时间）。`前置`列写"这一步之前要先做过的成果"；'
+    md.push('> 序号即文档顺序（按攻击链阶段 ① → ④、阶段内按取得时间）。`前置`列写"这一步之前要先做过的成果"；'
       + '阶段分桶按得分点类型固定排序，所以前置的编号**可能大于本条目**（例：跨境突破依赖先拿下域控 #16），'
       + '按编号跳过去看即可。', '')
     md.push('| # | 得分点 | 分值 | 目标 | 前置 |', '| --- | --- | --- | --- | --- |')
@@ -3668,7 +3657,7 @@ export class RedteamStore {
     /* ── ③ 逐条明细 ────────────────────────────────────────────────────── */
     md.push('---', '')
     md.push('## 3. 逐条明细', '')
-    md.push('> 按攻击链阶段 ① → ⑤ 排列（阶段序号即链路里的真实位置）；阶段内按动作先后排序，'
+    md.push('> 按攻击链阶段 ① → ④ 排列（阶段序号即链路里的真实位置）；阶段内按动作先后排序，'
       + '序号 `3.N` 与前面的复现索引一一对应。', '')
     let lastStage = null
     for (const x of ordered) {
@@ -3982,7 +3971,7 @@ export class RedteamStore {
     const hitPointIds = new Set(items.map((x) => x.point_id))
     const achieved = points.filter((p) => hitPointIds.has(p.id) && p.enabled === 1)
     const missing = points.filter((p) => !hitPointIds.has(p.id) && p.enabled === 1)
-    /* ── 攻击链：按「攻击面位置」把得分串成五阶段，并给出累计分 ────────────── */
+    /* ── 攻击链：按「攻击面位置」把得分串成四阶段，并给出累计分 ────────────── */
     const assetIds = Array.from(new Set(items.map((x) => x.asset_id).filter((v) => v !== null && v !== undefined)))
     const assetInfo = new Map()
     if (assetIds.length > 0) {
@@ -4309,7 +4298,7 @@ export class RedteamStore {
     }
     const seq = s.seq ?? next
     const legacyStage = s.stage ?? 'other'
-    /* 只有这 5 个阶段 code 会被攻击链页面分桶；其它值（含已废弃的 external/foothold/tunnel/privilege）
+    /* 只有这 4 个阶段 code 会被攻击链页面分桶；其它值（含已废弃的 external/foothold/tunnel/privilege/target）
        写了等于步骤不落在任何阶段，所以退回按老 stage 兜底，并显式告警。 */
     let stageWarning = null
     let stageCode
@@ -5538,7 +5527,7 @@ export class RedteamStore {
  *
  * 交付口径（2026-10-18 定稿）：
  *   一、靶标单位资产证明
- *   二、得分汇总表（互联网资产权限 / 边界突破 / 内网资产权限 / 靶标权限）
+ *   二、得分汇总表（互联网资产权限 / 边界突破 / 内网资产权限）
  *   三、账号密码凭据权限汇总表（同一顺序）
  *   四、得分点复现（同一顺序）
  *
@@ -5999,11 +5988,12 @@ const REPORT_STAGES = [
   ['internet', '互联网资产权限'],
   ['boundary', '边界突破'],
   ['internal', '内网资产权限'],
-  ['target', '靶标权限'],
 ]
 
 function rpReportStageOf(x) {
   const c = String(x && x.stage_code ? x.stage_code : 'internet')
+  /* 旧库可能还有 target：按内网资产权限展示，不再生成独立的靶标阶段。 */
+  if (c === 'target') return 'internal'
   return REPORT_STAGES.some(([k]) => k === c) ? c : 'internet'
 }
 
@@ -6144,7 +6134,7 @@ function buildReportV2(store, id, items, stages, summary, targetName) {
     target: x.target || '', code: x.code, stage_code: code,
   }))
   const stageTables = {
-    internet: rows('internet'), boundary: rows('boundary'), internal: rows('internal'), target: rows('target'),
+    internet: rows('internet'), boundary: rows('boundary'), internal: rows('internal'),
   }
 
   /* 复现分组 */
@@ -6201,7 +6191,6 @@ function buildReportV2(store, id, items, stages, summary, targetName) {
       shots: rpReportShots(list),
     }
   })
-  const target = groupByAsset(stageItems.target).map((g) => Object.assign(g, { shots: rpReportShots(g.items) }))
   return {
     target: targetName,
     generated_at: nowIso(),
@@ -6213,7 +6202,6 @@ function buildReportV2(store, id, items, stages, summary, targetName) {
       internet: internet.map((g) => Object.assign(g, { shots: rpReportShots(g.items) })),
       boundary,
       internal_segments,
-      target,
     },
   }
 }
@@ -6354,11 +6342,6 @@ function renderTemplateReport(report, options = {}) {
       for (const [k, x] of a.items.entries()) out.push(...rpTemplateReproItem(x, '3.3.' + (i + 1) + '.' + (j + 1) + '.' + (k + 1), showSecrets))
     }
   }
-  out.push('### 3.4 靶标权限复现', '')
-  if (report.repro.target.length === 0) out.push('无靶标权限得分项。', '')
-  for (const [i, g] of report.repro.target.entries()) {
-    for (const [j, x] of g.items.entries()) out.push(...rpTemplateReproItem(x, '3.4.' + (i + 1) + '.' + (j + 1), showSecrets))
-  }
   return out.join('\n')
 }
 
@@ -6414,8 +6397,8 @@ function renderDeliveryReport(store, id, items, targetName, options = {}, summar
     g.items.sort((a, b) => (a.chain_no || a.seq || 0) - (b.chain_no || b.seq || 0))
     g.items.forEach((item, ii) => { item._section = g.no + '.' + (ii + 1) })
   }
-  const stageOrder = ['internet', 'boundary', 'internal', 'target']
-  const stageName = { internet: '互联网资产权限', boundary: '边界突破', internal: '内网资产权限', target: '靶标权限' }
+  const stageOrder = ['internet', 'boundary', 'internal']
+  const stageName = { internet: '互联网资产权限', boundary: '边界突破', internal: '内网资产权限' }
   const byStage = new Map()
   for (const st of stageOrder) byStage.set(st, items.filter((x) => x.stage_code === st).sort((a, b) => (a.chain_no || 0) - (b.chain_no || 0)))
   for (const [si, st] of stageOrder.entries()) {

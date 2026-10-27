@@ -1545,7 +1545,7 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
               h('div', { className: 'rt-ov-score-sub' }, current ? '当前阶段 · ' + current.name : '还没有得分记录'),
               h('button', { className: 'rt-btn', onClick: () => onGo('chain') }, '查看攻击链 →')),
             h('div', { className: 'rt-ov-rail' },
-              h('div', { className: 'rt-ov-rail-head' }, '五阶段推进'),
+              h('div', { className: 'rt-ov-rail-head' }, '四阶段推进'),
               h('div', { className: 'rt-ov-stages' },
                 stages.map((x, i) => h('div', {
                   key: 'st' + x.code,
@@ -2796,10 +2796,11 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
     /* ---------------------------------------------------------- 攻击链 */
     const STAGE_LABEL = { recon: '信息收集', vuln: '漏洞发现', exploit: '漏洞利用', access: '获得权限', pivot: '内网突破', data: '敏感数据', other: '其他' }
 
-    /* ---------------------------------------------------------- 攻击链（五阶段） */
+    /* ---------------------------------------------------------- 攻击链（四阶段） */
     /**
      * 按攻击面位置串成一条链：
-     * ① 信息收集 → ② 互联网资产权限 → ③ 边界突破 → ④ 内网资产权限 → ⑤ 靶标权限。
+     * ① 信息收集 → ② 互联网资产权限 → ③ 边界突破 → ④ 内网资产权限。
+     * 靶标系统不再单独计分，进入内网后按内网资产权限累计。
      * 每阶段只讲两件事：这一步拿到多少分（累计多少）、涉及的资产/隧道是哪些。
      * A = 竖向链（详细）；B = 横向链（一屏看完）。
      */
@@ -2961,11 +2962,11 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
       return h('div', { className: 'rt-main' },
         h('div', { className: 'rt-toolbar' },
           h('span', { style: { fontWeight: 600 } }, '攻击链'),
-          h('span', { className: 'rt-tag', style: { fontSize: 10.5 } }, '信息收集 → 互联网资产权限 → 边界突破 → 内网资产权限 → 靶标权限'),
+          h('span', { className: 'rt-tag', style: { fontSize: 10.5 } }, '信息收集 → 互联网资产权限 → 边界突破 → 内网资产权限'),
           summary ? h('span', { className: 'rt-tag rt-tag-live' }, '总分 ' + summary.points + ' 分') : null,
           h('div', { className: 'rt-spacer' }),
           h('button', { className: 'rt-btn' + (view === 'A' ? ' rt-btn-primary' : ''), title: '竖向攻击链：逐阶段向下看细节', onClick: () => setView('A') }, '链路 A'),
-          h('button', { className: 'rt-btn' + (view === 'B' ? ' rt-btn-primary' : ''), title: '横向攻击链：一屏看完五个阶段', onClick: () => setView('B') }, '链路 B'),
+          h('button', { className: 'rt-btn' + (view === 'B' ? ' rt-btn-primary' : ''), title: '横向攻击链：一屏看完四个阶段', onClick: () => setView('B') }, '链路 B'),
           h('button', { className: 'rt-btn', disabled: loading, onClick: load }, loading ? '加载中…' : '刷新')),
         err ? h('div', { className: 'rt-err' }, err) : null,
         !stages.length && !err && data !== null
@@ -3008,7 +3009,7 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
     /**
      * 页面结构严格按交付模板：
      *   一、资产归属证明（互联网 / 内网入口）
-     *   二、得分汇总表（总表 + 2.1-2.4 分段表）
+     *   二、得分汇总表（总表 + 2.1-2.3 分段表）
      *   三、得分点复现（互联网 / 边界隧道 / 内网网段 / 靶标）
      * 页面和下载的 Markdown 都由 host 的 report model 生成，避免两边字段漂移。
      */
@@ -3074,7 +3075,7 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
             g.tunnel && g.tunnel.command ? code(g.tunnel.command, '隧道建立命令', 'cmd') : null,
             g.items.map((x, j) => reproItem(x, headingPrefix + (i + 1) + '.' + (j + 1))))
         }
-        if (kind === 'internet' || kind === 'target') {
+        if (kind === 'internet') {
           return h('div', { className: 'rt-r2-group', key: 'g' + i },
             h('h4', { className: 'rt-r2-h4' }, headingPrefix + (i + 1) + ' ' + (g.asset.ip || g.asset.primary_name || '未命名资产')),
             g.items.map((x, j) => reproItem(x, headingPrefix + (i + 1) + '.' + (j + 1))))
@@ -3125,9 +3126,7 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
             h('h3', { className: 'rt-r2-h3' }, '3.2 互联网边界突破复现'),
             (report.repro && report.repro.boundary || []).length === 0 ? h('div', { className: 'rt-r2-empty' }, '无边界突破得分项。') : reproList(report.repro.boundary, '3.2.', 'boundary'),
             h('h3', { className: 'rt-r2-h3' }, '3.3 内网资产得分复现'),
-            (report.repro && report.repro.internal_segments || []).length === 0 ? h('div', { className: 'rt-r2-empty' }, '无内网资产得分项。') : reproList(report.repro.internal_segments, '3.3.', 'internal'),
-            h('h3', { className: 'rt-r2-h3' }, '3.4 靶标权限复现'),
-            (report.repro && report.repro.target || []).length === 0 ? h('div', { className: 'rt-r2-empty' }, '无靶标权限得分项。') : reproList(report.repro.target, '3.4.', 'target'))))
+            (report.repro && report.repro.internal_segments || []).length === 0 ? h('div', { className: 'rt-r2-empty' }, '无内网资产得分项。') : reproList(report.repro.internal_segments, '3.3.', 'internal'))))
     }
 
 

@@ -137,8 +137,8 @@ try {
     'report model 带互联网资产归属证明')
   ok(rep.report && rep.report.asset_proof.internal_entry.length >= 1,
     'report model 带内网入口资产归属证明')
-  ok(rep.report && rep.report.stage_summary.length === 4 && rep.report.stage_summary[3].code === 'target',
-    '报告汇总固定包含互联网 / 边界 / 内网 / 靶标四个阶段')
+  ok(rep.report && rep.report.stage_summary.length === 3 && rep.report.stage_summary.every((s) => s.code !== 'target'),
+    '报告汇总固定包含互联网 / 边界 / 内网三个阶段，不再有靶标阶段')
   ok(rep.markdown.includes('- **归属类型**') && rep.markdown.includes('- **证明强度**'),
     '资产归属证明包含归属类型和证明强度')
   ok(rep.markdown.includes('root/R00t@2024'), '得分汇总表按用户要求显示明文凭据')
@@ -146,11 +146,11 @@ try {
     '内网复现按网段分组')
   ok(rep.markdown.includes('## 一、资产归属证明'), '第一段是资产归属证明')
   ok(rep.markdown.includes('## 二、得分汇总表'), '第二段是得分汇总表')
-  ok(rep.markdown.includes('### 2.3 内网资产权限') && rep.markdown.includes('### 2.4 靶标权限'), '第三段含内网/靶标得分表')
+  ok(rep.markdown.includes('### 2.3 内网资产权限') && !rep.markdown.includes('### 2.4 靶标权限'), '第三段含内网得分表，且不再有靶标得分表')
   ok(rep.markdown.includes('## 三、得分点复现'), '第三段是得分点复现')
-  const order = ['### 2.1 互联网资产权限', '### 2.2 边界突破', '### 2.3 内网资产权限', '### 2.4 靶标权限']
+  const order = ['### 2.1 互联网资产权限', '### 2.2 边界突破', '### 2.3 内网资产权限']
   ok(order.every((h, i) => rep.markdown.includes(h) && (i === 0 || rep.markdown.indexOf(order[i - 1]) < rep.markdown.indexOf(h))),
-    '四阶段按「互联网 → 边界 → 内网 → 靶标」排序')
+    '三阶段按「互联网 → 边界 → 内网」排序')
   ok(/^#### 3\.1\.\d+ /m.test(rep.markdown), '得分点复现按 3.1.x 编号')
   ok(!rep.markdown.includes('#### 动作记录'), '不再把同资产动作整段重复进每条（动作记录已从正文移除）')
   const head = rep.markdown.split('\n').slice(0, 20).join('\n')

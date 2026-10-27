@@ -1590,7 +1590,7 @@ export function apply(ctx, config = {}) {
       id: { type: 'number', description: '已有得分点 id（修改时传）' },
       name: { type: 'string', required: true },
       code: { type: 'string', description: '短代码（新增时建议给，便于记录得分）' },
-      category: { type: 'string', description: '分类，如 账号权限 / 服务器权限 / 数据库 / 网络突破 / 数据 / 核心目标' },
+      category: { type: 'string', description: '分类，如 账号权限 / 服务器权限 / 数据库 / 网络突破 / 数据 / 核心业务系统' },
       points: { type: 'number', description: '分值' },
       description: { type: 'string', description: '得分条件说明' },
       enabled: { type: 'boolean' },
@@ -1666,7 +1666,7 @@ export function apply(ctx, config = {}) {
       evidence_ref: { type: 'string', description: '证据文件/会话引用，例如 runs/session-vnc.md' },
       recorded_by: { type: 'string' },
       point_code: { type: 'string', description: '【拿了分就填】得分点 code；必须同时给 evidence，否则只入库步骤、不记分' },
-      stage_code: { type: 'string', enum: ['recon', 'internet', 'boundary', 'internal', 'target'], description: '作战阶段：recon/internet/boundary/internal/target' },
+      stage_code: { type: 'string', enum: ['recon', 'internet', 'boundary', 'internal'], description: '作战阶段：recon/internet/boundary/internal（靶标系统不再单独计分，进入内网后按 internal 累计）' },
       evidence: { type: 'string', description: '配合 point_code：目标资产 + 账号/权限/数据量' },
       data_scale: { type: 'string', enum: ['large', 'knowledge-base'], description: 'G5：large=超 1 亿条/10TB；knowledge-base=知识库（×2）' },
       ip_version: { type: 'string', enum: ['4', '6'], description: 'G6：IPv6 成果 ×3（填 "6"）' },
@@ -1772,7 +1772,7 @@ export function apply(ctx, config = {}) {
 
   registerTool(withStructuredErrors(defineTool({
     name: 'redteam_attack_chain',
-    description: '攻击链：按攻击面位置串起来的五个阶段 —— ① 信息收集（互联网侧）→ ② 互联网资产权限 → ③ 边界突破（搭隧道）→ ④ 内网资产权限 → ⑤ 靶标权限。返回每阶段的阶段目标、**实际拿到多少分与累计分**、涉及资产、以及边界突破阶段的真实隧道。开工时看它明确"现在在第几阶段、下一步该打哪一阶段"，汇报时按阶段给结论。',
+    description: '攻击链：按攻击面位置串起来的四个阶段 —— ① 信息收集（互联网侧）→ ② 互联网资产权限 → ③ 边界突破（搭隧道）→ ④ 内网资产权限。靶标系统不再单独计分。返回每阶段的阶段目标、**实际拿到多少分与累计分**、涉及资产、以及边界突破阶段的真实隧道。开工时看它明确"现在在第几阶段、下一步该打哪一阶段"，汇报时按阶段给结论。',
     parameters: { engagement: { type: 'string' } },
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
     async execute(args, exec) {
@@ -1793,7 +1793,7 @@ export function apply(ctx, config = {}) {
           assets: (st.assets || []).map((a) => a.ip + (a.scope === 'internal' ? '(内网)' : '(外网)') + ' 贡献' + a.points + '分'),
           tunnels: (st.tunnels || []).map((t) => t.kind + ' ' + t.listen + ' [' + t.status + '] 可达 ' + (t.reach || '—')),
         })),
-        hint: '得分阶段是自动推导的（web-app/central-system→靶标、boundary-*→边界突破，其余按资产内外网归属）；写攻击链步骤时带 stage_code（只接受 recon/internet/boundary/internal/target）步骤计数才会落到正确阶段，写别的值会被忽略。账号权限与数据库权限按「同资产同端口」封顶：一个服务拿到最高权限即拿满，同服务重复命中标 capped=true 且不计分。',
+        hint: '得分阶段是自动推导的（boundary-*→边界突破，其余按资产内外网归属；靶标系统不再单独计分）；写攻击链步骤时带 stage_code（只接受 recon/internet/boundary/internal）步骤计数才会落到正确阶段，写别的值会被忽略。账号权限与数据库权限按「同资产同端口」封顶：一个服务拿到最高权限即拿满，同服务重复命中标 capped=true 且不计分。',
       }, null, 2)
     },
   })))
@@ -1801,7 +1801,7 @@ export function apply(ctx, config = {}) {
 
   registerTool(withStructuredErrors(defineTool({
     name: 'redteam_score_report',
-    description: '红队得分报告（四段式）：一、靶标单位资产证明（只列得分资产，附域名/标题/主机名/隧道/同段等归属证据与强弱）；二、得分汇总表（互联网资产权限 / 边界突破 / 内网资产权限 / 靶标权限）；三、账号密码凭据权限汇总表（同一顺序，凭据默认脱敏）；四、得分点复现（同一顺序，每条给最短报文/命令与缺口）。只收录"拿到了分"的成果，没得分的漏洞不进报告。需要交付报告时用这个，而不是 redteam_report。',
+    description: '红队得分报告（四段式）：一、靶标单位资产证明（只列得分资产，附域名/标题/主机名/隧道/同段等归属证据与强弱）；二、得分汇总表（互联网资产权限 / 边界突破 / 内网资产权限）；三、账号密码凭据权限汇总表（同一顺序，凭据默认脱敏）；四、得分点复现（同一顺序，每条给最短报文/命令与缺口）。只收录"拿到了分"的成果，没得分的漏洞不进报告。需要交付报告时用这个，而不是 redteam_report。',
     parameters: {
       engagement: { type: 'string' },
       limit: { type: 'number', description: '最多多少项，默认 500' },

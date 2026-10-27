@@ -46,8 +46,8 @@ try {
   ok(/第二次排除结论/.test(onlyNotes.test_notes), '返回值里带 test_notes，模型能确认写成功')
 
   console.log('— 契约二：stage_code 白名单 + 非法值告警')
-  ok(VALID_STAGE_CODES.length === 5 && VALID_STAGE_CODES.includes('boundary'),
-    '只暴露 5 个合法阶段 code')
+  ok(VALID_STAGE_CODES.length === 4 && VALID_STAGE_CODES.includes('boundary') && !VALID_STAGE_CODES.includes('target'),
+    '只暴露 4 个合法阶段 code，靶标阶段已移除')
   const good = store.addChainStep(id, { stage: 'pivot', stage_code: 'boundary', title: 'suo5 隧道打通' })
   ok(good.stage_code === 'boundary' && good.stage_hint === null, '合法 stage_code 原样保留、无告警')
   const bad = store.addChainStep(id, { stage: 'vuln', stage_code: 'foothold', title: '撕破口子' })

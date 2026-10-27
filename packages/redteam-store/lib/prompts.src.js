@@ -79,7 +79,7 @@ const COMMON_DB_LOOKUP = `## 打之前先查库（禁止重复打）
 
 const COMMON_EVIDENCE = `## 落库与溯源（强制：没落库的发现 = 没发生）
 1. 每条发现落库：资产 \`redteam_asset_add\`、漏洞 \`redteam_vuln_add\`、原始请求 \`redteam_http_evidence_add\`、凭据 \`redteam_credential_add\`、会话 \`redteam_access_add\`、WebShell \`redteam_webshell_add\`、隧道 \`redteam_tunnel_add\`、步骤 \`redteam_chain_add\`、得分 \`redteam_score_hit\`。
-2. 每个关键动作写 \`redteam_chain_add\`：\`tool\`=实际命令原文，\`detail\`=为什么/线索，\`result\`=回显摘要，\`agent\`=角色 code，\`stage_code\` 只能是 recon/internet/boundary/internal/target。报告复现靠它。
+2. 每个关键动作写 \`redteam_chain_add\`：\`tool\`=实际命令原文，\`detail\`=为什么/线索，\`result\`=回显摘要，\`agent\`=角色 code，\`stage_code\` 只能是 recon/internet/boundary/internal（靶标系统不再单独计分）。报告复现靠它。
 3. 凭据写 \`source\`（弱口令/注入拖库/配置泄露/凭据复用/默认口令）、\`tool\`、\`secret_ref\`；明文写 \`secret_value\`。
 4. WebShell 用冰蝎/哥斯拉 + \`pass_key\`；隧道写全 \`kind/listen/entry/reach/entry_kind/command\`，并 \`redteam_session_check\` 实测——**真的能访问到内网目标才算数**。
 5. 报告只认可复现的成果：目标 → 拿到什么 → 怎么拿到的（步骤 + 命令）→ 原始请求；缺证据会被标“无法复现”。

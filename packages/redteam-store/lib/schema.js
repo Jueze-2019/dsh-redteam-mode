@@ -182,7 +182,7 @@ CREATE TABLE IF NOT EXISTS score_point (
 );
 
 /* 得分记录：某个得分点在某个目标上被拿下 */
-/* 作战阶段：全链路攻击路径图的五个阶段（内容可编辑） */
+/* 作战阶段：全链路攻击路径图的四个阶段（内容可编辑；靶标系统不再单独计分） */
 CREATE TABLE IF NOT EXISTS stage (
   code TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -539,19 +539,22 @@ export function migrate(db) {
   ensure('score_hit', 'vuln_id', 'INTEGER')
   ensure('score_hit', 'step_id', 'INTEGER')
   ensure('attack_step', 'point_id', 'INTEGER')
-  /* 攻击链已推倒重来：老的五阶段行整体作废，attck 列移除 */
+  /* 攻击链阶段收缩为四阶段：靶标系统不再单独计分，也不再作为阶段。
+     老库里的 target 阶段行删除；历史命中/步骤按内网（或外网资产）并回。 */
   try {
-    /* 注意：'target' 在新老两版里同名，必须按名称区分，否则第二次打开会把新版阶段删掉 */
     db.prepare("DELETE FROM stage WHERE code IN ('external','foothold','tunnel','privilege')").run()
-    db.prepare("DELETE FROM stage WHERE code = 'target' AND name = '靶标系统权限'").run()
-    db.prepare("DELETE FROM stage WHERE code NOT IN ('recon','internet','boundary','internal','target')").run()
+    db.prepare("DELETE FROM stage WHERE code = 'target'").run()
+    db.prepare("DELETE FROM stage WHERE code NOT IN ('recon','internet','boundary','internal')").run()
+    db.prepare(`UPDATE score_hit SET stage_code = CASE
+      WHEN asset_id IS NOT NULL AND (SELECT scope FROM asset WHERE asset.id = score_hit.asset_id) = 'external' THEN 'internet'
+      ELSE 'internal' END
+      WHERE stage_code = 'target'`).run()
+    db.prepare("UPDATE attack_step SET stage_code = 'internal' WHERE stage_code = 'target'").run()
   } catch { /* 表还不存在，忽略 */ }
   if (has('stage', 'attck')) {
     try { db.exec('ALTER TABLE stage DROP COLUMN attck') } catch { /* 老 SQLite 不支持则保留 */ }
   }
-  /* 攻击步骤上的阶段：老值是上一版的阶段 code，清掉以便按 legacy stage 重新映射。
-     注意：'target' 在新版里仍是合法阶段（⑤ 靶标权限），不能一起清——否则每次打开
-     靶标都会把「显式指定 ⑤」的步骤与得分打回自动推导。 */
+  /* 攻击步骤上的阶段：老值是上一版的阶段 code，清掉以便按 legacy stage 重新映射。 */
   try {
     db.prepare("UPDATE attack_step SET stage_code = NULL WHERE stage_code IN ('external','foothold','tunnel','privilege')").run()
     db.prepare("UPDATE score_hit SET stage_code = NULL WHERE stage_code IN ('external','foothold','tunnel','privilege')").run()

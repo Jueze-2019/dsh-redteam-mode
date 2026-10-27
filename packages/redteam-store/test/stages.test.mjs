@@ -1,16 +1,17 @@
 /**
- * 阶段表自愈回归测试（对应 v0.4.2 的线上故障）
+ * 阶段表回归：四阶段 + 靶标系统从得分阶段移除
  *
  * 跑法：node packages/redteam-store/test/stages.test.mjs
  *
- * 故障现象：靶标库里 stage 表只剩 4 行（⑤靶标权限 被上一版迁移误删），
- * 于是「攻击链 / 报告」只统计到 450 分，而得分面板是 490 分 —— 差的 40 分
- * 正是 ⑤靶标权限 的命中，因为没有阶段行可挂。
+ * 规则变更：靶标系统不再单独计分，也不再有独立阶段。
+ * 进入内网后拿到的系统权限按「内网资产权限」累计；老库里的 target 阶段与
+ * stage_code='target' 命中在打开靶标时自动迁回 internal（外网资产则回 internet）。
  *
- * 这里断言三件事：
- *   1) 阶段行缺失时，scoreChain / scoreReport / listStages 都会自动补回；
- *   2) 补回后 ⑤ 拿到自己的得分，累计分与得分面板一致；
- *   3) 迁移不再清掉显式 stage_code='target'（新版里 'target' 仍是合法阶段）。
+ * 这里断言：
+ *   1) 默认阶段只有 4 个，target 不再出现；
+ *   2) 集权系统等得分按资产内外网归属落阶段，不再被强制归到 target；
+ *   3) 阶段行缺失时 scoreChain / scoreReport / listStages 仍会自愈；
+ *   4) 老库 target 阶段与 stage_code='target' 会被迁移掉。
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -25,50 +26,65 @@ const root = mkdtempSync(join(tmpdir(), 'rt-stage-test-'))
 try {
   const store = new RedteamStore(root)
   const { id } = store.openEngagement('测试靶标', ['10.0.0.0/8'])
-
-  /* 造数据：一条 ⑤ 靶标得分（core-system → 自动归到 target） */
   const db = store.db(id)
+
+  /* 内网资产 + 集权系统得分：旧版会强制归 target，新版应按 asset.scope 归 internal */
+  const now = new Date().toISOString()
+  const assetId = Number(db.prepare(`INSERT INTO asset(segment_cidr, ip, ip_int, state, confidence, first_seen, last_seen, scope)
+    VALUES(?,?,?,?,?,?,?,?)`).run('10.0.0.0/24', '10.0.0.5', 167772165, 'live', 0.9, now, now, 'internal').lastInsertRowid)
   const point = db.prepare("SELECT id FROM score_point WHERE code = 'central-system'").get()
-  ok(point !== undefined, '默认得分点里有 central-admin（集权系统，规则 7）')
-  db.prepare(`INSERT INTO score_hit(point_id, target, evidence, recorded_by, recorded_at)
-    VALUES(?,?,?,?,?)`).run(point.id, 'https://target.example', '靶标平台 管理员 admin/Admin@123', 'test', new Date().toISOString())
+  ok(point !== undefined, '默认得分点里有 central-system（集权系统，规则 7）')
+  db.prepare(`INSERT INTO score_hit(point_id, asset_id, target, evidence, recorded_by, recorded_at)
+    VALUES(?,?,?,?,?,?)`).run(point.id, assetId, 'https://10.0.0.5:8443/admin', '集权平台管理员 admin/Admin@123', 'test', now)
 
   const codes = () => db.prepare('SELECT code FROM stage ORDER BY sort_order').all().map((r) => r.code)
-  ok(DEFAULT_STAGES.length === 5, `默认阶段 5 个（实际 ${DEFAULT_STAGES.length}）`)
+  ok(DEFAULT_STAGES.length === 4 && DEFAULT_STAGES.every((s) => s.code !== 'target'),
+    `默认阶段 4 个且不含 target（实际 ${DEFAULT_STAGES.map((s) => s.code).join(',')}）`)
 
-  /* 阶段表是懒播种的：先读一次让它补齐，再模拟线上故障删掉 ⑤ */
   store.listStages(id)
-  ok(codes().length === 5, `读一次阶段表即补齐 5 行（实际 ${codes().length}）`)
-  db.prepare("DELETE FROM stage WHERE code = 'target'").run()
-  ok(codes().join(',') === 'recon,internet,boundary,internal', `故障复现：stage 表只剩 4 行（实际 ${codes().join(',')}）`)
+  ok(codes().join(',') === 'recon,internet,boundary,internal',
+    `读一次阶段表即四阶段（实际 ${codes().join(',')}）`)
 
-  /* scoreChain 应自愈并把 40 分挂到 ⑤ */
   const chain = store.scoreChain(id)
-  ok(chain.stages.length === 5, `scoreChain 自愈回 5 个阶段（实际 ${chain.stages.length}）`)
-  ok(codes().length === 5, 'DB 里的阶段行已被补回')
-  const target = chain.stages.find((s) => s.code === 'target')
-  ok(target !== undefined && target.points > 0, `⑤靶标权限 拿到 +${target && target.points} 分`)
+  const internal = chain.stages.find((s) => s.code === 'internal')
+  ok(internal !== undefined && internal.points > 0,
+    `集权系统得分归入④内网资产权限 +${internal && internal.points} 分`)
+  ok(!chain.stages.some((s) => s.code === 'target'), '攻击链不再出现⑤靶标权限阶段')
   ok(chain.summary.points === chain.stages[chain.stages.length - 1].cumulative,
     `累计分与得分面板一致（${chain.summary.points} = ${chain.stages[chain.stages.length - 1].cumulative}）`)
 
-  /* 再删一次，report 也要自愈 */
-  db.prepare("DELETE FROM stage WHERE code = 'target'").run()
   const report = store.scoreReport(id)
-  /* 报告只保留有内容的阶段，但被删掉的阶段行必须已被补回 DB */
-  ok(codes().length === 5, `scoreReport 也把阶段行补回（实际 ${codes().length} 行）`)
-  ok(report.stages.length > 0 && report.stages.length <= 5, `报告只列有内容的阶段（${report.stages.length} 个）`)
-  /* 空阶段会被报告跳过，但序号必须仍是完整链表里的真实位置 */
-  const tSt = report.stages.find((s) => s.code === 'target')
-  ok(tSt !== undefined && tSt.ordinal === 5, `报告里的⑤靶标权限序号是真实第 5 阶段（实际 ${tSt && tSt.ordinal}）`)
-  ok(report.stages.every((s, i) => i === 0 || s.ordinal > report.stages[i - 1].ordinal), '报告阶段序号严格递增')
+  ok(report.report && report.report.stage_summary.length === 3
+    && report.report.stage_summary.every((s) => s.code !== 'target'),
+  '报告汇总只有互联网 / 边界 / 内网三个阶段')
+  ok(report.report.stage_tables.target === undefined && report.report.repro.target === undefined,
+    '报告模型不再生成 target 得分表 / 复现分组')
+  ok(!report.markdown.includes('靶标权限') && !report.markdown.includes('### 2.4') && !report.markdown.includes('### 3.4'),
+    '报告正文不再出现靶标权限 / 2.4 / 3.4')
+  ok(report.markdown.includes('### 2.3 内网资产权限'), '报告仍保留 2.3 内网资产权限')
+  const realOrder = store.listStages(id).map((s) => s.code)
+  ok(report.stages.every((s) => s.ordinal === realOrder.indexOf(s.code) + 1),
+    '报告阶段序号保留真实位置：' + report.stages.map((s) => s.ordinal + ':' + s.code).join(' '))
   ok(report.stages[report.stages.length - 1].cumulative === report.summary.points, '报告累计分 = 合计分')
-  ok(/靶标权限/.test(report.markdown), '报告正文里出现「靶标权限」阶段')
 
-  /* 迁移不应清掉显式 stage_code='target' */
+  /* 自愈：删掉一个默认阶段，再读应补回；target 仍然不能回来 */
+  db.prepare("DELETE FROM stage WHERE code = 'internal'").run()
+  const healed = store.listStages(id)
+  ok(healed.length === 4 && healed.some((s) => s.code === 'internal'), '阶段行缺失时自动补回（仍为 4 个）')
+  ok(!healed.some((s) => s.code === 'target'), '自愈不会把 target 阶段补回来')
+
+  /* 老库迁移：显式 stage_code='target' + target 阶段行 → 重开连接后迁回 internal 并删阶段 */
+  const targetStageSql = `INSERT INTO stage(code, name, subtitle, color, goal, sections, tools, transition, sort_order, updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?)`
   db.prepare("UPDATE score_hit SET stage_code = 'target'").run()
-  store.db(id) /* 再开一次连接，跑一遍迁移 */
-  const kept = store.scoreChain(id).items.filter((x) => x.stage_code === 'target').length
-  ok(kept > 0, `重开靶标后显式 stage_code='target' 仍在（${kept} 条）`)
+  db.prepare(targetStageSql).run('target', '靶标权限', 'TARGET', '#10b981', '旧阶段', '[]', '', '', 99, now)
+  store.close() /* 关闭连接；重开时才会跑 migrate */
+  const db2 = store.db(id)
+  const migrated = db2.prepare("SELECT stage_code FROM score_hit WHERE point_id = ?").get(point.id)
+  ok(migrated !== undefined && migrated.stage_code === 'internal',
+    `老数据 stage_code='target' 迁移为 internal（实际 ${migrated && migrated.stage_code}）`)
+  ok(db2.prepare("SELECT code FROM stage WHERE code = 'target'").get() === undefined,
+    '老库 target 阶段行被删除')
 } finally {
   rmSync(root, { recursive: true, force: true })
 }
