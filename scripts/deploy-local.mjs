@@ -39,6 +39,18 @@ const bundle = join(repo, 'packages', 'redteam-bundle')
 console.log('— ① 生成市场包（build.mjs）')
 execFileSync(process.execPath, [join(bundle, 'tools', 'build.mjs')], { cwd: repo, stdio: 'inherit' })
 
+/* ①.5 用户技能根（$DSH_HOME/skills）优先于包内技能，同名会遮住包内新版；
+   把仓库技能的分类元数据同步过去，只补 category/tags/【分类】前缀，不动正文。 */
+const userSkillsDir = join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'skills')
+if (existsSync(userSkillsDir)) {
+  console.log('— ①.5 同步用户技能根的分类元数据（不动正文）')
+  try {
+    execFileSync(process.execPath, [join(here, 'sync-skill-metadata.mjs'), userSkillsDir], { cwd: repo, stdio: 'inherit' })
+  } catch (error) {
+    console.error('   （分类元数据同步失败，不影响部署：' + (error && error.message ? error.message : String(error)) + '）')
+  }
+}
+
 /* ② 同步到 profile 的 node_modules */
 const profilesRoot = join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'profiles')
 const profiles = existsSync(profilesRoot)

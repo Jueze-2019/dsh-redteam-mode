@@ -2215,6 +2215,7 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
       const [err, setErr] = React.useState(null)
       const [q, setQ] = React.useState('')
       const [cat, setCat] = React.useState('')
+      const [redteamOnly, setRedteamOnly] = React.useState(true)
       const [srcOnly, setSrcOnly] = React.useState(false)
       const [active, setActive] = React.useState(null)
       const [detail, setDetail] = React.useState(null)
@@ -2245,11 +2246,15 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
       }
 
       const needle = q.trim().toLowerCase()
-      const cats = Array.from(new Set(items.map((s) => s.category || '未分类')))
+      /* 只把"有分类"的红队技能算进红队视图；DSH 自带的通用技能（未分类）默认不混进来。 */
+      const redteamCount = items.filter((s) => (s.category || '未分类') !== '未分类').length
+      const scoped = redteamOnly ? items.filter((s) => (s.category || '未分类') !== '未分类') : items
+      const cats = Array.from(new Set(scoped.map((s) => s.category || '未分类')))
+      const effectiveCat = cats.includes(cat) ? cat : ''
       let filtered = needle
-        ? items.filter((s) => (s.name + ' ' + s.description + ' ' + s.whenToUse + ' ' + (s.category || '')).toLowerCase().indexOf(needle) >= 0)
-        : items
-      if (cat) filtered = filtered.filter((s) => (s.category || '未分类') === cat)
+        ? scoped.filter((s) => (s.name + ' ' + s.description + ' ' + s.whenToUse + ' ' + (s.category || '')).toLowerCase().indexOf(needle) >= 0)
+        : scoped
+      if (effectiveCat) filtered = filtered.filter((s) => (s.category || '未分类') === effectiveCat)
       if (srcOnly) filtered = filtered.filter((s) => s.fromPlugin === true)
       if (brokenOnly) filtered = filtered.filter((s) => s.availability === 'broken' || s.availability === 'unknown')
       /* 目录聚合：一眼看出"这么多技能是哪来的"（本项目/别的插件/自带根…） */
@@ -2289,11 +2294,14 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
           }),
           h('select', {
             className: 'rt-input', style: { width: '100%', marginBottom: 8, boxSizing: 'border-box' },
-            value: cat, onChange: (e) => setCat(e.target.value),
+            value: effectiveCat, onChange: (e) => setCat(e.target.value),
           },
-            h('option', { value: '' }, '全部分类（' + items.length + '）'),
+            h('option', { value: '' }, '全部分类（' + scoped.length + '）'),
             cats.map((c) => h('option', { key: c, value: c },
-              c + '（' + items.filter((s) => (s.category || '未分类') === c).length + '）'))),
+              c + '（' + scoped.filter((s) => (s.category || '未分类') === c).length + '）'))),
+          h('label', { className: 'rt-kb-check', style: { display: 'flex', margin: '0 0 6px' } },
+            h('input', { type: 'checkbox', checked: redteamOnly, onChange: (e) => setRedteamOnly(e.target.checked) }),
+            '只看红队技能（' + redteamCount + ' 个，隐藏 DSH 通用）'),
           h('label', { className: 'rt-kb-check', style: { display: 'flex', margin: '0 0 6px' } },
             h('input', { type: 'checkbox', checked: srcOnly, onChange: (e) => setSrcOnly(e.target.checked) }),
             '只看本插件自带（' + (meta.fromPlugin || 0) + ' 个）'),
@@ -2316,7 +2324,7 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
                 }, clickable(() => load(true), { label: '重新检查技能可用性' })), '重查可用性'))
             : null,
           h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)', marginBottom: 6 } },
-            '共 ' + items.length + ' 个技能 · 来自 ' + ((meta.byDir || []).length) + ' 个目录',
+            '共 ' + items.length + ' 个技能 · 当前显示 ' + filtered.length + ' 个 · 来自 ' + ((meta.byDir || []).length) + ' 个目录',
             items.length > 100 ? h('div', { style: { marginTop: 3 } },
               '（技能多来自其它插件注册的根或你自己的技能目录；本插件只自带 ' + (meta.fromPlugin || 0) + ' 个）') : null),
           listItems),
