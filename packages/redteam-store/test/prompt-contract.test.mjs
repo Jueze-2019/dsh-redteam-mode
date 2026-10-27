@@ -166,6 +166,8 @@ try {
     'kimi-webbridge', 'lateral-movement', 'netspy-recon', 'nuclei-scan', 'passive-recon',
     'recon-pipeline', 'redteam-setup', 'score-coverage', 'shell-handler', 'specialist-paths',
     'suo5-tunnel', 'unauth-exploit', 'vps-reverse-shell', 'web-fingerprint', 'webshell-toolkit',
+    'ad-attack', 'cloud-k8s', 'network-device', 'api-data-exfil', 'oob-verify',
+    'supply-chain', 'c2-infra', 'opsec-hygiene', 'ai-agent-attack', 'mobile-code-recon',
   ]
   const allowedCategories = new Set(['规划', '侦察', '验证', '访问', '内网', '隧道', '得分', '基础设施'])
   let categorized = 0
@@ -181,7 +183,7 @@ try {
     if (okRow) categorized += 1
     ok(okRow, name + '：category/tags/描述前缀齐全且分类合法')
   }
-  ok(categorized === skillNames.length, '28 个随包技能全部分类完成（' + categorized + '/' + skillNames.length + '）')
+  ok(categorized === skillNames.length, '38 个随包技能全部分类完成（' + categorized + '/' + skillNames.length + '）')
 
   console.log('— 契约七：历史默认指纹表（v0.9.0 重写后按设计清空）')
   /* v0.9.0 把六个角色提示词整体重写：旧默认一律不再登记为"可自动升级"，
