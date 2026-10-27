@@ -190,7 +190,7 @@ const allTools = collect('all')
 const reconTools = collect('recon')
 const assessTools = collect('assess')
 const vulnTools = collect('vuln-scan')
-ok(allTools.size === 54, 'profile=all 不裁剪（54 个工具）')
+ok(allTools.size === 59, 'profile=all 不裁剪（59 个工具）')
 ok(reconTools.size < allTools.size && !reconTools.has('redteam_score_hit') && !reconTools.has('redteam_tunnel_add') && reconTools.has('redteam_asset_add'),
   'recon profile 裁掉记分/隧道等越界写操作，保留资产入库（' + reconTools.size + ' 个）')
 ok(assessTools.has('redteam_asset_assess') && !assessTools.has('redteam_vuln_add') && !assessTools.has('redteam_webshell_add'),

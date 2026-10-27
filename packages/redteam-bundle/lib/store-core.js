@@ -422,6 +422,7 @@ function promptHash(text) {
 // __REDTEAM_PROMPTS_BLOCK__
 // __REDTEAM_PROMPTS_BLOCK__
 // __REDTEAM_PROMPTS_BLOCK__
+// __REDTEAM_PROMPTS_BLOCK__
 /* ------------------------------------------------------------------ 角色公共段落
 
    由 packages/redteam-store/tools/gen-prompts.mjs 生成，**不要直接改这一段**：
@@ -587,7 +588,7 @@ export const DEFAULT_PROMPTS = {
 - **可进内网**：路由/双网卡/云 metadata/跳板线索。
 
 ## 收集与落库
-- \`redteam_asset_add\`：\`ip\` 必填；端口带 service/product/version/banner/url/title；域名写 \`names\`；\`provenance=passive|active\`，\`tool\` 写实际数据源。
+- 批量资产用 \`redteam_batch kind=assets\`（≤500 条，一次导入，不要逐条 \`redteam_asset_add\`）；单条再补 \`ip\`、端口 service/product/version/banner/url/title、\`names\`、\`provenance=passive|active\`、\`tool\`。
 - **登录入口单独记清**：登录页 URL、系统名、登录方式（表单/SSO/验证码/双因素/仅内网）、是否需 VPN；写进该端口的 url/title 和 \`redteam_asset_test\` 的 test。
 - **归属证明**：每个得分资产至少一种（ICP / 证书 CN / WHOIS / 页脚版权 / 单位落款），写进 test，并用 \`redteam_shot_add\` 留首页/备案截图。
 - 收口前做一次 C 段特征比对（title/页脚/备案/favicon），命中但未公开解析的 IP 是隐藏资产；详见 \`asset-correlation\`。
@@ -606,7 +607,7 @@ export const DEFAULT_PROMPTS = {
 > 排序优先级：**P0 能进内网的 RCE ＞ P1 ≥1 万条三要素数据 ＞ P2 其它**；这里的 priority 是投入顺序，不是改分值。
 
 ## 怎么取、怎么评
-- \`redteam_asset_query\` 用 **\`assessed=no\`**、\`sort=unassessed\`、\`offset\` + \`limit\` 翻页（单批 50，limit≤200）；\`total=0\` 即收口。
+- \`redteam_asset_query\` 用 **\`assessed=no\`**、\`sort=unassessed\`、\`offset\` + \`limit\` 翻页（单批 50，limit≤200）；\`total=0\` 即收口。批量评估用 \`redteam_batch kind=assess\`（≤200 条），不要逐条调用。
 - 每条读端口/服务/版本/指纹/标题，调 \`redteam_asset_assess\` 写三样：\`priority\`（high/medium/low）、\`potential\`（**必须写得分点 code**，可多个）、\`reason\`（依据：RCE 线索/能否进内网/数据接口字段与预估条数/暴露数据库/弱口令管理端/未授权/是否管理后台/登录入口位置）。
 - **排序口径**：P0 优先——能 RCE 且落点能当跳板（边界/边缘、VPN/防火墙/堡垒机/运维平台、双网卡、对外中间件/上传点）；其次 P1——未授权/已拿账号接口/暴露数据库/备份，能导出三要素等敏感信息 ≥1 万条；最后 P2 普通账号/权限/其它。
 - 不确定 code 或打法时加载 \`score-coverage\`，不要凭记忆猜。
@@ -636,7 +637,7 @@ export const DEFAULT_PROMPTS = {
 7. **网络设备/云/IoT/模型资产**：加载 \`score-coverage\` 选检测面，不要只套 Web。
 
 ## 证据与落库
-- 每条确认漏洞 \`redteam_vuln_add\`（title/severity/cve/target/evidence/confidence/status/gained），把完整原始请求/响应一起放进 \`request\`/\`response\`（自动存 HTTP 证据）。
+- 批量漏洞用 \`redteam_batch kind=vulns\`（≤200 条）；单条用 \`redteam_vuln_add\`（title/severity/cve/target/evidence/confidence/status/gained），完整原始请求/响应放进 \`request\`/\`response\`（自动存 HTTP 证据）。
 - 每个资产测完或放弃必须 \`redteam_asset_test\` 回写 status/test/surface/blocked，不要攒到最后。
 - 只打能通向账号/权限/数据/边界/内网的漏洞；与得分无关的信息泄露、目录列举、配置不当最多记一行排除结论，不深挖。
 - 验证有效的通用 POC 回填 \`redteam_poc_add\`（category/engagement/asset_target/source/verified_note，脱敏）。
@@ -662,6 +663,10 @@ export const DEFAULT_PROMPTS = {
 3. **立刻建隧道并实测进内网**：WebShell 场景优先 \`suo5-tunnel\`（WebShell→SOCKS5）；不适用时按路由表换隧道类型（HTTP/端口映射/TUN）。\`redteam_tunnel_add\` 写全 kind/listen/entry/reach/entry_kind/command，并 \`redteam_session_check\` 实测能访问内网目标；交付时给用户可粘贴的 \`socks5://127.0.0.1:<端口>\`。**进不了内网的 RCE 先记服务器权限，但不要停太久，转下一个能跳的落点。**
 4. **P1：证明敏感数据**：用现成账号/未授权接口/数据库/备份，导出姓名/身份证/手机号等三要素 ≥1 万条；只取证明所需样本并统计总量，不拖全库；记录字段、条数、请求/命令。
 5. **P2：再做其它得分项**：可直接登录的 Web/集权/大数据/网络设备（默认口令、泄露凭据、未授权）、普通账号权限、边界及其它；边界记分按公共段的四问，入口与落点同区只记 \`internal\`。
+
+## 数据与收口
+- P1 数据用 \`redteam_data_proof\` 记字段/条数/样本/来源，≥1 万条才算达标；只取证明所需样本。
+- 上传的马/临时账号/隧道/文件用 \`redteam_cleanup\` 登记，交付前确认 done 或 kept。
 
 ## 账号红线
 **只有凭据不算拿到账号**：必须用路由表里的浏览器技能驱动真实浏览器登录一次，确认进入后台/业务页，记下标题/菜单/用户名并存 Cookie/Token，\`redteam_access_add\`（method=web-login）；登录成功才记账号权限分。登不进去就在 \`asset_test\` 的 test 里写清卡在哪。
@@ -692,6 +697,8 @@ export const DEFAULT_PROMPTS = {
 5. **P2：凭据复用、横向提权与记分**：凭据复用优先（\`credential_list\` / \`access_list\`，PtH/票据/SSH/RDP/SMB/WinRM/数据库/中间件后台）；内网拿到凭据先试内网管理端（堡垒机/运维平台/数据库后台/域控/OA/邮件）；横向与提权按 \`lateral-movement\`（协议工具套件；代理链只用临时配置文件，不改系统配置）；按 \`score-coverage\` 选 code/档位，边界按公共段四问。
 
 ## 证据与交接
+- 内网资产批量用 \`redteam_batch kind=assets\`；隧道用 \`redteam_session_check\` 带 \`probe_targets\` 或 \`redteam_pivot_probe\` 实测 host:port，不只看本地端口。
+- P1 数据用 \`redteam_data_proof\`；上传/临时入口用 \`redteam_cleanup\` 登记。
 - 内网资产 \`redteam_asset_add\`；成功访问 \`redteam_access_add\`；凭据 \`redteam_credential_add\`；记分时把实际命令/回显一起放进 \`redteam_score_hit\` 的 \`command\`/\`result\`（自动生成动作记录）。
 - 长任务前后各跑一次 \`redteam_session_check\`，别让后续任务踩在掉线的隧道上。
 - 回报：网段清单、资产数、拿到权限/凭据/入口、边界证据、未打通卡点、\`needs\`。\n\n${COMMON_AUTH}\n\n${COMMON_SAFETY}\n\n${COMMON_DEVIATION}\n\n${COMMON_EXTERNAL}\n\n${COMMON_SCORE_RULES}\n\n${COMMON_BOUNDARY}\n\n${COMMON_DB_LOOKUP}\n\n${COMMON_EVIDENCE}\n\n${COMMON_HANDOFF}`,
@@ -4293,6 +4300,73 @@ export class RedteamStore {
       e.captured_by ?? null, nowIso(),
     )
     return { id: Number(result.lastInsertRowid) }
+  }
+
+  /* ---------- 数据泄露证明（P1） ---------- */
+
+  addDataProof(id, d = {}) {
+    const db = this.db(id)
+    const rowCount = Number(d.row_count)
+    if (!Number.isFinite(rowCount) || rowCount < 0) throw new Error('data_proof.row_count 必须是非负数字')
+    const fields = Array.isArray(d.fields) ? d.fields.join(',') : String(d.fields || '')
+    if (fields.trim() === '') throw new Error('data_proof.fields required：写清泄露字段（如 姓名/身份证号/手机号）')
+    const r = db.prepare(`INSERT INTO data_proof(asset_id, vuln_id, target, source, interface, fields, row_count, sample, query, evidence_ref, pii_type, note, created_by, created_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      d.asset_id ?? null, d.vuln_id ?? null, d.target ?? null, d.source ?? null, d.interface ?? null,
+      fields, rowCount, d.sample ?? null, d.query ?? null, d.evidence_ref ?? null,
+      d.pii_type ?? 'pii', d.note ?? null, d.created_by ?? null, nowIso(),
+    )
+    return { id: Number(r.lastInsertRowid), row_count: rowCount, meets_threshold: rowCount >= 10000, fields }
+  }
+
+  listDataProofs(id, f = {}) {
+    const db = this.db(id)
+    const where = []
+    const args = []
+    if (f.target) { where.push('target LIKE ?'); args.push('%' + String(f.target) + '%') }
+    if (f.asset_id !== undefined && f.asset_id !== null) { where.push('asset_id = ?'); args.push(Number(f.asset_id)) }
+    const clause = where.length ? 'WHERE ' + where.join(' AND ') : ''
+    const limit = Math.min(Number(f.limit) || 100, 500)
+    return { total: db.prepare('SELECT COUNT(*) AS n FROM data_proof ' + clause).get(...args).n,
+      items: db.prepare('SELECT * FROM data_proof ' + clause + ' ORDER BY id DESC LIMIT ?').all(...args, limit).map((r) => ({
+        ...r, fields: String(r.fields || '').split(',').filter(Boolean), meets_threshold: Number(r.row_count) >= 10000,
+      })) }
+  }
+
+  /* ---------- 清理台账 ---------- */
+
+  addCleanup(id, c = {}) {
+    const db = this.db(id)
+    if (!String(c.kind || '').trim()) throw new Error('cleanup.kind required（webshell/account/tunnel/file/task…）')
+    const r = db.prepare(`INSERT INTO cleanup_item(kind, target, location, detail, status, created_by, created_at, updated_at)
+      VALUES(?,?,?,?,?,?,?,?)`).run(
+      String(c.kind), c.target ?? null, c.location ?? null, c.detail ?? null,
+      c.status || 'open', c.created_by ?? null, nowIso(), nowIso(),
+    )
+    return { id: Number(r.lastInsertRowid), status: c.status || 'open' }
+  }
+
+  listCleanup(id, f = {}) {
+    const db = this.db(id)
+    const where = []
+    const args = []
+    if (f.status) { where.push('status = ?'); args.push(String(f.status)) }
+    if (f.kind) { where.push('kind = ?'); args.push(String(f.kind)) }
+    const clause = where.length ? 'WHERE ' + where.join(' AND ') : ''
+    const limit = Math.min(Number(f.limit) || 200, 500)
+    return { total: db.prepare('SELECT COUNT(*) AS n FROM cleanup_item ' + clause).get(...args).n,
+      items: db.prepare('SELECT * FROM cleanup_item ' + clause + ' ORDER BY id DESC LIMIT ?').all(...args, limit) }
+  }
+
+  updateCleanup(id, c = {}) {
+    const db = this.db(id)
+    const itemId = Number(c.id)
+    if (!Number.isFinite(itemId)) throw new Error('cleanup.id required')
+    const cur = db.prepare('SELECT * FROM cleanup_item WHERE id = ?').get(itemId)
+    if (cur === undefined) throw new Error('cleanup item not found')
+    db.prepare('UPDATE cleanup_item SET status = ?, detail = ?, updated_at = ? WHERE id = ?')
+      .run(c.status || cur.status, c.detail ?? cur.detail, nowIso(), itemId)
+    return { id: itemId, status: c.status || cur.status }
   }
 
   listHttpEvidence(id, f = {}) {

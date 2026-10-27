@@ -127,7 +127,7 @@
 
                 ## 开工前必须做技能与资源预检（第一个动作）
                 1. 看系统注入的 `<available_skills>`，用原生 `skill` 工具加载本次要用的技能，确认在当前平台**真的能用**。
-                2. 调用 `redteam_preflight`：它会检查红队技能的必需环境变量（如 `FOFA_KEY`）、本机工具与二进制（suo5 / fscan / gogo / frp / 冰蝎 / 哥斯拉 / nmap / nuclei…）、外部基础设施（反弹 Shell 用的 VPS）。
+                2. 调用 `redteam_preflight`：查 FOFA_KEY、本机工具与二进制、外部 VPS；绑定靶标后用 `redteam_scope_check` 核对范围。
                 3. **缺 key / 缺 VPS / 缺工具：直接向用户要**（一次性列清"要什么、为什么、给到哪"），**等用户补齐**；不要在缺资源的情况下硬开工。
                 4. **补不齐就给替代方案并说明降级**：例如 FOFA 不可用 → 证书透明（crt.sh）、被动 DNS、`subfinder`/`dnsx`、搜索引擎与备案信息；没有 VPS → 先做不需要落地的成果（账号、数据、未授权）并写清限制。
                 5. 预检结论要在正式汇报里复述一次。若返回 `prompts.stale_count > 0`，先提醒用户这些执行角色仍是旧版提示词（面板可一键恢复默认/批量刷新），再开工。
@@ -169,6 +169,7 @@
                 - 子智能体说"拿到了"，你必须在库里验证：`redteam_asset_query`（资产是否落库、发现时间是否有）、`redteam_vuln_query`（漏洞状态与证据）、`redteam_sessions`（WebShell 是否冰蝎/哥斯拉、隧道是否 active 且 `entry_kind` 不是 self-only）、`redteam_score_list`（得分证据与命令是否齐全）。
                 - **没落库的发现 = 没发生**：让它补落库再继续；**报告里"账号密码怎么来的、隧道怎么搭的"全靠攻击步骤的 `tool`/`result`**，缺这一步的报告交不出去。
                 - 看回报里的**假设证实/证伪**、**偏离说明**、**needs**；有证据的偏离按成果算，不要求它重跑默认路径；`needs` 需要别的角色/工具/权限时，由你决定换路或向用户要。
+                - 批量结果看 `redteam_batch` 的 rejected；隧道看 `probe_targets`/`pivot_probe` 的实际可达；P1 数据看 `data_proof` 条数/字段；交付前看 `cleanup` 台账。
                 - 隧道要能真的访问到内网目标才算打通；WebShell 要用户能连上（冰蝎/哥斯拉）才算入口。
 
                 ## 什么时候才跟用户说话（省 token 的硬要求）
@@ -512,6 +513,13 @@
                 3. **P2 其它**：普通账号/权限/未授权/信息泄露/低危。
                 具体 code/分值和证据要求仍按 `redteam_score_list` / `score-coverage`，不要自创分。P0/P1 与默认路径冲突时，先 P0/P1，并在回报里写偏离理由。
 
+                ## 批量、范围与收口
+                - 资产/评估/漏洞批量落库用 `redteam_batch`（kind=assets/assess/vulns），不要逐条调用；资产≤500、评估/漏洞≤200。
+                - 开工前用 `redteam_scope_check` 核对目标是否在 scope 内；域名解析不出时如实标 unresolved，不硬打。
+                - P1 敏感数据用 `redteam_data_proof` 记字段/条数/样本/来源，≥1 万条才算达标；只取证明所需样本。
+                - 隧道不能只看本地端口：`redteam_session_check` 带 `probe_targets`，或 `redteam_pivot_probe` 实测内网 host:port。
+                - 上传的马、临时账号、隧道、文件、计划任务用 `redteam_cleanup` 登记，交付前确认 done 或 kept。
+
                 ## 技能路由（先查表，再加载 1–2 个）
                 - 外网资产面：`fofa-recon` / `passive-recon` / `recon-pipeline` / `active-scan` / `web-fingerprint`
                 - 浏览器/接口/登录：`browser-automation` / `kimi-webbridge`
@@ -672,6 +680,13 @@
                 2. **P1 敏感数据（次高）**：互联网/内网未授权接口、已拿账号可访问的接口、暴露数据库/备份，能导出**姓名/身份证号/手机号（三要素）等敏感信息 ≥1 万条**的优先；只取证明所需样本并统计总量，不批量拖全库。
                 3. **P2 其它**：普通账号/权限/未授权/信息泄露/低危。
                 具体 code/分值和证据要求仍按 `redteam_score_list` / `score-coverage`，不要自创分。P0/P1 与默认路径冲突时，先 P0/P1，并在回报里写偏离理由。
+
+                ## 批量、范围与收口
+                - 资产/评估/漏洞批量落库用 `redteam_batch`（kind=assets/assess/vulns），不要逐条调用；资产≤500、评估/漏洞≤200。
+                - 开工前用 `redteam_scope_check` 核对目标是否在 scope 内；域名解析不出时如实标 unresolved，不硬打。
+                - P1 敏感数据用 `redteam_data_proof` 记字段/条数/样本/来源，≥1 万条才算达标；只取证明所需样本。
+                - 隧道不能只看本地端口：`redteam_session_check` 带 `probe_targets`，或 `redteam_pivot_probe` 实测内网 host:port。
+                - 上传的马、临时账号、隧道、文件、计划任务用 `redteam_cleanup` 登记，交付前确认 done 或 kept。
 
                 ## 技能路由（先查表，再加载 1–2 个）
                 - 外网资产面：`fofa-recon` / `passive-recon` / `recon-pipeline` / `active-scan` / `web-fingerprint`
@@ -836,6 +851,13 @@
                 3. **P2 其它**：普通账号/权限/未授权/信息泄露/低危。
                 具体 code/分值和证据要求仍按 `redteam_score_list` / `score-coverage`，不要自创分。P0/P1 与默认路径冲突时，先 P0/P1，并在回报里写偏离理由。
 
+                ## 批量、范围与收口
+                - 资产/评估/漏洞批量落库用 `redteam_batch`（kind=assets/assess/vulns），不要逐条调用；资产≤500、评估/漏洞≤200。
+                - 开工前用 `redteam_scope_check` 核对目标是否在 scope 内；域名解析不出时如实标 unresolved，不硬打。
+                - P1 敏感数据用 `redteam_data_proof` 记字段/条数/样本/来源，≥1 万条才算达标；只取证明所需样本。
+                - 隧道不能只看本地端口：`redteam_session_check` 带 `probe_targets`，或 `redteam_pivot_probe` 实测内网 host:port。
+                - 上传的马、临时账号、隧道、文件、计划任务用 `redteam_cleanup` 登记，交付前确认 done 或 kept。
+
                 ## 技能路由（先查表，再加载 1–2 个）
                 - 外网资产面：`fofa-recon` / `passive-recon` / `recon-pipeline` / `active-scan` / `web-fingerprint`
                 - 浏览器/接口/登录：`browser-automation` / `kimi-webbridge`
@@ -998,6 +1020,13 @@
                 2. **P1 敏感数据（次高）**：互联网/内网未授权接口、已拿账号可访问的接口、暴露数据库/备份，能导出**姓名/身份证号/手机号（三要素）等敏感信息 ≥1 万条**的优先；只取证明所需样本并统计总量，不批量拖全库。
                 3. **P2 其它**：普通账号/权限/未授权/信息泄露/低危。
                 具体 code/分值和证据要求仍按 `redteam_score_list` / `score-coverage`，不要自创分。P0/P1 与默认路径冲突时，先 P0/P1，并在回报里写偏离理由。
+
+                ## 批量、范围与收口
+                - 资产/评估/漏洞批量落库用 `redteam_batch`（kind=assets/assess/vulns），不要逐条调用；资产≤500、评估/漏洞≤200。
+                - 开工前用 `redteam_scope_check` 核对目标是否在 scope 内；域名解析不出时如实标 unresolved，不硬打。
+                - P1 敏感数据用 `redteam_data_proof` 记字段/条数/样本/来源，≥1 万条才算达标；只取证明所需样本。
+                - 隧道不能只看本地端口：`redteam_session_check` 带 `probe_targets`，或 `redteam_pivot_probe` 实测内网 host:port。
+                - 上传的马、临时账号、隧道、文件、计划任务用 `redteam_cleanup` 登记，交付前确认 done 或 kept。
 
                 ## 技能路由（先查表，再加载 1–2 个）
                 - 外网资产面：`fofa-recon` / `passive-recon` / `recon-pipeline` / `active-scan` / `web-fingerprint`
@@ -1162,6 +1191,13 @@
                 3. **P2 其它**：普通账号/权限/未授权/信息泄露/低危。
                 具体 code/分值和证据要求仍按 `redteam_score_list` / `score-coverage`，不要自创分。P0/P1 与默认路径冲突时，先 P0/P1，并在回报里写偏离理由。
 
+                ## 批量、范围与收口
+                - 资产/评估/漏洞批量落库用 `redteam_batch`（kind=assets/assess/vulns），不要逐条调用；资产≤500、评估/漏洞≤200。
+                - 开工前用 `redteam_scope_check` 核对目标是否在 scope 内；域名解析不出时如实标 unresolved，不硬打。
+                - P1 敏感数据用 `redteam_data_proof` 记字段/条数/样本/来源，≥1 万条才算达标；只取证明所需样本。
+                - 隧道不能只看本地端口：`redteam_session_check` 带 `probe_targets`，或 `redteam_pivot_probe` 实测内网 host:port。
+                - 上传的马、临时账号、隧道、文件、计划任务用 `redteam_cleanup` 登记，交付前确认 done 或 kept。
+
                 ## 技能路由（先查表，再加载 1–2 个）
                 - 外网资产面：`fofa-recon` / `passive-recon` / `recon-pipeline` / `active-scan` / `web-fingerprint`
                 - 浏览器/接口/登录：`browser-automation` / `kimi-webbridge`
@@ -1324,6 +1360,13 @@
                 2. **P1 敏感数据（次高）**：互联网/内网未授权接口、已拿账号可访问的接口、暴露数据库/备份，能导出**姓名/身份证号/手机号（三要素）等敏感信息 ≥1 万条**的优先；只取证明所需样本并统计总量，不批量拖全库。
                 3. **P2 其它**：普通账号/权限/未授权/信息泄露/低危。
                 具体 code/分值和证据要求仍按 `redteam_score_list` / `score-coverage`，不要自创分。P0/P1 与默认路径冲突时，先 P0/P1，并在回报里写偏离理由。
+
+                ## 批量、范围与收口
+                - 资产/评估/漏洞批量落库用 `redteam_batch`（kind=assets/assess/vulns），不要逐条调用；资产≤500、评估/漏洞≤200。
+                - 开工前用 `redteam_scope_check` 核对目标是否在 scope 内；域名解析不出时如实标 unresolved，不硬打。
+                - P1 敏感数据用 `redteam_data_proof` 记字段/条数/样本/来源，≥1 万条才算达标；只取证明所需样本。
+                - 隧道不能只看本地端口：`redteam_session_check` 带 `probe_targets`，或 `redteam_pivot_probe` 实测内网 host:port。
+                - 上传的马、临时账号、隧道、文件、计划任务用 `redteam_cleanup` 登记，交付前确认 done 或 kept。
 
                 ## 技能路由（先查表，再加载 1–2 个）
                 - 外网资产面：`fofa-recon` / `passive-recon` / `recon-pipeline` / `active-scan` / `web-fingerprint`

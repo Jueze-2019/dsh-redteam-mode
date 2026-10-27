@@ -262,6 +262,25 @@ CREATE TABLE IF NOT EXISTS http_evidence (
   captured_by TEXT, captured_at TEXT
 );
 
+/* 数据泄露证明：P1 敏感数据的结构化证据（字段/条数/样本/来源）。
+   自由文本 evidence 说不清"是不是三要素、够不够 1 万条"，这张表专门用于核对与报告引用。 */
+CREATE TABLE IF NOT EXISTS data_proof (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id INTEGER, vuln_id INTEGER, target TEXT,
+  source TEXT, interface TEXT, fields TEXT,
+  row_count INTEGER, sample TEXT, query TEXT,
+  evidence_ref TEXT, pii_type TEXT, note TEXT,
+  created_by TEXT, created_at TEXT
+);
+
+/* 清理台账：上传的马、临时账号、隧道、计划任务等，交付前逐项确认。
+   不记录目标日志（红线），只记录"我们放了什么、在哪里、是否已清理"。 */
+CREATE TABLE IF NOT EXISTS cleanup_item (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT, target TEXT, location TEXT, detail TEXT,
+  status TEXT DEFAULT 'open', created_by TEXT, created_at TEXT, updated_at TEXT
+);
+
 /* 攻击文件：针对某个目标实际生效的脚本/POC/EXP（只收录验证有效的） */
 CREATE TABLE IF NOT EXISTS attack_file (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -570,6 +589,22 @@ export function migrate(db) {
   /* 阶段归属：得分命中可显式覆盖（默认自动推导）；攻击步骤记录所属阶段 */
   ensure('score_hit', 'stage_code', 'TEXT')
   /* 自建账号标记：自己注册/自己创建的账号不算得分权限，只作过程记录（老数据默认 0） */
+  /* 新表：老库也要补建（0.15.0 的数据证明与清理台账） */
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS data_proof (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      asset_id INTEGER, vuln_id INTEGER, target TEXT,
+      source TEXT, interface TEXT, fields TEXT,
+      row_count INTEGER, sample TEXT, query TEXT,
+      evidence_ref TEXT, pii_type TEXT, note TEXT,
+      created_by TEXT, created_at TEXT
+    )`)
+    db.exec(`CREATE TABLE IF NOT EXISTS cleanup_item (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT, target TEXT, location TEXT, detail TEXT,
+      status TEXT DEFAULT 'open', created_by TEXT, created_at TEXT, updated_at TEXT
+    )`)
+  } catch { /* 表已存在或并发建表，忽略 */ }
   ensure('score_hit', 'self_created', 'INTEGER DEFAULT 0')
   /* 得分落在哪个「服务」上：账号类得分按 (资产, 端口) 封顶，同一服务只算一次最高权限。
      端口在写入时解析（工具传的 port → target 里的端口 → 该资产唯一登记的端口）；老数据打开靶标时按 target 回填一次。 */

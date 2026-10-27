@@ -47,7 +47,7 @@ node node_modules/dsh-redteam-mode/lib/migrate-legacy-rows.mjs                  
 | 能力 | 说明 |
 | --- | --- |
 | 五个执行角色 | 信息收集 / 资产梳理 / 漏洞发现 / 漏洞利用 / 内网渗透，主会话只做调度与指挥 |
-| 角色工具裁剪 | 5 个 `redteam-worker-*` 预设按 profile 裁剪工具（recon 33 / assess 35 / vuln-scan 42 / exploit 48 / internal 49；默认全部 54） |
+| 角色工具裁剪 | 5 个 `redteam-worker-*` 预设按 profile 裁剪工具（recon 38 / assess 40 / vuln-scan 47 / exploit 53 / internal 54；默认全部 59） |
 | 资产测绘 | C 段按内外网分组、端口/服务/指纹/域名/Web 标题、易打性评估、测试状态 |
 | 得分目标 | 得分点可编辑、命中记录一行一条；自建账号不计分；**账号权限与数据库权限按「同一资产 + 同一端口」封顶**（拿到最高权限账号即该服务拿满，同服务再刷账号标「服务已拿满 · 不计分」），其余得分点仍不设数量上限 |
 | 会话隧道 | WebShell 与隧道状态、连通性实测、**是否跨越靶标边界**的判定 |
@@ -61,17 +61,22 @@ node node_modules/dsh-redteam-mode/lib/migrate-legacy-rows.mjs                  
   按目标分目录的攻击文件）、`knowledge.db` + `pocs/`（跨靶标共享的 POC/EXP 知识库）。
 - 不含任何遥测、上报或云端同步；凭据明文只在本机库里，面板直显便于复用。
 
-## 工具（54 个 `redteam_*`）
+## 工具（59 个 `redteam_*`）
 
 资产/端口/服务/指纹/漏洞/凭据/会话/得分/报告/知识库全覆盖。典型入口：
 
 ```
 redteam_engagement_open     绑定本次演练靶标
 redteam_asset_add           落库一个资产（端口带 service/product/version/url/title）
+redteam_batch               批量资产/评估/漏洞入库（assets≤500 / assess·vulns≤200），减少逐条调用
+redteam_scope_check         核对 IP/URL 是否在靶标授权 scope 内
 redteam_vuln_add            落库一个漏洞（带 severity/status/gained）
-redteam_score_hit           记一次得分（自建账号传 self_created=true 不计分；账号/数据库权限同资产同端口只算一次，被顶掉的重复命中回 warning）
+redteam_score_hit           记一次得分（command/result 自动生成动作记录；自建账号不计分；同服务只算一次）
+redteam_data_proof          P1 敏感数据结构化证明（字段/条数/样本/来源，≥1 万条标 meets_threshold）
 redteam_score_report        生成「四段式红队得分报告」
 redteam_sessions            一屏看 WebShell / 隧道 / 凭据 / 会话
+redteam_pivot_probe          经 SOCKS5 实测多个内网 host:port 的可达矩阵
+redteam_cleanup              上传的马/临时账号/隧道/文件清理台账
 redteam_poc_search          打 Nday/1day 前先查知识库 + 本机 nuclei 模板库
 redteam_poc_add             把验证有效的通用 POC/EXP 回填知识库（脱敏）
 ```

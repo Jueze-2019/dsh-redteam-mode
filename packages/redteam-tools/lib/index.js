@@ -15,6 +15,7 @@
  */
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { existsSync } from 'node:fs'
+import { createConnection } from 'node:net'
 import { ROLE_TITLES, PLANNER_ROLE, ROLE_ORDER, scoreStageOf } from '../../redteam-store/lib/core.js'
 import { maxAgentsOf, DEFAULT_MAX_AGENTS, MAX_AGENTS_LIMIT } from '../../redteam-store/lib/settings.js'
 /* 技能可用性判定只有一份实现：面板的「技能库」页签与这里共用（见该文件头注释） */
@@ -289,6 +290,97 @@ function agentOf(args) {
 }
 
 
+/** 解析 IPv4 为整数；不是 IPv4 返回 null。 */
+function ipv4Int(ip) {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(String(ip || '').trim())
+  if (m === null) return null
+  const n = m.slice(1).map(Number)
+  if (n.some((x) => x > 255)) return null
+  return ((n[0] * 256 + n[1]) * 256 + n[2]) * 256 + n[3]
+}
+
+/** target 字符串里能认出的 IPv4（URL / host:port / 裸 IP 都行）；认不出返回 null。 */
+function targetIpv4(target) {
+  const m = /(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/.exec(String(target || ''))
+  return m === null ? null : m[1]
+}
+
+function ipInCidr(ip, cidr) {
+  const [base, bitsText] = String(cidr || '').split('/')
+  const a = ipv4Int(ip)
+  const b = ipv4Int(base)
+  const bits = Number(bitsText)
+  if (a === null || b === null || !Number.isInteger(bits) || bits < 0 || bits > 32) return false
+  if (bits === 0) return true
+  const mask = (0xFFFFFFFF << (32 - bits)) >>> 0
+  return (a & mask) >>> 0 === (b & mask) >>> 0
+}
+
+function scopeOfEngagement(store, id) {
+  const row = store.listEngagements().find((e) => e.id === id)
+  return Array.isArray(row && row.scope) ? row.scope : []
+}
+
+/** 范围判定：无 scope → 'unscoped'；有 scope 且 IP 命中 → in；IP 不在 → out；域名/解析不出 → unresolved。 */
+function scopeCheck(store, id, target) {
+  const scope = scopeOfEngagement(store, id)
+  if (scope.length === 0) return { status: 'unscoped', scope, ip: null }
+  const ip = targetIpv4(target)
+  if (ip === null) return { status: 'unresolved', scope, ip: null }
+  const hit = scope.find((cidr) => ipInCidr(ip, cidr))
+  return { status: hit === undefined ? 'out' : 'in', scope, ip, cidr: hit || null }
+}
+
+/** 通过 SOCKS5 代理做一次 CONNECT 探测（suo5/chisel 的本地监听都支持）。 */
+function socks5Probe(listen, target, timeoutMs = 6000) {
+  const proxy = String(listen || '').replace(/^socks5:\/\//, '').replace(/^https?:\/\//, '')
+  const pi = proxy.lastIndexOf(':')
+  const ph = pi > 0 ? proxy.slice(0, pi) : '127.0.0.1'
+  const pp = Number(pi > 0 ? proxy.slice(pi + 1) : proxy)
+  const ti = target.lastIndexOf(':')
+  const th = ti > 0 ? target.slice(0, ti) : target
+  const tp = Number(ti > 0 ? target.slice(ti + 1) : 0)
+  if (!Number.isFinite(pp) || pp <= 0 || !Number.isFinite(tp) || tp <= 0) {
+    return Promise.resolve({ ok: false, target, error: 'listen/target 端口无法解析' })
+  }
+  return new Promise((resolve) => {
+    const started = Date.now()
+    let done = false
+    let stage = 'greeting'
+    const socket = createConnection({ host: ph, port: pp })
+    const finish = (ok, error) => {
+      if (done) return
+      done = true
+      try { socket.destroy() } catch { /* ignore */ }
+      resolve({ ok, target, listen, latency_ms: Date.now() - started, error: error || undefined })
+    }
+    socket.setTimeout(Math.min(Math.max(Number(timeoutMs) || 6000, 1000), 20000))
+    socket.on('timeout', () => finish(false, 'timeout'))
+    socket.on('error', (e) => finish(false, String((e && e.code) || (e && e.message) || e)))
+    socket.on('connect', () => socket.write(Buffer.from([5, 1, 0])))
+    socket.on('data', (buf) => {
+      if (stage === 'greeting') {
+        if (buf.length < 2 || buf[0] !== 5 || buf[1] !== 0) return finish(false, 'SOCKS5 greeting failed')
+        stage = 'connect'
+        const ip = ipv4Int(th)
+        let req
+        if (ip !== null) {
+          const b = Buffer.alloc(10); b[0] = 5; b[1] = 1; b[2] = 0; b[3] = 1
+          b.writeUInt32BE(ip >>> 0, 4); b.writeUInt16BE(tp, 8); req = b
+        } else {
+          const hb = Buffer.from(th, 'utf8')
+          const b = Buffer.alloc(7 + hb.length); b[0] = 5; b[1] = 1; b[2] = 0; b[3] = 3; b[4] = hb.length
+          hb.copy(b, 5); b.writeUInt16BE(tp, 5 + hb.length); req = b
+        }
+        socket.write(req)
+        return
+      }
+      if (buf.length >= 2 && buf[0] === 5 && buf[1] === 0) finish(true)
+      else finish(false, 'SOCKS5 connect rejected')
+    })
+  })
+}
+
 /**
  * boundary-* 的工具级硬门槛：必须有结构化 boundary 对象，且入口区 ≠ 落点区；
  * boundary-supply 还要求 scope_confirmed=true。store 层只警告（兼容历史/迁移脚本），
@@ -486,6 +578,22 @@ export function apply(ctx, config = {}) {
         session: bindingViewOf(exec, store),
         note: '本会话已绑定到「' + hit.name + '」；后续工具与报告都只作用于它。',
       }, null, 2)
+    },
+  })))
+
+  registerTool(withStructuredErrors(defineTool({
+    name: 'redteam_scope_check',
+    description: '检查一个 IP/URL/域名是否在当前靶标的授权 scope 内（scope 来自 redteam_engagement_open）。域名无法解析时返回 unresolved；scope 为空时返回 unscoped（不阻断，但提示用户补范围）。',
+    parameters: {
+      engagement: { type: 'string' },
+      target: { type: 'string', required: true, description: '要检查的 IP / URL / 域名' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      const check = scopeCheck(store, id, args.target)
+      const ok = check.status === 'in' || check.status === 'unscoped' || check.status === 'unresolved'
+      return JSON.stringify({ ok, engagement: id, target: args.target, ...check }, null, 2)
     },
   })))
 
@@ -860,6 +968,70 @@ export function apply(ctx, config = {}) {
         hint: '本条资产的发现时间已记为 ' + (written && written.discovered_at ? written.discovered_at : '(未知)')
           + '；重复采集只刷新 last_seen，不会改动发现时间。',
       }, null, 2)
+    },
+  })))
+
+  registerTool(withStructuredErrors(defineTool({
+    name: 'redteam_batch',
+    description: '批量落库，减少逐条调用：kind=assets 批量资产（最多 500，复用 asset_add 的字段与去重）；kind=assess 批量评估（最多 200）；kind=vulns 批量漏洞（最多 200，带 request/response 自动存 HTTP 证据）。超出 scope 的条目会跳过并在 rejected 里说明。',
+    parameters: {
+      engagement: { type: 'string' },
+      kind: { type: 'string', required: true, enum: ['assets', 'assess', 'vulns'] },
+      items: {
+        type: 'array', required: true,
+        description: 'assets: [{ip, provenance, tool, state, primary_name, names, ports, discovered_at}]；assess: [{asset_id|ip, priority, potential, reason}]；vulns: [{title, severity, asset_id, cve, target, evidence, status, gained, request, response, method}]',
+        items: { type: 'object', additionalProperties: true },
+      },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      const kind = String(args.kind || '')
+      const items = Array.isArray(args.items) ? args.items : []
+      const limit = kind === 'assets' ? 500 : 200
+      if (items.length === 0 || items.length > limit) throw new Error('redteam_batch: items 数量必须在 1..' + limit)
+      const rejected = []
+      const results = []
+      if (kind === 'assets') {
+        const accepted = []
+        for (const it of items) {
+          const check = scopeCheck(store, id, it && it.ip)
+          if (check.status === 'out') { rejected.push({ ip: it && it.ip, reason: 'out_of_scope', scope: check.scope }); continue }
+          if (!it || typeof it.ip !== 'string' || it.ip.trim() === '') { rejected.push({ item: it, reason: 'ip required' }); continue }
+          accepted.push(it)
+        }
+        const out = accepted.length > 0
+          ? store.importBundle(id, { scan: { tool: 'redteam_batch', argv: ['assets'] }, assets: accepted })
+          : { counts: { assets: 0 } }
+        return JSON.stringify({ ok: true, engagement: id, kind, accepted: accepted.length, rejected: rejected.length, counts: out.counts, rejected }, null, 2)
+      }
+      if (kind === 'assess') {
+        for (const it of items) {
+          try { results.push(store.assessAsset(id, it || {})) }
+          catch (error) { rejected.push({ item: it, reason: error && error.message ? error.message : String(error) }) }
+        }
+        return JSON.stringify({ ok: true, engagement: id, kind, assessed: results.length, rejected: rejected.length, results, rejected }, null, 2)
+      }
+      if (kind === 'vulns') {
+        for (const it of items) {
+          const check = scopeCheck(store, id, it && it.target)
+          if (check.status === 'out') { rejected.push({ target: it && it.target, reason: 'out_of_scope', scope: check.scope }); continue }
+          try {
+            const v = store.addVuln(id, { ...it, engagement: undefined, agent: agentOf(args), found_by_agent: it.found_by_agent || it.agent || 'vuln-scan' })
+            let httpEvidenceId = null
+            const request = typeof it.request === 'string' ? it.request.trim() : ''
+            if (request !== '') {
+              try {
+                const ev = store.addHttpEvidence(id, { vuln_id: v.id, asset_id: it.asset_id, label: it.title, method: it.method || 'GET', url: it.target, request, response: it.response, captured_by: agentOf(args) })
+                httpEvidenceId = ev.id
+              } catch { /* 漏洞已落库 */ }
+            }
+            results.push({ id: v.id, updated: v.updated === true, http_evidence_id: httpEvidenceId })
+          } catch (error) { rejected.push({ item: it, reason: error && error.message ? error.message : String(error) }) }
+        }
+        return JSON.stringify({ ok: true, engagement: id, kind, inserted: results.length, rejected: rejected.length, results, rejected }, null, 2)
+      }
+      throw new Error('redteam_batch.kind 只接受 assets / assess / vulns')
     },
   })))
 
@@ -1429,6 +1601,7 @@ export function apply(ctx, config = {}) {
     parameters: {
       engagement: { type: 'string' },
       timeoutMs: { type: 'number', description: '单次探测超时，默认 6000ms' },
+      probe_targets: { type: 'array', items: { type: 'string' }, description: '【可选，强烈建议】通过每条 active 隧道的 SOCKS5 实测的内网目标（host:port），例如 ["10.0.0.5:80"]；不填只测本地 listen 端口。' },
     },
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
     async execute(args, exec) {
@@ -1436,11 +1609,42 @@ export function apply(ctx, config = {}) {
       const result = await store.probeSessions(id, { timeoutMs: args.timeoutMs })
       const online = result.webshells.filter((w) => w.status === 'online').length
       const active = result.tunnels.filter((t) => t.status === 'active').length
+      const targets = Array.isArray(args.probe_targets) ? args.probe_targets.filter((x) => typeof x === 'string' && x.trim() !== '').slice(0, 20) : []
+      if (targets.length > 0) {
+        for (const t of result.tunnels) {
+          if (t.status !== 'active' || !t.listen) continue
+          t.reachable = []
+          for (const target of targets) t.reachable.push(await socks5Probe(t.listen, target, args.timeoutMs))
+        }
+      }
+      const reachable = result.tunnels.reduce((n, t) => n + ((t.reachable || []).filter((x) => x.ok).length), 0)
+      const probed = result.tunnels.reduce((n, t) => n + ((t.reachable || []).length), 0)
       return JSON.stringify({
         ok: true, engagement: id, checked_at: result.checkedAt,
-        summary: `WebShell 在线 ${online}/${result.webshells.length}，隧道可用 ${active}/${result.tunnels.length}`,
+        summary: `WebShell 在线 ${online}/${result.webshells.length}，隧道可用 ${active}/${result.tunnels.length}`
+          + (targets.length > 0 ? `，内网目标可达 ${reachable}/${probed}` : '（未做目标侧探测）'),
         webshells: result.webshells, tunnels: result.tunnels,
       }, null, 2)
+    }
+  })))
+
+  registerTool(withStructuredErrors(defineTool({
+    name: 'redteam_pivot_probe',
+    description: '通过一个本地 SOCKS5 隧道实测多个内网目标（host:port），返回可达矩阵。用于判断“隧道进程活着”是否真的能到内网。',
+    parameters: {
+      engagement: { type: 'string' },
+      listen: { type: 'string', required: true, description: '隧道本地 SOCKS5 监听，如 127.0.0.1:1080' },
+      targets: { type: 'array', required: true, items: { type: 'string' }, description: '内网目标 host:port 列表，最多 50 个' },
+      timeoutMs: { type: 'number', description: '单目标超时，默认 6000ms' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      const targets = (Array.isArray(args.targets) ? args.targets : []).filter((x) => typeof x === 'string' && x.trim() !== '').slice(0, 50)
+      if (targets.length === 0) throw new Error('redteam_pivot_probe.targets required')
+      const probes = []
+      for (const target of targets) probes.push(await socks5Probe(args.listen, target, args.timeoutMs))
+      return JSON.stringify({ ok: true, engagement: id, listen: args.listen, reachable: probes.filter((x) => x.ok).length, total: probes.length, probes }, null, 2)
     },
   })))
 
@@ -1688,6 +1892,57 @@ export function apply(ctx, config = {}) {
       const id = resolveEngagement(store, exec, args.engagement)
       const result = store.addHttpEvidence(id, { ...args, engagement: undefined })
       return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
+    },
+  })))
+
+  registerTool(withStructuredErrors(defineTool({
+    name: 'redteam_data_proof',
+    description: 'P1 敏感数据的结构化证明：op=add 记录字段/条数/样本/来源（row_count>=10000 标 meets_threshold）；op=list 查询。比自由文本 evidence 更可核对，报告/复核用它。',
+    parameters: {
+      engagement: { type: 'string' },
+      op: { type: 'string', enum: ['add', 'list'], required: true },
+      target: { type: 'string', description: '数据所在目标（IP/URL/系统名）' },
+      source: { type: 'string', description: 'api / db / file / backup' },
+      interface: { type: 'string', description: '接口路径 / 库表 / 文件路径' },
+      fields: { type: 'array', items: { type: 'string' }, description: '泄露字段，例如 姓名 / 身份证号 / 手机号' },
+      row_count: { type: 'number', description: '实际条数（P1 门槛 10000）' },
+      sample: { type: 'string', description: '脱敏样本（1–3 条）' },
+      query: { type: 'string', description: '可复现的查询/请求' },
+      evidence_ref: { type: 'string', description: '证据文件路径' },
+      pii_type: { type: 'string', description: 'pii / 三要素 / 其他' },
+      asset_id: { type: 'number' },
+      vuln_id: { type: 'number' },
+      note: { type: 'string' },
+      limit: { type: 'number', description: 'op=list 返回条数，默认 100' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      if (args.op === 'list') return JSON.stringify({ ok: true, engagement: id, ...store.listDataProofs(id, args) }, null, 2)
+      return JSON.stringify({ ok: true, engagement: id, proof: store.addDataProof(id, { ...args, created_by: agentOf(args) }) }, null, 2)
+    },
+  })))
+
+  registerTool(withStructuredErrors(defineTool({
+    name: 'redteam_cleanup',
+    description: '清理台账：op=add 记录上传的马/临时账号/隧道/文件/计划任务；op=list 查未清理项；op=update 标记 done。交付前用它确认没有遗留入口。',
+    parameters: {
+      engagement: { type: 'string' },
+      op: { type: 'string', enum: ['add', 'list', 'update'], required: true },
+      id: { type: 'number', description: 'op=update 的台账 id' },
+      kind: { type: 'string', description: 'webshell / account / tunnel / file / task / other' },
+      target: { type: 'string' },
+      location: { type: 'string', description: 'URL / 路径 / 主机:端口' },
+      detail: { type: 'string' },
+      status: { type: 'string', enum: ['open', 'done', 'kept'], description: '默认 open' },
+      limit: { type: 'number' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      if (args.op === 'list') return JSON.stringify({ ok: true, engagement: id, ...store.listCleanup(id, args) }, null, 2)
+      if (args.op === 'update') return JSON.stringify({ ok: true, engagement: id, item: store.updateCleanup(id, args) }, null, 2)
+      return JSON.stringify({ ok: true, engagement: id, item: store.addCleanup(id, { ...args, created_by: agentOf(args) }) }, null, 2)
     },
   })))
 

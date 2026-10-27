@@ -95,6 +95,36 @@ const repAuto = await call('redteam_score_report', { markdown: true })
 ok(String(repAuto.markdown || '').includes('curl -X POST http://real.example:8443/login'), '自动动作记录进入报告复现（不需要 chain_add）')
 ok(String(repAuto.markdown || '').includes('GET /api/users HTTP/1.1'), 'vuln_add 的 request 自动进入报告复现（不需要 http_evidence_add）')
 
+/* 批量落库 / 范围 / 数据证明 / 清理台账 / 立足点探测 */
+const engId = store.listEngagements()[0].id
+const scope = await call('redteam_scope_check', { target: '10.9.1.1' })
+ok(scope.status === 'unscoped', 'scope_check：未配置范围时如实返回 unscoped，不误判')
+const batchAssets = await call('redteam_batch', { kind: 'assets', items: [
+  { ip: '10.9.1.1', provenance: 'passive', tool: 'fofa', ports: [{ port: 80, service: 'http', title: '测试站点' }] },
+  { ip: '10.9.1.2', provenance: 'passive', tool: 'fofa' },
+] })
+ok(batchAssets.ok && batchAssets.counts.assets === 2, 'batch assets：一次导入 2 个资产')
+const firstAsset = store.listAssets(engId, { ip: '10.9.1.1', limit: 1 }).items[0]
+const batchAssess = await call('redteam_batch', { kind: 'assess', items: [{ asset_id: firstAsset.id, priority: 'high', potential: 'server-host', reason: 'P0 RCE 候选' }] })
+ok(batchAssess.ok && batchAssess.assessed === 1 && batchAssess.results[0].priority === 'high', 'batch assess：一次评估 1 条')
+const batchVulns = await call('redteam_batch', { kind: 'vulns', items: [{
+  title: '测试 RCE', severity: 'critical', target: '10.9.1.1:80', evidence: 'id=0',
+  request: 'GET / HTTP/1.1\nHost: 10.9.1.1', response: 'HTTP/1.1 200 OK',
+}] })
+ok(batchVulns.ok && batchVulns.inserted === 1 && batchVulns.results[0].http_evidence_id > 0, 'batch vulns：批量漏洞 + request 自动 HTTP 证据')
+const proof = await call('redteam_data_proof', { op: 'add', target: '10.9.1.1', source: 'api', interface: '/api/users', fields: ['姓名', '身份证号', '手机号'], row_count: 12000, sample: '张* / 110*** / 138****' })
+ok(proof.ok && proof.proof.meets_threshold === true, 'data_proof：12000 条三要素达到 P1 门槛')
+const proofList = await call('redteam_data_proof', { op: 'list' })
+ok(proofList.total === 1 && proofList.items[0].fields.length === 3, 'data_proof：可查询字段与条数')
+const cleanupAdd = await call('redteam_cleanup', { op: 'add', kind: 'webshell', target: '10.9.1.1', location: '/upload/x.jsp' })
+ok(cleanupAdd.ok && cleanupAdd.item.id > 0, 'cleanup：登记上传的马')
+const cleanupList = await call('redteam_cleanup', { op: 'list' })
+ok(cleanupList.total === 1 && cleanupList.items[0].status === 'open', 'cleanup：默认 open 待清理')
+const cleanupDone = await call('redteam_cleanup', { op: 'update', id: cleanupAdd.item.id, status: 'done' })
+ok(cleanupDone.item.status === 'done', 'cleanup：可标记 done')
+const pivot = await call('redteam_pivot_probe', { listen: '127.0.0.1:1', targets: ['10.9.1.1:80'], timeoutMs: 1000 })
+ok(pivot.ok && pivot.reachable === 0, 'pivot_probe：隧道不可达时如实返回 0 可达')
+
 rmSync(root, { recursive: true, force: true })
 console.log(`\n通过 ${pass}/${pass + fail}`)
 process.exit(fail === 0 ? 0 : 1)
