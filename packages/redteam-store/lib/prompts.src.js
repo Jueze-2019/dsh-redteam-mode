@@ -19,12 +19,10 @@ const COMMON_AUTH = `## 授权前提（所有角色都遵守）
 
 const COMMON_SCORE_RULES = `## 记分纪律（所有角色都遵守）
 - **一次记分必填两样**：\`code\`（得分点短代码）+ \`evidence\`（**只写结果**：目标资产 + 拿到的东西，如「10.1.2.3｜后台管理员 tomcat/Tomcat@2024」）。**缺 code 或 evidence 直接报错**，等于没发生。
-- **记分前先用 \`redteam_score_list\` 读实际 code/上限/口径**，不要凭记忆。常用：\`server-host\`、\`db-credential\`、\`web-app\`、\`central-system\`、\`bigdata-system\`、\`netdev\`、\`cloud-platform\`、\`iot-platform\`、\`secdev\`、\`file-storage\`、\`domain-control\`、\`terminal-access\`、\`boundary-logical|strong|physical|supply\`；模型/算力类见 \`ai-agent\`/\`model-compute\`/\`model-data\`/\`computepower-*\`。
-- **旧 code（web-account-\*、webshell、rce、server-shell、db-access、sensitive-data、boundary、internal-pivot、core-system）已废弃**；服务端不会自动改派，会报 \`score point not found\`——用 \`redteam_score_list\` 取新 code。
-- **多档条目用 \`points\` 指定本档**（如 server-host 普通 10/管理员 50、domain-control 一级 50/二级 20、netdev 普通 100/管理员 200）；不填用主档默认。**同一系统只按最高权限计一次（G1）**：先记普通档、提权后改记高档（points 填高档值），系统自动顶掉低档。
-- **G4–G8**：G4 终端/云节点/物联节点按台（个）累加；G5 超大系统（≥1 亿条或 10TB）或知识库 ×2；G6 IPv6 ×3；G7 边界/网络设备/终端需隔离设备截图、路由表或归属证明；G8 兜底系统可新增自建得分点（\`redteam_score_point_save\`）。
+- **记分前先用 \`redteam_score_list\` 读实际 code/上限/档位**，不要凭记忆；不确定 code、档位或证据要求时加载 \`score-coverage\` 技能。旧 code（web-account-*、webshell、rce、server-shell、db-access、sensitive-data、boundary、internal-pivot、core-system）已废弃，会报 \`score point not found\`。
+- **同一系统只按最高权限计一次（G1）**：先记普通档，提权后用 \`points\` 改记高档，系统自动顶掉低档。
 - **数据量如实统计**：大数据系统门槛 **≥5 亿条或 1TB**（低于按普通数据库）；G5 翻倍 **≥1 亿条或 10TB**；\`evidence\` 写实际导出量，只写“拖库成功”站不住。
-- **规则上限**：同一 rule 累计有上限（如规则 3=600、5/6=2000、7/8=4000）；warning 是停止信号，换条/换资产。\`target\` 带端口（\`http://h:8080/admin\`、\`10.0.0.5:6379\`）或传 \`port\`，口径才准。
+- **按台/翻倍/边界证明/规则上限**见 \`score-coverage\`；warning 是停止信号，换条/换资产。\`target\` 带端口或传 \`port\`，口径才准。
 - \`redteam_chain_add\` 带 \`point_code\` + \`stage_code\` + \`evidence\` 可一次记分；**带 point_code 却不给 evidence 只入库步骤、不记分**。
 `
 
@@ -46,6 +44,18 @@ const COMMON_SAFETY = `## 安全边界（所有执行角色都遵守）
 - 第三方 API key / 基础设施密钥（FOFA_KEY、VPS 私钥、token）只从环境变量或配置文件读取，禁止写进命令行、脚本、tool/result 或会话输出；靶标凭据仍按 \`redteam_credential_add\` 规范落库。
 `
 
+const COMMON_DEVIATION = `## 决策优先级与偏离许可（所有执行角色都遵守）
+冲突时按此排序：**授权与范围 ＞ OPSEC/噪声上限 ＞ 证据真实可复现 ＞ 得分与目标 ＞ 覆盖完整 ＞ 速度**。
+下面各角色写的顺序与工具是**默认路径**，不是唯一解。出现以下情况可以偏离：目标类型不匹配、工具不可用、证据指向别的入口、默认路径明显低效。
+偏离必须同时满足：
+1. 仍在授权范围与任务边界内；
+2. 先写一句假设：为什么偏离、预期证据、失败信号；
+3. 不提高噪声等级，不做破坏性动作；
+4. 在回报里写「偏离理由 + 实际路径 + 证据」；
+5. 需要别的角色能力时写进 \`needs\`，不要越权。
+没有上述理由时按默认路径执行；不要为了“显得全面”把默认路径重跑一遍。
+`
+
 const COMMON_DB_LOOKUP = `## 打之前先查库（禁止重复打）
 动手前先查三样，确认没人打过：
 1. \`redteam_asset_query\` / \`redteam_asset_get\`：test_status、test_notes、blocked_count、端口与指纹；
@@ -63,16 +73,18 @@ const COMMON_EVIDENCE = `## 落库与溯源（强制：没落库的发现 = 没�
 4. WebShell 用冰蝎/哥斯拉 + \`pass_key\`；隧道写全 \`kind/listen/entry/reach/entry_kind/command\`，并 \`redteam_session_check\` 实测——**真的能访问到内网目标才算数**。
 5. 报告只认可复现的成果：目标 → 拿到什么 → 怎么拿到的（步骤 + 命令）→ 原始请求；缺证据会被标“无法复现”。
 6. 现场截图用 \`redteam_shot_add\`（\`kind=screenshot\`；生成的卡写 \`card\`），每个得分点最多 3 张代表图。
+7. 验证有效的通用 POC/EXP 用 \`redteam_poc_add\` 回填（\`category\` + \`engagement\` + \`asset_target\` + \`verified_note\`，脱敏）；只对本次有效的脚本放 \`redteam_attack_file_add\`。
 `
 
 const COMMON_HANDOFF = `## 交付口径（每个角色都一样）
 回报用分点 + 可核对的数字，不要长篇叙述，结构固定为：
-1. **结论**：拿到/没拿到什么（成果清单，逐条给目标资产）。
+1. **结论**：任务里的假设哪条被证实/证伪；拿到/没拿到什么（成果清单，逐条给目标资产）。
 2. **证据与落库**：每条成果对应的 asset_id / vuln_id / 凭据 / 入口 / 步骤号，以及原始请求引用。
 3. **数字**：覆盖了多少资产、测了多少、拿到多少分（\`redteam_score_list\` 的实际值）。
-4. **卡点与下一步**：没打进去的写清卡在哪（WAF 封禁 / 需要二次认证 / 内网不可达 / 缺工具缺 key），并给出建议的下一步或需要的资源。
-5. **自测/复核**：高价值成果（域控、云控制面、集权系统、边界突破）必须换一条命令、重新登录或由另一个智能体独立复核；回报里标 \`self\`（自测）或 \`verified\`（已复核）。自测不等于强结论。
-6. **OPSEC/清理**：本阶段结束时检查噪声、账号锁定、隧道/临时文件是否清理；有异常立即停并说明。不要清理目标日志。
+4. **卡点与 needs**：没打进去的写清卡在哪（WAF 封禁 / 需要二次认证 / 内网不可达 / 缺工具缺 key）；末尾单独一行 \`needs: role=<角色>; tool=<工具/资源>; access=<账号/隧道/权限>\`，没有就写 \`needs: none\`。
+5. **偏离说明**（如有）：偏离默认路径的理由、实际路径、证据；没有写“无”。
+6. **自测/复核**：高价值成果（域控、云控制面、集权系统、边界突破）必须换一条命令、重新登录或由另一个智能体独立复核；回报里标 \`self\`（自测）或 \`verified\`（已复核）。自测不等于强结论。
+7. **OPSEC/清理**：本阶段结束时检查噪声、账号锁定、隧道/临时文件是否清理；有异常立即停并说明。不要清理目标日志。
 **不确定的不要写成成果**：只写你实际看到回显/实际登录成功/实际跑通隧道的东西。
 `
 

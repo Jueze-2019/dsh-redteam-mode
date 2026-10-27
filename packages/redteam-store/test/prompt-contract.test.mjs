@@ -119,10 +119,15 @@ try {
   ok(coreSrc.includes('gen-prompts.mjs'), 'core.js 里注明提示词由生成器维护')
 
   const total = roles.reduce((sum, role) => sum + DEFAULT_PROMPTS[role].length, 0)
-  /* v0.10.0 起把"工具与技能"写进各角色（nuclei/目录爆破/未授权利用/凭据攻击/会话 handler/
-   三条隧道/横向提权），总量从 ~31k 涨到 ~36k。栅栏相应上调，但仍必须挡得住无节制膨胀：
-   新增内容应是"角色真的要用到的命令与口径"，不是复述技能正文（技能才是详细步骤的所在）。 */
-  ok(total < 42000, `六角色提示词总量 ${total} 字 < 42000（防膨胀栅栏）`)
+  /* 本次把角色正文里的命令配方下沉到技能，总量从 ~38.8k 降到 ~26k；
+     栅栏下调到 34000，防止再次无节制膨胀：新增内容应是角色真的要用到的口径，
+     不是复述技能正文（技能才是详细步骤的所在）。 */
+  ok(total < 34000, `六角色提示词总量 ${total} 字 < 34000（防膨胀栅栏）`)
+  ok(['recon', 'assess', 'vuln-scan', 'exploit', 'internal'].every((r) => DEFAULT_PROMPTS[r].includes('偏离许可')),
+    '五个执行角色都带“默认路径 + 偏离许可”，不再把顺序写死')
+  ok(['recon', 'assess', 'vuln-scan', 'exploit', 'internal'].every((r) => DEFAULT_PROMPTS[r].includes('needs: role=')),
+    '五个执行角色回报都带 needs 行，便于主会话补能力')
+  ok(DEFAULT_PROMPTS.plan.includes('2–3 条攻击假设'), '主会话派活要求先写攻击假设，而不是只派阶段')
 
 
   console.log('— 契约八：P0 审计修复（内网自执行 / 边界证据 / 评估翻页 / 命令模板）')
