@@ -133,6 +133,10 @@ try {
   ok(['recon', 'assess', 'vuln-scan', 'exploit', 'internal'].every((r) => /P0/.test(DEFAULT_PROMPTS[r]) && /三要素/.test(DEFAULT_PROMPTS[r]) && /1 万条/.test(DEFAULT_PROMPTS[r])),
     '五个执行角色都写入 P0 进内网 RCE / P1 三要素数据的优先级')
   ok(DEFAULT_PROMPTS.plan.includes('P0 能进内网的 RCE'), '主会话提示词写入作战优先级')
+  ok(['assess', 'vuln-scan', 'exploit', 'internal'].every((r) => /T0/.test(DEFAULT_PROMPTS[r]) && /T2/.test(DEFAULT_PROMPTS[r]) && /穷尽/.test(DEFAULT_PROMPTS[r]))
+    && /T0/.test(DEFAULT_PROMPTS.recon) && /T2/.test(DEFAULT_PROMPTS.recon),
+    '攻击角色写入 T0/T1/T2/T3 与穷尽门槛；recon 写入分级线索')
+  ok(DEFAULT_PROMPTS.plan.includes('T0/T1/T2/T3') && DEFAULT_PROMPTS.plan.includes('穷尽'), '主会话提示词写入资产分级与穷尽标准')
   ok(['recon', 'assess', 'vuln-scan', 'exploit', 'internal'].every((r) => DEFAULT_PROMPTS[r].includes('curl | bash')),
     '外部安装脚本必须可审阅，禁止 curl|bash 一类盲装')
 

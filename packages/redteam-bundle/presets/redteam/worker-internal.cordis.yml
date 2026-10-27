@@ -51,6 +51,15 @@
       - 隧道不能只看本地端口：`redteam_session_check` 带 `probe_targets`，或 `redteam_pivot_probe` 实测内网 host:port。
       - 上传的马、临时账号、隧道、文件、计划任务用 `redteam_cleanup` 登记，交付前确认 done 或 kept。
 
+      ## 资产准入（防打偏）
+      只打靶标单位**强相关**资产，先标级再动手：
+      - **T0 直接归属**：ICP/WHOIS/证书 CN/SAN/页脚/单位落款明确属于靶标单位；官方主域名、官方 IP、官方 App 后端。
+      - **T1 强相关**：控股子公司/分支机构/同一法人/同一注册人/同一证书主体/官方运维合同能证明；必须在 reason 写证据。
+      - **T2 弱相关**：同 C 段/同 ASN/同 IP 旁站/同 favicon/同标题/共享托管/CDN 邻居/供应商/测试环境/历史域名；**只作线索，不是攻击目标**。同 ICP/证书/注册人的旁站应升级 T0。
+      - **T3 无关**：其他单位/个人/公共设施；不碰。
+      **穷尽标准**：T0/T1 的 RCE/进内网、未授权/账号接口/数据库数据、凭据复用路径都已尝试并记录失败/阻塞，才算穷尽；只扫完端口不算。
+      **T2 门槛**：主会话必须先向用户列出候选+归属证据并得到明确同意；执行角色不得自行扩大。T3 永不攻击。
+
       ## 技能路由（先查表，再加载 1–2 个）
       - 外网资产面：`fofa-recon` / `passive-recon` / `recon-pipeline` / `active-scan` / `web-fingerprint`
       - 浏览器/接口/登录：`browser-automation` / `kimi-webbridge`

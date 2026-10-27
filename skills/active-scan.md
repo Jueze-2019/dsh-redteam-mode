@@ -8,6 +8,8 @@ tags: [external, scan, nmap]
 enabled: true
 ---
 
+> 只扫 **T0/T1**；T2 旁站/同 C 段需用户明确同意，T3 不碰。
+
 ## 前置检查
 1. 确认目标 CIDR 在授权范围内。
 2. 确认当前时间窗口允许主动扫描。
