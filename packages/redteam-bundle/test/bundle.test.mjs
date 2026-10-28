@@ -39,9 +39,10 @@ const pkgSkillFiles = readdirSync(join(root, 'skills')).filter((f) => f.endsWith
 const npmSkillFiles = (manifest.files ?? []).filter((f) => f.startsWith('skills/')).map((f) => f.slice('skills/'.length)).sort()
 const riskySkillFiles = ['ad-attack.md', 'ai-agent-attack.md', 'api-data-exfil.md', 'c2-infra.md', 'cloud-k8s.md', 'mobile-code-recon.md', 'network-device.md', 'oob-verify.md', 'opsec-hygiene.md', 'supply-chain.md']
 ok((manifest.files ?? []).includes('cordis.patch.yml') && (manifest.files ?? []).includes('presets'), 'files 覆盖补丁/预设')
-ok(!(manifest.files ?? []).includes('skills') && npmSkillFiles.length === 19, 'npm 包只显式列出 19 个基础技能（不用 skills 通配）')
+ok(!(manifest.files ?? []).includes('skills') && npmSkillFiles.length === 29, 'npm 包显式列出 29 个技能（不用 skills 通配，排除本地自有技能）')
 ok(npmSkillFiles.every((f) => pkgSkillFiles.includes(f)), 'npm 技能清单里的文件都在包内')
-ok(riskySkillFiles.every((f) => !npmSkillFiles.includes(f)), '高风险专项技能不进 npm 包')
+ok(!npmSkillFiles.includes('egress-ip-rotate.md'), '本地自有技能 egress-ip-rotate 不随包')
+ok(riskySkillFiles.every((f) => npmSkillFiles.includes(f)), '专项技能随 npm 包分发')
 
 console.log('— 补丁层')
 const patchFileText = readFileSync(join(root, 'cordis.patch.yml'), 'utf8')

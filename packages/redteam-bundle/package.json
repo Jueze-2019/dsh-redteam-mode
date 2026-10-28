@@ -1,7 +1,7 @@
 {
   "name": "dsh-redteam-mode",
-  "version": "0.15.0",
-  "description": "DSH RedTeam 模式：一句话拉起红队作战智能体（资产测绘 / 得分目标 / 报告 / POC 知识库），含六个角色、38 个原生技能（19 个随 npm 包，专项技能本地使用）、常驻右侧控制台与一键自动更新",
+  "version": "0.15.1",
+  "description": "DSH RedTeam 模式：一句话拉起红队作战智能体（资产测绘 / 得分目标 / 报告 / POC 知识库），含六个角色、38 个原生技能（29 个随 npm 包）、常驻右侧控制台与一键自动更新",
   "license": "MIT",
   "contentPolicy": {
     "class": "dual-use"
@@ -38,6 +38,16 @@
     "skills/score-coverage.md",
     "skills/specialist-paths.md",
     "skills/web-fingerprint.md",
+    "skills/ad-attack.md",
+    "skills/ai-agent-attack.md",
+    "skills/api-data-exfil.md",
+    "skills/c2-infra.md",
+    "skills/cloud-k8s.md",
+    "skills/mobile-code-recon.md",
+    "skills/network-device.md",
+    "skills/oob-verify.md",
+    "skills/opsec-hygiene.md",
+    "skills/supply-chain.md",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",

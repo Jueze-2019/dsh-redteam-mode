@@ -7,7 +7,7 @@
 > ⚠️ **仅限已获授权的攻防演练 / 渗透测试使用。** 本仓库是智能体编排与事实库的工程实现，
 > **不包含任何漏洞利用代码**；使用者须自行确保对目标拥有书面授权。
 
-**59 个 `redteam_*` 工具 · 19 个随 npm 包技能（+10 个专项技能在仓库/本地） · 5 个分区 / 9 个页面 · 22 张事实库表**
+**59 个 `redteam_*` 工具 · 29 个随 npm 包技能（+9 个攻击链技能见工具箱附件） · 5 个分区 / 9 个页面 · 22 张事实库表**
 
 ---
 
@@ -18,7 +18,7 @@ dsh plugin --profile web add dsh-redteam-mode
 ```
 
 装完**重启一次 `dsh web`**，在界面助手栏选预设 **红队模式**，直接发靶标单位名称即可开工。
-首次启动会自动装好预设与 19 个随 npm 包技能，不需要手动拷文件。
+首次启动会自动装好预设与 29 个随 npm 包技能，不需要手动拷文件。
 
 **环境准备**（首次使用）：
 
@@ -37,15 +37,15 @@ bash "$DSH_HOME/redteam/setup.sh"           # 装齐工具 + 引导填 FOFA_KEY 
 
 ```sh
 dsh plugin --profile web add \
-  https://github.com/Jueze-2019/dsh-redteam-mode/releases/download/v0.15.0/dsh-redteam-mode-0.15.0.tgz
+  https://github.com/Jueze-2019/dsh-redteam-mode/releases/download/v0.15.1/dsh-redteam-mode-0.15.1.tgz
 # 装完重启一次 dsh web
 ```
 
 **下载 tarball 再装**（适合离线机器，附件同在同一下载页）：
 
 ```sh
-curl -LO https://github.com/Jueze-2019/dsh-redteam-mode/releases/download/v0.15.0/dsh-redteam-mode-0.15.0.tgz
-dsh plugin --profile web add ./dsh-redteam-mode-0.15.0.tgz
+curl -LO https://github.com/Jueze-2019/dsh-redteam-mode/releases/download/v0.15.1/dsh-redteam-mode-0.15.1.tgz
+dsh plugin --profile web add ./dsh-redteam-mode-0.15.1.tgz
 ```
 
 **从源码装**：
@@ -91,7 +91,7 @@ done
   缺项标「复现链不完整」，不是悄悄放过。
 - **资产准入**：只打 T0 直接归属 / T1 强相关；T2 旁站/同 C 段只作线索，T0/T1 穷尽并经用户同意后才评估；T3 不碰。
 - **作战优先级**：先进内网、再拿数据——**P0 能进内网的 RCE ＞ P1 ≥1 万条三要素数据 ＞ P2 其它**；角色提示词会按这个顺序分配预算。
-- **技能库 19 个随 npm 包（+10 个专项技能本地使用）**：FOFA 测绘、被动收集、作战规划、专项路径、netspy 内网网段发现、DeepSeek 公开情报检索、子域与端口流水线、nuclei、目录爆破、服务与 Web
+- **技能库 29 个随 npm 包**：FOFA 测绘、被动收集、作战规划、专项路径、netspy 内网网段发现、DeepSeek 公开情报检索、子域与端口流水线、nuclei、目录爆破、服务与 Web
   指纹识别等，按“规划 / 侦察 / 验证 / 访问 / 内网 / 隧道 / 得分 / 基础设施”分类筛选（默认只看红队，取消勾选显示 DSH 通用）；每个技能带**可用性判定**（缺什么直接点名）。攻击链技能（凭据攻击、WebShell、
   反弹 Shell、suo5 / chisel / frp 隧道、内网横向）在 Release 附件的工具箱里按需取用。
 - **数据只在本机**：全部落在 `$DSH_HOME/redteam/`，无遥测、无上报、无云端同步。
