@@ -539,6 +539,7 @@
                 **T2 门槛**：主会话必须先向用户列出候选+归属证据并得到明确同意；执行角色不得自行扩大。T3 永不攻击。
 
                 ## 技能路由（先查表，再加载 1–2 个）
+                只加载 `<available_skills>` 里实际存在的技能；路由表里未安装的跳过，用现有技能或外部能力替代，不要硬调。
                 - 外网资产面：`fofa-recon` / `passive-recon` / `recon-pipeline` / `active-scan` / `web-fingerprint`
                 - 浏览器/接口/登录：`browser-automation` / `kimi-webbridge`
                 - 内网：`netspy-recon`（摸段）→ `gogo-intranet`（铺面）→ `fscan-intranet`（发现）
@@ -721,6 +722,7 @@
                 **T2 门槛**：主会话必须先向用户列出候选+归属证据并得到明确同意；执行角色不得自行扩大。T3 永不攻击。
 
                 ## 技能路由（先查表，再加载 1–2 个）
+                只加载 `<available_skills>` 里实际存在的技能；路由表里未安装的跳过，用现有技能或外部能力替代，不要硬调。
                 - 外网资产面：`fofa-recon` / `passive-recon` / `recon-pipeline` / `active-scan` / `web-fingerprint`
                 - 浏览器/接口/登录：`browser-automation` / `kimi-webbridge`
                 - 内网：`netspy-recon`（摸段）→ `gogo-intranet`（铺面）→ `fscan-intranet`（发现）
@@ -905,6 +907,7 @@
                 **T2 门槛**：主会话必须先向用户列出候选+归属证据并得到明确同意；执行角色不得自行扩大。T3 永不攻击。
 
                 ## 技能路由（先查表，再加载 1–2 个）
+                只加载 `<available_skills>` 里实际存在的技能；路由表里未安装的跳过，用现有技能或外部能力替代，不要硬调。
                 - 外网资产面：`fofa-recon` / `passive-recon` / `recon-pipeline` / `active-scan` / `web-fingerprint`
                 - 浏览器/接口/登录：`browser-automation` / `kimi-webbridge`
                 - 内网：`netspy-recon`（摸段）→ `gogo-intranet`（铺面）→ `fscan-intranet`（发现）
@@ -1089,6 +1092,7 @@
                 **T2 门槛**：主会话必须先向用户列出候选+归属证据并得到明确同意；执行角色不得自行扩大。T3 永不攻击。
 
                 ## 技能路由（先查表，再加载 1–2 个）
+                只加载 `<available_skills>` 里实际存在的技能；路由表里未安装的跳过，用现有技能或外部能力替代，不要硬调。
                 - 外网资产面：`fofa-recon` / `passive-recon` / `recon-pipeline` / `active-scan` / `web-fingerprint`
                 - 浏览器/接口/登录：`browser-automation` / `kimi-webbridge`
                 - 内网：`netspy-recon`（摸段）→ `gogo-intranet`（铺面）→ `fscan-intranet`（发现）
@@ -1273,6 +1277,7 @@
                 **T2 门槛**：主会话必须先向用户列出候选+归属证据并得到明确同意；执行角色不得自行扩大。T3 永不攻击。
 
                 ## 技能路由（先查表，再加载 1–2 个）
+                只加载 `<available_skills>` 里实际存在的技能；路由表里未安装的跳过，用现有技能或外部能力替代，不要硬调。
                 - 外网资产面：`fofa-recon` / `passive-recon` / `recon-pipeline` / `active-scan` / `web-fingerprint`
                 - 浏览器/接口/登录：`browser-automation` / `kimi-webbridge`
                 - 内网：`netspy-recon`（摸段）→ `gogo-intranet`（铺面）→ `fscan-intranet`（发现）
@@ -1457,6 +1462,7 @@
                 **T2 门槛**：主会话必须先向用户列出候选+归属证据并得到明确同意；执行角色不得自行扩大。T3 永不攻击。
 
                 ## 技能路由（先查表，再加载 1–2 个）
+                只加载 `<available_skills>` 里实际存在的技能；路由表里未安装的跳过，用现有技能或外部能力替代，不要硬调。
                 - 外网资产面：`fofa-recon` / `passive-recon` / `recon-pipeline` / `active-scan` / `web-fingerprint`
                 - 浏览器/接口/登录：`browser-automation` / `kimi-webbridge`
                 - 内网：`netspy-recon`（摸段）→ `gogo-intranet`（铺面）→ `fscan-intranet`（发现）

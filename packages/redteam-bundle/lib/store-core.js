@@ -426,6 +426,7 @@ function promptHash(text) {
 // __REDTEAM_PROMPTS_BLOCK__
 // __REDTEAM_PROMPTS_BLOCK__
 // __REDTEAM_PROMPTS_BLOCK__
+// __REDTEAM_PROMPTS_BLOCK__
 /* ------------------------------------------------------------------ 角色公共段落
 
    由 packages/redteam-store/tools/gen-prompts.mjs 生成，**不要直接改这一段**：
