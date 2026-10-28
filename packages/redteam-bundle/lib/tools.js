@@ -710,25 +710,17 @@ export function apply(ctx, config = {}) {
       } catch { /* 忽略 */ }
 
       /* ── 首次使用引导状态 ──────────────────────────────────────────────
-         判定"环境是否配齐"有三个客观依据，缺任一条就算没配齐：
-           ① 完成标记 $DSH_HOME/redteam/.setup-complete（setup.sh 写的）
-           ② FOFA_KEY 有值（测绘能力）
-           ③ VPS 私钥存在（反弹 Shell 落地能力）
-         再加一条动态条件：技能体检里出现的缺口。
+         判定"环境是否配齐"看两项客观依据：
+           ① FOFA_KEY 有值（测绘能力）
+           ② VPS 私钥存在（反弹 Shell 落地能力）
+         再加技能体检里的缺口；完成标记只用于提示"首次使用"。
          目标是让指挥智能体**在用户第一次进来时就主动把话说完、一次要齐**，
          而不是等真正动手时才发现缺 key 缺 VPS。 */
       const redteamDir = expandSkillPath('$DSH_HOME/redteam')
       const markerFile = redteamDir + '/.setup-complete'
-      const setupScript = redteamDir + '/setup.sh'
       const hasMarker = existsSync(markerFile)
-      /* ── 完整工具箱按需获取（0.12.0 起）──────────────────────────────────
-         npm 包**不再携带** redteam-setup.sh —— 它会在用户机器上自动下载 11 个渗透二进制并
-         赋予可执行权限，属发布期自动审查眼中的恶意行为特征（0.11.x 因此全部被 Blocked）；
-         9 份攻击链技能同样不随包。需要的人从 Release 附件取，**本插件绝不代为下载**。 */
-      const toolkitHint = '完整工具箱（工具安装脚本 + 9 份攻击链技能：隧道 / 凭据 / WebShell / '
-        + '反弹 Shell / 横向移动 / 未授权利用）**不随 npm 包分发**：需要时从本项目 GitHub Release 的附件 '
-        + '`dsh-redteam-mode-<版本>-toolkit.tar.gz` 下载，解压后按其中 README **手动执行**；'
-        + '也可以只按技能 `redteam-setup` 逐项手动配置。本插件不会替用户下载或安装任何安全工具。'
+      /* npm 包不提供工具下载、安装脚本或安装链接/教程；工具由用户自行准备。 */
+      const toolkitHint = '工具由用户自行准备；本插件不提供下载、安装脚本或教程，preflight 只报告缺口。'
       let fofaKey = effectiveEnv.FOFA_KEY || ''
       const vpsKey = effectiveEnv.REDTEAM_VPS_KEY || (toolkit + '/vps/id_rsa')
       const vpsHost = effectiveEnv.REDTEAM_VPS_HOST || ''   /* 不写死真实主机：公开包里不能夹带 */
@@ -736,7 +728,7 @@ export function apply(ctx, config = {}) {
       const needsUser = Array.from(new Set(broken.flatMap((s) => s.needs_user)))
       const missing = []
       if (fofaKey === '') missing.push('FOFA_KEY（资产测绘：没有就只能用 crt.sh + 子域枚举，边缘/未备案资产会大量漏掉）')
-      if (!hasVps) missing.push('VPS 登录方式（反弹 Shell 落地与载荷投递：没有就拿不到服务器权限、进不了内网）—— 私钥放到 ' + vpsKey + '，并设 REDTEAM_VPS_HOST=用户@主机（配置步骤见技能 `redteam-setup`）')
+      if (!hasVps) missing.push('VPS 登录方式（反弹 Shell 落地与载荷投递：没有就拿不到服务器权限、进不了内网）—— 私钥放到 ' + vpsKey + '，并设 REDTEAM_VPS_HOST=用户@主机')
       /* 掩码显示已配置的 key，避免把密钥写进会话记录 */
       const fofaShown = fofaKey.length > 8 ? fofaKey.slice(0, 4) + '…' + fofaKey.slice(-4) : '(已配置)'
       /* 运行环境提醒：让智能体在首次预检时就能提醒用户"该在 Kali 虚拟机里跑"。
@@ -747,12 +739,11 @@ export function apply(ctx, config = {}) {
       const onboarding = {
         /* 用**全量** broken 判定：带 include 调用时不能因为"我只看了这个技能"
            就宣布环境已就绪（那正是引导闭环要防的"假装能跑"）。 */
-        complete: hasMarker && missing.length === 0 && allBroken.length === 0,
+        complete: missing.length === 0 && allBroken.length === 0,
         runtime_hint: runtimeHint,
         first_run: !hasMarker,
         marker: { path: markerFile, exists: hasMarker },
-        setup_script: { path: setupScript, exists: existsSync(setupScript) },
-        /* npm 版不含工具箱（见 toolkitHint）；把它放进结果里，好让指挥智能体照原话说 */
+        /* 工具由用户自行准备；没有下载/安装脚本或教程，这里只放提示 */
         toolkit: toolkitHint,
         configured: {
           fofa_key: fofaKey === '' ? 'missing' : 'configured(' + fofaShown + ')',
@@ -763,26 +754,12 @@ export function apply(ctx, config = {}) {
         missing,
       }
       let next
-      if (!hasMarker && !existsSync(setupScript)) {
-        /* npm 包（0.12.0 起）**故意不带**安装脚本，所以这是**正常状态**，不是故障：
-           说清去哪拿工具箱，并给出不依赖它的手动路径。 */
-        next = '首次使用，且本机没有安装脚本 ' + setupScript + '（npm 版**本就不随包分发**，属正常）。'
+      if (!hasMarker || missing.length > 0) {
+        next = '首次使用/有缺口：加载技能 `redteam-setup`，把 onboarding.missing 的每一项**一次性列给用户**（要什么、为什么、给到哪）。'
+          + '工具由用户自行准备，本插件不提供下载、安装脚本、安装链接或教程。'
           + toolkitHint + ' '
-          + '除此之外的两条手动路径：① 按技能 `redteam-setup` 逐项配置（装工具 → 配 FOFA_KEY 与 VPS）；'
-          + '② 不装工具箱也行——把 onboarding.missing 的每一项一次性列给用户，'
           + '补不齐时按替代方案降级并说明限制：FOFA 不可用 → crt.sh / 被动 DNS / subfinder（资产收集不完整）；'
           + '没有 VPS → 只做不需要落地的成果（账号、数据、未授权），放弃 boundary/internal/central-system 类得分点。'
-      } else if (!hasMarker) {
-        next = '**首次使用**：先加载技能 `redteam-setup`，然后执行 `bash ' + setupScript + ' --check` 拿体检结论，'
-          + '再把 onboarding.missing 的每一项**一次性列给用户**（要什么、为什么、给到哪），等补齐后跑 `bash ' + setupScript + ' --yes` 装齐，'
-          + '最后重新跑本自检确认 onboarding.complete=true 再开工。'
-          + '用户就是不给时按替代方案降级并说明限制：FOFA 不可用 → crt.sh / 被动 DNS / subfinder（资产收集不完整）；'
-          + '没有 VPS → 只做不需要落地的成果（账号、数据、未授权），放弃 boundary/internal/central-system 类得分点。'
-      } else if (missing.length > 0) {
-        next = '环境标记存在但有缺口：把 onboarding.missing 一次性列给用户（或跑 `bash ' + setupScript + '` 引导补配）；'
-          + '若本机没有 ' + setupScript + '（npm 版不随包），改用技能 `redteam-setup` 手动补配。' + toolkitHint + ' '
-          + '用户明确接受降级时，按技能 redteam-setup 的降级口径说明限制后再开工：'
-          + 'FOFA 不可用 → crt.sh / 被动 DNS / subfinder；没有 VPS → 先做不需要落地的成果。'
       } else if (allBroken.length > 0) {
         next = '把 broken 里 needs_user 的每一项**一次性列给用户**（要什么、为什么、给到哪），补齐后再开工；'
           + '补不齐就对用户说明哪部分能力降级、并给替代方案（例如 FOFA 不可用 → crt.sh / 被动 DNS / subfinder；没有 VPS → 先做不需要落地的成果）。'

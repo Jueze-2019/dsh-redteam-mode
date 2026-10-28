@@ -37,12 +37,12 @@ for (const sub of ['.', './store', './ui', './tools', './client']) {
 ok(manifest.dependencies === undefined || Object.keys(manifest.dependencies).length === 0, '零运行时依赖（自包含）')
 const pkgSkillFiles = readdirSync(join(root, 'skills')).filter((f) => f.endsWith('.md')).sort()
 const npmSkillFiles = (manifest.files ?? []).filter((f) => f.startsWith('skills/')).map((f) => f.slice('skills/'.length)).sort()
-const riskySkillFiles = ['ad-attack.md', 'ai-agent-attack.md', 'api-data-exfil.md', 'c2-infra.md', 'cloud-k8s.md', 'mobile-code-recon.md', 'network-device.md', 'oob-verify.md', 'opsec-hygiene.md', 'supply-chain.md']
+const riskySkillFiles = ['ad-attack.md', 'ai-agent-attack.md', 'api-data-exfil.md', 'c2-infra.md', 'cloud-k8s.md', 'mobile-code-recon.md', 'network-device.md', 'oob-verify.md', 'opsec-hygiene.md', 'supply-chain.md', 'chisel-tunnel.md', 'credential-attack.md', 'frp-tunnel.md', 'lateral-movement.md', 'shell-handler.md', 'suo5-tunnel.md', 'unauth-exploit.md', 'vps-reverse-shell.md', 'webshell-toolkit.md']
 ok((manifest.files ?? []).includes('cordis.patch.yml') && (manifest.files ?? []).includes('presets'), 'files 覆盖补丁/预设')
-ok(!(manifest.files ?? []).includes('skills') && npmSkillFiles.length === 29, 'npm 包显式列出 29 个技能（不用 skills 通配，排除本地自有技能）')
+ok(!(manifest.files ?? []).includes('skills') && npmSkillFiles.length === 38, 'npm 包显式列出全部 38 个技能（不用 skills 通配，排除本地自有技能）')
 ok(npmSkillFiles.every((f) => pkgSkillFiles.includes(f)), 'npm 技能清单里的文件都在包内')
 ok(!npmSkillFiles.includes('egress-ip-rotate.md'), '本地自有技能 egress-ip-rotate 不随包')
-ok(riskySkillFiles.every((f) => npmSkillFiles.includes(f)), '专项技能随 npm 包分发')
+ok(riskySkillFiles.every((f) => npmSkillFiles.includes(f)), '专项/操作类技能全部随 npm 包分发')
 
 console.log('— 补丁层')
 const patchFileText = readFileSync(join(root, 'cordis.patch.yml'), 'utf8')
@@ -330,22 +330,10 @@ try {
   const forced = installPreset({ force: true, log: () => {} })
   ok(forced.action === 'installed' && !readFileSync(installed, 'utf8').includes('用户自己改过'), 'REDTEAM_PRESET_REFRESH=1 时强制覆盖')
 
-  /* ── 发行契约：npm 包**不含**环境安装脚本（0.12.0 起）────────────────────────
-     为什么改：`scripts/redteam-setup.sh` 会在用户机器上自动下载 11 个渗透二进制并 chmod +x，
-     这正是发布期自动审查判定"恶意"的行为特征（0.11.x 因此全部被 Blocked）。
-     现在它随 Release 附件分发，由用户显式执行；包内必须没有它，且自举必须优雅处理"没有"。 */
-  const { installSetupScript, redteamDataDir } = await import('../lib/index.js')
-  const { isScriptShipped, isSkillShipped, OMITTED_SKILLS } = await import('../tools/distribution.mjs')
-  const setupTarget = join(redteamDataDir(), 'setup.sh')
+  /* ── 发行契约：npm 包不含环境安装脚本，也不提供安装链接/教程 ───────────── */
+  const { isScriptShipped } = await import('../tools/distribution.mjs')
   ok(!existsSync(join(root, 'scripts', 'redteam-setup.sh')), 'npm 包内不含 redteam-setup.sh（发行契约）')
   ok(isScriptShipped('redteam-setup.sh') === false, '发行契约把 redteam-setup.sh 标为"不随包"')
-  const s1 = installSetupScript()
-  ok(s1.action === 'missing' && !existsSync(setupTarget), '包内没有脚本时安装步骤返回 missing，不写盘、不报错')
-  /* 用户自己从 Release 附件解压放了一份 → 包内没有也**不许覆盖**用户那份 */
-  mkdirSync(redteamDataDir(), { recursive: true })
-  writeFileSync(setupTarget, '#!/usr/bin/env bash\n# 用户自己放的\n', { encoding: 'utf8', mode: 0o755 })
-  ok(installSetupScript().action === 'missing', '用户自己放的同名脚本不受影响（不覆盖、不删除）')
-  ok(readFileSync(setupTarget, 'utf8').includes('用户自己放的'), '用户自己的脚本内容原样保留')
 
   /* ── 坏预设自愈（v0.9.0 真实事故回归）────────────────────────────────────
      事故：部署时把**打包模板**直接 cp 进用户预设目录，占位符没被替换 → YAML 把它解析成

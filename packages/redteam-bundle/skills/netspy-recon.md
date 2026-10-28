@@ -46,28 +46,7 @@ NETSPY="$DSH_HOME/redteam/toolkit/netspy/netspy"
 
 当前版本：**v0.0.5**（官方 release）。
 
-如果路径不存在，用官方 Linux amd64 包安装并校验：
-
-```bash
-TK="$DSH_HOME/redteam/toolkit/netspy"
-mkdir -p "$TK"
-curl -fL -o /tmp/netspy.zip \
-  https://github.com/shmilylty/netspy/releases/download/v0.0.5/netspy_linux_amd64.zip
-curl -fL -o /tmp/netspy_checksums.txt \
-  https://github.com/shmilylty/netspy/releases/download/v0.0.5/netspy_checksums.txt
-grep 'netspy_linux_amd64.zip' /tmp/netspy_checksums.txt | (cd /tmp && sha256sum -c -)
-unzip -o /tmp/netspy.zip -d "$TK"
-chmod 755 "$TK/netspy"
-"$TK/netspy" version
-```
-
-检查值应为：
-
-```text
-507b2b9f0b36051d1bb4966994b5dc92cd56b14602dfd65c02019d412972caff  netspy_linux_amd64.zip
-```
-
-> 不要用来源不明的二进制；不要跳过 checksum。
+> 工具由用户自行准备；本技能不提供下载地址或安装教程。路径不存在时写 `needs`，不要使用来源不明的二进制。
 
 ## 最重要的运行位置
 

@@ -53,15 +53,12 @@ Dual-use capabilities, and their legitimate use
    SQLite database under the operator's own $DSH_HOME directory; it is never
    transmitted anywhere by this package.
 
-5. Distribution split (from v0.12.0). The published tarball deliberately does NOT
-   include the environment bootstrap script or the attack-chain skills
+5. Distribution. The published package includes the attack-operation skills
    (credential testing, web-shell handling, reverse shells, pivoting, tunnelling,
-   unauthenticated exploitation). Those live in the separate `-toolkit.tar.gz`
-   Release attachment that operators fetch and run themselves. This package never
-   downloads or installs any security tool on the user's behalf; it only invokes
-   tools that are already present on the operator's machine. Operators who prefer
-   to install these tools themselves can skip the toolkit entirely; nothing
-   in the plugin requires it to run.
+   unauthenticated exploitation) for operator convenience, but it does NOT include
+   the environment bootstrap script, tool binaries, download links, or installation
+   tutorials. This package never downloads or installs any security tool; it only
+   invokes tools that are already present on the operator's machine.
 
 Hard boundaries the package declares and enforces
 -------------------------------------------------

@@ -11,12 +11,12 @@ enabled: true
 # 反弹 Shell 与载荷投递（拿到回连会话）
 
 > **先加载 VPS 配置**：本技能里所有 `$REDTEAM_VPS_HOST` / `$VPS_USER` 都来自本机配置，
-> 首次由 `bash $DSH_HOME/redteam/setup.sh` 写入 `$DSH_HOME/.env`。每条命令前先 source 一次：
+> 配置从 `$DSH_HOME/.env` 读取。每条命令前先 source 一次：
 > ```bash
 > set -a; . "$DSH_HOME/.env" 2>/dev/null || . "$HOME/.dsh/.env"; set +a
 > VPS_USER="${REDTEAM_VPS_USER:-ubuntu}"; VPS="$REDTEAM_VPS_HOST"
 > ```
-> 没配过就跑一次 `setup.sh`（技能 `redteam-setup`），它同时会验证 SSH 连通性与载荷服务。
+> 工具由用户自行准备；本技能不提供下载、安装脚本或教程。
 
 **命令执行 ≠ 会话**。一次性的 `?cmd=whoami` 只能证明有洞，不能持续操作。本技能负责把"能执行命令"
 变成**稳定、可交互、可复用**的回连会话，并投递后续载荷（马、隧道、扫描器）。
