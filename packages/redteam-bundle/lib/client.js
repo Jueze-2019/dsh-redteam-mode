@@ -4550,7 +4550,7 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
     /**
      * 版本显示 + 自动更新按钮。
      *
-     * 行为：挂载时静默查一次最新版本（npm registry），有新版本就把按钮点亮成
+     * 行为：挂载时静默查一次最新版本（GitHub Release），有新版本就把按钮点亮成
      * 「有新版本 vX」；点击弹出确认框（当前版本 / 最新版本 / 安装位置 / 阻塞项），
      * 确认后由 host 侧执行 安装 → 重启 dsh web（页面会断开，重启后刷新即可）。
      */
@@ -4567,7 +4567,7 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
         api({ op: 'updateCheck' }).then((r) => {
           setBusy(false)
           if (!r || r.ok === false) {
-            /* 开发态或查不到 registry：只显示当前版本，不报错打扰用户 */
+            /* 开发态或查不到 GitHub Release：只显示当前版本，不报错打扰用户 */
             if (!silent) setErr((r && r.error) || '检查更新失败')
             api({ op: 'version' }).then((v) => { if (v && v.ok !== false) setInfo(v) }, () => {})
             return

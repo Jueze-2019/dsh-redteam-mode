@@ -175,17 +175,92 @@ async function updatePreflight(ctx) {
   return { dir, declared, packageManager: packageManagerOf(dir), sourceInstall, running, blockers, notes }
 }
 
-/** 到 npm registry 查最新版本（走包管理器，避免自带网络栈）。 */
-async function checkLatest(ctx, dir, name) {
-  const pm = packageManagerOf(dir)
-  const args = pm === 'pnpm' ? ['view', name, 'version', '--json'] : ['view', name, 'version', '--json']
-  const r = await run(pm, args, { cwd: dir, timeoutMs: 60000 })
-  if (r.code !== 0) {
-    return { ok: false, error: '查询最新版本失败（' + pm + ' view）：' + String(r.stderr || r.stdout || '').trim().slice(0, 400) }
+/** 更新源：GitHub Release（不再依赖 npm registry / npm 账号）。 */
+const UPDATE_REPO = 'Jueze-2019/dsh-redteam-mode'
+const UPDATE_CACHE_MS = 60 * 1000
+let updateReleaseCache = null
+
+function githubReleaseVersion(release) {
+  return String((release && release.tag_name) || '').replace(/^v/, '')
+}
+
+/** 只接受 GitHub Release 资产的下载地址；防止 API 返回/被篡改成任意 URL。 */
+export function githubAssetUrl(asset) {
+  const raw = String((asset && asset.browser_download_url) || '')
+  let url
+  try { url = new URL(raw) } catch { return null }
+  if (url.protocol !== 'https:') return null
+  const host = url.hostname.toLowerCase()
+  if (host !== 'github.com' && host !== 'objects.githubusercontent.com' && !host.endsWith('.githubusercontent.com')) return null
+  return raw
+}
+
+/** 从 Release JSON 里选 .tgz 资产（优先与版本同名的包）。 */
+export function releaseAssetOf(release, version) {
+  const assets = Array.isArray(release && release.assets) ? release.assets : []
+  const tgz = assets.filter((a) => String(a && a.name || '').endsWith('.tgz'))
+  if (tgz.length === 0) return null
+  const preferred = tgz.find((a) => String(a.name).includes('dsh-redteam-mode-' + version))
+    || tgz.find((a) => String(a.name).includes('dsh-redteam-mode'))
+    || tgz[0]
+  const url = githubAssetUrl(preferred)
+  if (url === null) return null
+  return { name: String(preferred.name), url, size: Number(preferred.size) || 0 }
+}
+
+export async function fetchGithubRelease(version) {
+  const tag = version ? 'v' + String(version).replace(/^v/, '') : null
+  const url = tag
+    ? 'https://api.github.com/repos/' + UPDATE_REPO + '/releases/tags/' + encodeURIComponent(tag)
+    : 'https://api.github.com/repos/' + UPDATE_REPO + '/releases/latest'
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 15000)
+  let res
+  try {
+    res = await fetch(url, {
+      headers: { accept: 'application/vnd.github+json', 'user-agent': 'dsh-redteam-mode-update-check' },
+      signal: controller.signal,
+    })
+  } catch (error) {
+    clearTimeout(timer)
+    return { ok: false, error: '连接 GitHub Release 失败：' + String((error && error.message) || error).slice(0, 200) }
   }
-  const raw = String(r.stdout || '').trim().replace(/^"|"$/g, '')
-  const latest = raw.split('\n').map((x) => x.trim().replace(/^"|"$/g, '')).filter(Boolean).pop() || null
-  return { ok: latest !== null, latest, registry: pm }
+  clearTimeout(timer)
+  if (!res.ok) {
+    return {
+      ok: false,
+      error: '查询 GitHub Release 失败（HTTP ' + res.status + '）'
+        + (res.status === 403 ? '：可能是 GitHub API 限流，稍后再试。' : ''),
+    }
+  }
+  let release
+  try { release = await res.json() } catch { return { ok: false, error: 'GitHub Release 返回不是 JSON。' } }
+  const latest = githubReleaseVersion(release)
+  if (!/^\d+\.\d+\.\d+/.test(latest)) return { ok: false, error: 'GitHub Release tag 不是版本号：' + String(release.tag_name || '') }
+  const asset = releaseAssetOf(release, latest)
+  if (asset === null) return { ok: false, error: 'GitHub Release ' + release.tag_name + ' 没有可用的 .tgz 附件。' }
+  return {
+    ok: true, latest, source: 'github', tag: release.tag_name,
+    release_url: release.html_url || ('https://github.com/' + UPDATE_REPO + '/releases/tag/' + release.tag_name),
+    asset,
+  }
+}
+
+/** 查最新 GitHub Release；短缓存避免 UI 一次刷新打两次 API。 */
+export async function checkLatest() {
+  if (updateReleaseCache !== null && Date.now() - updateReleaseCache.at < UPDATE_CACHE_MS) {
+    return updateReleaseCache.value
+  }
+  const value = await fetchGithubRelease(null)
+  if (value.ok === true) updateReleaseCache = { at: Date.now(), value }
+  return value
+}
+
+/** 按版本查 Release；用于“更新到指定版本”。 */
+async function checkRelease(version) {
+  const wanted = String(version || '').replace(/^v/, '')
+  if (!/^\d+\.\d+\.\d+/.test(wanted)) return { ok: false, error: '版本号不合法：' + String(version) }
+  return fetchGithubRelease(wanted)
 }
 
 /** `a < b`（只比较数字段，够用；预发布后缀按"更旧"处理）。 */
@@ -290,8 +365,10 @@ function restartScript(pid, port, command, args, logPath, cwd) {
 
 /** 应用更新：装新版本 + 生成重启脚本 + 让当前进程退出。 */
 async function applyUpdate(ctx, dir, name, targetVersion) {
+  const release = targetVersion ? await checkRelease(targetVersion) : await checkLatest()
+  if (release.ok !== true) return { ok: false, error: release.error || '找不到可安装的 GitHub Release。' }
   const primary = packageManagerOf(dir)
-  const spec = targetVersion ? name + '@' + targetVersion : name
+  const spec = release.asset.url
   const attempt = async (pm) => {
     const args = pm === 'pnpm' ? ['add', spec] : ['install', spec, '--save']
     const r = await run(pm, args, { cwd: dir, timeoutMs: 300000 })
@@ -337,7 +414,8 @@ async function applyUpdate(ctx, dir, name, targetVersion) {
   /* 给浏览器留出收到响应的窗口，然后退出 —— 新进程由脚本按原命令行拉起 */
   setTimeout(() => { process.exit(0) }, 1200).unref()
   return {
-    ok: true, installed: spec, packageManager: pm, bundleRegistered: bundleState,
+    ok: true, installed: release.latest, source: 'github', asset: spec, release_url: release.release_url,
+    packageManager: pm, bundleRegistered: bundleState,
     restart: { script: scriptPath, log: logPath, port, command: [command].concat(rest).join(' '), pid: process.pid },
   }
 }
@@ -657,7 +735,7 @@ async function handleAgentsOp(ctx, request) {
 
 /**
  * 版本与更新类 op（面板右上角的「版本 + 自动更新」用）。
- * 不碰资产库，直接操作 profile 与 npm/pnpm；全部在 host 侧执行。
+ * 不碰资产库；更新源是 GitHub Release，安装交给 profile 的 npm/pnpm；全部在 host 侧执行。
  * @param ctx - 插件上下文。
  * @param request - `{ op: 'version' | 'updateCheck' | 'updateApply', target? }`。
  * @returns JSON 结果，或 undefined 表示不是更新类 op。
@@ -667,7 +745,7 @@ async function handleUpdateOp(ctx, request) {
   const pkg = pluginIdentity(ctx)
   const pre = await updatePreflight(ctx)
   if (request.op === 'version') {
-    const check = await checkLatest(ctx, pre.dir, pkg.name)
+    const check = await checkLatest()
     return {
       ok: true,
       plugin: pkg,
@@ -679,7 +757,7 @@ async function handleUpdateOp(ctx, request) {
       },
       latest: check && check.ok ? check.latest : null,
       updateAvailable: check && check.ok && pkg.version ? versionLess(pkg.version, check.latest) : false,
-      /* 本地版本比 registry 还新：本机跑的是尚未发布的开发版本。
+      /* 本地版本比 GitHub Release 还新：本机跑的是尚未发布的开发版本。
          不区分这一种，"检查更新"会一直显示"已是最新"，把"这个版本根本没发出去"藏起来。 */
       localAhead: check && check.ok && pkg.version ? versionLess(check.latest, pkg.version) : false,
       check_error: check && check.ok === false ? check.error : undefined,
@@ -689,7 +767,7 @@ async function handleUpdateOp(ctx, request) {
     }
   }
   if (request.op === 'updateCheck') {
-    const check = await checkLatest(ctx, pre.dir, pkg.name)
+    const check = await checkLatest()
     if (check.ok !== true) return { ok: false, error: check.error, current: pkg.version, install: { mode: pre.sourceInstall ? 'source' : 'package' } }
     const localAhead = pkg.version ? versionLess(check.latest, pkg.version) : false
     return {
@@ -699,8 +777,8 @@ async function handleUpdateOp(ctx, request) {
       install: { mode: pre.sourceInstall ? 'source' : 'package', dir: pre.dir, packageManager: pre.packageManager, sourceInstall: pre.sourceInstall },
       blockers: pre.blockers,
       notes: pre.notes.concat(localAhead
-        ? ['本机版本（' + pkg.version + '）比 npm 上的最新版（' + check.latest + '）还新：'
-           + '当前跑的是尚未发布的开发版本，包管理器更新不适用（要回退版本请显式指定）。']
+        ? ['本机版本（' + pkg.version + '）比 GitHub Release 最新版（' + check.latest + '）还新：'
+           + '当前跑的是尚未发布的开发版本；要回退版本请显式指定 GitHub Release 版本。']
         : []),
       running_agents: pre.running,
     }
@@ -709,20 +787,20 @@ async function handleUpdateOp(ctx, request) {
   if (pre.blockers.length > 0) {
     return { ok: false, error: '现在不能更新：' + pre.blockers.join(' '), blockers: pre.blockers, notes: pre.notes }
   }
-  /* target 会被原样拼进 `npm install <target>`：不校验就等于把"装任意包并重启进程"
-     暴露给浏览器侧输入。只接受纯 semver（可带 v 前缀），其余一律拒绝并说清原因。 */
+  /* target 会用于选择 GitHub Release tag：只接受纯 semver（可带 v 前缀），
+     其余一律拒绝，避免把"装任意 URL/包并重启进程"暴露给浏览器侧输入。 */
   const rawTarget = typeof request.target === 'string' ? request.target.trim() : ''
   if (rawTarget !== '' && !/^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(rawTarget)) {
     return {
       ok: false,
       current: pkg.version,
       error: 'updateApply 的 target 必须是纯版本号（如 0.11.0），收到 ' + JSON.stringify(rawTarget)
-        + '。不接受包名、路径、URL 或 npm 参数 —— 它会原样传给包管理器，等于允许远程指定安装内容。',
+        + '。不接受包名、路径、URL 或包管理器参数。',
     }
   }
   const result = await applyUpdate(ctx, pre.dir, pkg.name, rawTarget || null)
   if (result.ok !== true) return Object.assign({ current: pkg.version }, result)
-  return Object.assign({ current: pkg.version, latest: request.target || null }, result, {
+  return Object.assign({ current: pkg.version, latest: request.target || result.installed || null }, result, {
     note: '已安装，正在重启 dsh web（页面会在几秒内断开，重启完成后刷新即可看到新版本）。重启日志：' + result.restart.log,
   })
 }
