@@ -20,6 +20,7 @@ const COMMON_AUTH = `## 授权前提（所有角色都遵守）
 const COMMON_SCORE_RULES = `## 记分纪律（所有角色都遵守）
 - **一次记分必填两样**：\`code\`（得分点短代码）+ \`evidence\`（**只写结果**：目标资产 + 拿到的东西，如「10.1.2.3｜后台管理员 tomcat/Tomcat@2024」）。**缺 code 或 evidence 直接报错**，等于没发生。
 - **记分前先用 \`redteam_score_list\` 读实际 code/上限/档位**，不要凭记忆；不确定 code、档位或证据要求时加载 \`score-coverage\` 技能。旧 code（web-account-*、webshell、rce、server-shell、db-access、sensitive-data、boundary、internal-pivot、core-system）已废弃，会报 \`score point not found\`。
+- **账号类得分必须绑定有效登录**：先 \`redteam_access_add\` 记录实际登录（host/username/method），再把 \`access_id\` 传给 \`redteam_score_hit\`；只有未授权接口/响应里有数据/只有凭据，都不算账号权限，按漏洞或数据证明记。
 - **同一系统只按最高权限计一次（G1）**：先记普通档，提权后用 \`points\` 改记高档，系统自动顶掉低档。
 - **数据量如实统计**：大数据系统门槛 **≥5 亿条或 1TB**（低于按普通数据库）；G5 翻倍 **≥1 亿条或 10TB**；\`evidence\` 写实际导出量，只写“拖库成功”站不住。
 - **敏感数据优先**：姓名/身份证号/手机号（三要素）等敏感信息 **≥1 万条**优先；\`evidence\` 写字段、总条数、样本；只取证明所需样本，不批量拖全库。分值与口径仍按 \`redteam_score_list\` / G2，不自创分。

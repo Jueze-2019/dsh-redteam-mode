@@ -137,6 +137,9 @@ try {
     && /T0/.test(DEFAULT_PROMPTS.recon) && /T2/.test(DEFAULT_PROMPTS.recon),
     '攻击角色写入 T0/T1/T2/T3 与穷尽门槛；recon 写入分级线索')
   ok(DEFAULT_PROMPTS.plan.includes('T0/T1/T2/T3') && DEFAULT_PROMPTS.plan.includes('穷尽'), '主会话提示词写入资产分级与穷尽标准')
+  ok(/P0 凭据复用/.test(DEFAULT_PROMPTS.internal) && /P1/.test(DEFAULT_PROMPTS.internal) && /P2/.test(DEFAULT_PROMPTS.internal) && /SSH/.test(DEFAULT_PROMPTS.internal), '内网角色写入凭据优先 / 数据 / 新 RCE 与 SSH key')
+  ok(/WebShell/.test(DEFAULT_PROMPTS.exploit) && /SSH key/.test(DEFAULT_PROMPTS.exploit), '利用角色写入 WebShell 优先与 SSH key 回退')
+  ok(/access_id/.test(DEFAULT_PROMPTS.exploit) || /access_id/.test(DEFAULT_PROMPTS.internal), '执行角色写入账号分 access_id 门槛')
   ok(['recon', 'assess', 'vuln-scan', 'exploit', 'internal'].every((r) => DEFAULT_PROMPTS[r].includes('curl | bash')),
     '外部安装脚本必须可审阅，禁止 curl|bash 一类盲装')
 

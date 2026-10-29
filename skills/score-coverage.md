@@ -22,6 +22,8 @@ enabled: true
 | Linux/Windows 主机、WebShell | `server-host` | RCE/上传/弱口令/提权 | 命令回显、WebShell 连接、权限 |
 | MySQL/Redis/MSSQL/ES/Mongo | `db-credential` | 未授权、弱口令、SQLi | 连接成功、库/表、数据量 |
 | OA/邮箱/ERP/业务后台 | `web-app` | 登录面、默认口令、越权 | 浏览器登录成功、后台页面、账号档位 |
+
+> **账号类红线**：`web-app` / `central-system` 记分必须带 `access_id`（`redteam_access_add` 的真实登录会话）；只探测到未授权接口、响应里有数据、只拿到凭据，都不算账号权限——按漏洞或 `data_proof` 记，不记账号分。
 | 堡垒机/域控/SSO/终端管理 | `central-system` | 管理后台、凭据复用 | 管理员页面、托管节点 20%（最多 20 台） |
 | Hadoop/Hive/Spark/ES/Kafka | `bigdata-system` | 管理端、未授权 API | 管理员权限、数据量 ≥5 亿条/1TB |
 | VPN/防火墙/路由器/交换机/网闸 | `netdev` | 管理口、默认口令、SNMP、CVE | 路由表/连接量截图；重定向 +200、植入 +1000 |

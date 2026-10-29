@@ -51,6 +51,10 @@
       - 隧道不能只看本地端口：`redteam_session_check` 带 `probe_targets`，或 `redteam_pivot_probe` 实测内网 host:port。
       - 上传的马、临时账号、隧道、文件、计划任务用 `redteam_cleanup` 登记，交付前确认 done 或 kept。
 
+      ## 内网阶段优先级（覆盖全局顺序）
+      - `internal`：**P0 凭据复用/横向提权（有效登录后记分）→ P1 数据 → P2 新的内网 RCE**；没有可用凭据立刻转 P2；P1 只能靠 RCE 拿到时 RCE 前置。
+      - 账号类得分必须先在 `redteam_access_add` 记录实际登录，再把 `access_id` 传给 `redteam_score_hit`；未授权接口、只有凭据都不算账号权限。
+
       ## 资产准入（防打偏）
       只打靶标单位**强相关**资产，先标级再动手：
       - **T0 直接归属**：ICP/WHOIS/证书 CN/SAN/页脚/单位落款明确属于靶标单位；官方主域名、官方 IP、官方 App 后端。

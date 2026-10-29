@@ -27,30 +27,36 @@ let pass = 0
 let fail = 0
 const ok = (cond, msg) => { if (cond) { pass += 1; console.log(`  ✓ ${msg}`) } else { fail += 1; console.log(`  ✗ ${msg}`) } }
 
+const accessT = (await call('redteam_access_add', { host: 't', username: 'tomcat', method: 'web' })).id
+const accessT80 = (await call('redteam_access_add', { host: 't:80', username: 'admin', method: 'web' })).id
+const accessT9090 = (await call('redteam_access_add', { host: 't:9090', username: 'u9', method: 'web' })).id
+const accessReal = (await call('redteam_access_add', { host: 'real.example:8443', username: 'svc-demo', method: 'web' })).id
+const accessApi = (await call('redteam_access_add', { host: 'api.example:8443', username: 'api-admin', method: 'web' })).id
+
 /* 自己注册的账号：记录但明确不计分 */
 const self = await call('redteam_score_hit', { code: 'web-app', points: 50, target: 'http://t/register', evidence: '自建 ztest/1', self_created: true })
 ok(self.counted === false && /自己注册|不计分/.test(self.warning || ''), 'score_hit：自建账号 counted=false 且给出原因')
 ok(self.summary.achievedPoints === 0 && self.summary.selfCreatedHits === 1, 'score_hit：自建账号不加分，summary 单独计数')
 
 /* 拿到别人已有的账号：照常计分 */
-const real = await call('redteam_score_hit', { code: 'web-app', points: 50, target: 'http://t/admin', evidence: '普通账号 tomcat/Tomcat@2024（普通档 50）' })
+const real = await call('redteam_score_hit', { code: 'web-app', points: 50, target: 'http://t/admin', access_id: accessT, evidence: '普通账号 tomcat/Tomcat@2024（普通档 50，已登录）' })
 ok(real.counted === true && real.summary.achievedPoints === 50,
   'score_hit：拿到已有账号照常计分（规则 6 业务系统普通账号 50 分）')
 
 /* 服务封顶：同一资产同一端口只算一次（拿到最高权限账号即拿满） */
 const cappedBase = real.summary.achievedPoints
-const dup = await call('redteam_score_hit', { code: 'web-app', points: 50, target: 'http://t:80/a', evidence: '普通账号 u2/x（普通档 50）' })
-const dup2 = await call('redteam_score_hit', { code: 'web-app', points: 50, target: 'http://t:80/b', evidence: '普通账号 u3/y（普通档 50）' })
+const dup = await call('redteam_score_hit', { code: 'web-app', points: 50, target: 'http://t:80/a', access_id: accessT80, evidence: '普通账号 u2/x（普通档 50，已登录）' })
+const dup2 = await call('redteam_score_hit', { code: 'web-app', points: 50, target: 'http://t:80/b', access_id: accessT80, evidence: '普通账号 u3/y（普通档 50，已登录）' })
 ok(dup2.counted === false && dup2.capped_by_service === true,
   'score_hit：同一个系统刷第二个账号 → counted=false（按「同一系统只算最高权限一次」）')
 ok(/已经拿满|只算一次/.test(dup2.warning || ''), 'score_hit：封顶时把原因写进 warning（智能体据此停止刷账号）')
 ok(dup2.summary.achievedPoints === cappedBase, 'score_hit：被顶掉的重复命中不给总分加分（总分不变）')
 ok(dup2.service === 't:80', 'score_hit：返回里给出判定用的服务标签')
-const better = await call('redteam_score_hit', { code: 'web-app', points: 100, target: 'http://t:80/admin', evidence: '管理员 admin/Admin@2024（管理员档 100）' })
+const better = await call('redteam_score_hit', { code: 'web-app', points: 100, target: 'http://t:80/admin', access_id: accessT80, evidence: '管理员 admin/Admin@2024（管理员档 100，已登录）' })
 ok(better.counted === true, 'score_hit：同一系统拿到管理员 → 该条计分（普通账号那几条转为不计分）')
 ok(better.summary.achievedPoints === 100,
   `score_hit：同一个系统按最高权限那条算（普通 50 → 管理员 100，不累加）实际 ${better.summary.achievedPoints}`)
-const otherPort = await call('redteam_score_hit', { code: 'web-app', points: 50, target: 'http://t:9090/a', evidence: '普通账号 u9/z（普通档 50）' })
+const otherPort = await call('redteam_score_hit', { code: 'web-app', points: 50, target: 'http://t:9090/a', access_id: accessT9090, evidence: '普通账号 u9/z（普通档 50，已登录）' })
 ok(otherPort.counted === true, 'score_hit：换端口（另一个服务）照常计分')
 const dbDup = await call('redteam_score_hit', { code: 'db-credential', points: 50, target: '10.0.0.5:3306', evidence: 'MySQL root/root（管理员档 50）' })
 const dbDup2 = await call('redteam_score_hit', { code: 'db-credential', points: 10, target: '10.0.0.5:3306', evidence: 'MySQL app/app（普通档 10）' })
@@ -87,9 +93,12 @@ ok(vulnWithReq.http_evidence_id > 0, 'vuln_add：request 自动保存 HTTP 证�
 /* score_hit 带 command 时自动生成动作记录，不再单独调 chain_add */
 const stepSelf = await call('redteam_score_hit', { code: 'web-app', target: 'http://self.example:8443/admin', evidence: '自建 ztest20 授权管理员', self_created: true, command: 'curl -X POST http://self.example:8443/register' })
 ok(stepSelf.counted === false && stepSelf.step_id, 'score_hit：自建账号计 0 分，且 command 自动生成动作记录')
-const stepReal = await call('redteam_score_hit', { code: 'web-app', target: 'http://real.example:8443/admin', evidence: '厂商账号 svc-demo/Demo@2024', command: 'curl -X POST http://real.example:8443/login' })
+const stepReal = await call('redteam_score_hit', { code: 'web-app', target: 'http://real.example:8443/admin', access_id: accessReal, evidence: '厂商账号 svc-demo/Demo@2024（已登录）', command: 'curl -X POST http://real.example:8443/login' })
 ok(stepReal.counted === true && stepReal.step_id, 'score_hit：真实账号照常计分，且 command 自动生成动作记录')
-const hitWithVuln = await call('redteam_score_hit', { code: 'web-app', target: 'http://api.example:8443/api/users', evidence: '越权读取 12000 条用户数据', vuln_id: vulnWithReq.id })
+const gateRejected = await call('redteam_score_hit', { code: 'web-app', target: 'http://unauth.example', evidence: '未授权接口直接读取用户列表' })
+ok(gateRejected.ok === false && /access_id|账号类|登录/.test(String(gateRejected.error || '')), 'score_hit：未授权接口没有 access_id → 拒绝记账号分')
+
+const hitWithVuln = await call('redteam_score_hit', { code: 'web-app', target: 'http://api.example:8443/api/users', access_id: accessApi, evidence: '管理员 api-admin 登录后读取 12000 条用户数据', vuln_id: vulnWithReq.id })
 ok(hitWithVuln.counted === true, 'score_hit：关联带原始请求的漏洞后正常计分')
 const repAuto = await call('redteam_score_report', { markdown: true })
 ok(String(repAuto.markdown || '').includes('curl -X POST http://real.example:8443/login'), '自动动作记录进入报告复现（不需要 chain_add）')

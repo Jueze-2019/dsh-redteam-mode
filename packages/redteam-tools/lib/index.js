@@ -408,6 +408,39 @@ function assertBoundaryGate(args, code) {
   }
 }
 
+/** 账号类得分必须绑定真实登录会话；未授权接口/只有凭据不能记账号分。 */
+const ACCOUNT_SCORE_CODES = new Set(['web-app', 'central-system'])
+
+function hostOfTarget(value) {
+  return String(value || '')
+    .replace(/^[a-z]+:\/\//i, '')
+    .split('/')[0]
+    .split('?')[0]
+    .toLowerCase()
+}
+
+function assertAccountAccess(store, id, args, code) {
+  if (!ACCOUNT_SCORE_CODES.has(String(code || ''))) return
+  if (args.self_created === true) return
+  const accessId = Number(args.access_id)
+  if (!Number.isFinite(accessId) || accessId <= 0) {
+    throw new Error('账号类得分必须绑定有效登录：先 redteam_access_add 记录实际登录（host/username/method），再把返回 id 传到 access_id；未授权接口、只有凭据都不算账号权限。')
+  }
+  const access = (store.listAccess(id, { limit: 1000 }) || []).find((a) => Number(a.id) === accessId)
+  if (access === undefined) throw new Error('access_id 不存在：先 redteam_access_add 记录实际登录，再记分。')
+  if (!String(access.username || '').trim()) {
+    throw new Error('access_id 对应的登录没有 username：账号类得分必须能说清登录的是哪个账号。')
+  }
+  if (/webshell|rce|reverse|shell/i.test(String(access.method || ''))) {
+    throw new Error('access_id 对应的是 WebShell/RCE 会话，不是账号登录：账号类得分请记录实际登录（method=web/ssh/rdp/db 等）。')
+  }
+  const targetHost = hostOfTarget(args.target)
+  const accessHost = hostOfTarget(access.host)
+  if (targetHost !== '' && accessHost !== '' && targetHost !== accessHost) {
+    throw new Error('access_id 的登录目标与 target 不一致：access.host=' + access.host + '，target=' + args.target + '。')
+  }
+}
+
 /** 写库工具共用的 agent 参数（角色 code 白名单提示写进 description）。 */
 const AGENT_PARAM = {
   type: 'string',
@@ -1374,7 +1407,7 @@ export function apply(ctx, config = {}) {
 
   registerTool(withStructuredErrors(defineTool({
     name: 'redteam_access_add',
-    description: '记录一次成功获得的访问会话（横向移动起点）。method 例如 vnc/rdp/ssh/web-shell/webshell/db；privilege 例如 admin/user/system。',
+    description: '记录一次成功获得的访问会话（横向移动起点）。method 例如 vnc/rdp/ssh/web-login/db/webshell；privilege 例如 admin/user/system。账号类得分必须把返回的 id 作为 access_id 传给 redteam_score_hit。',
     parameters: {
       engagement: { type: 'string' },
       host: { type: 'string', required: true },
@@ -1735,7 +1768,7 @@ export function apply(ctx, config = {}) {
     description: '记录一次得分。规则是 25 项合并版；**记分前先用 `redteam_score_list` 读实际 code、上限与口径**，不要凭记忆。\n\n'
       + '**evidence 只写结果**：目标资产 + 拿到什么（账号/权限/数据量），不要写过程；能指向漏洞就带 vuln_id。\n\n'
       + '**多档条目用 `points` 指定本档**（普通/管理员等）；**同一系统只按最高权限计一次**（G1），提权后补高档，系统会顶掉低档。\n\n'
-      + '**红线**：账号类必须浏览器实测登录成功才能记分——**只有凭据不算拿到账号**；**自己注册的账号不算得分权限**，用 self_created=true 只留痕。\n\n'
+      + '**红线**：账号类必须实际登录成功，并把 `redteam_access_add` 返回的 `access_id` 传进来——**只有未授权接口/响应数据/凭据不算账号权限**；自己注册的账号不算得分权限，用 self_created=true 只留痕。\n\n'
       + '**口径/上限**：每条自带去重口径与上限，warning 是停止信号；数据成果单独计分（G2），evidence 写实际数据量。\n\n'
       + '**边界**：boundary-* 必须传 `boundary` 对象（entry_zone/target_zone/isolation/target_asset；supply 加 scope_confirmed=true）；同区/不全拒绝。',
     parameters: {
@@ -1749,6 +1782,7 @@ export function apply(ctx, config = {}) {
       port: { type: 'number', description: '【建议填】这条得分落在哪个端口（口径判定按「资产 + 端口」；target 里已带端口时可不填）' },
       vuln_id: { type: 'number', description: '【建议填】用哪个漏洞拿到的分（报告据此附原始请求）' },
       step_id: { type: 'number', description: '对应的攻击链步骤 id（可选）' },
+      access_id: { type: 'number', description: '【账号类必填】实际登录成功后在 redteam_access_add 返回的 id；未授权接口不能代替账号登录。' },
       evidence: { type: 'string', required: true, description: '【必填】结果：拿到的东西，例如「后台管理员 tomcat/Tomcat@2024（已实测浏览器可登录）」「数据库账号 root/xxx」「导出 132 万条用户数据」。多档条目请写明档位（如"管理员权限"）。' },
       command: { type: 'string', description: '【可选，建议填】实际命令/请求原文；带上会自动生成动作记录供报告复现。' },
       result: { type: 'string', description: '【可选】实际回显/结果摘要；不填用 evidence。' },
@@ -1775,6 +1809,11 @@ export function apply(ctx, config = {}) {
     async execute(args, exec) {
       const id = resolveEngagement(store, exec, args.engagement)
       assertBoundaryGate(args, args.code)
+      const pointRows = store.listScorePoints(id).items || []
+      const point = pointRows.find((p) => (args.point_id !== undefined && args.point_id !== null && Number(p.id) === Number(args.point_id))
+        || (args.point_name && String(p.name) === String(args.point_name))
+        || (args.code && String(p.code) === String(args.code)))
+      assertAccountAccess(store, id, args, point ? point.code : args.code)
       const result = store.addScoreHit(id, { ...args, engagement: undefined })
       let stepId = null
       let stepHint = null
