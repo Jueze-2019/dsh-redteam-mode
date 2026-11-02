@@ -558,7 +558,7 @@
                 - 环境/落地：`redteam-setup` / `vps-reverse-shell`
                 - 内网深化：`ad-attack` / `cloud-k8s` / `network-device` / `supply-chain`
                 - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`
-                - 侦察扩展：`mobile-code-recon`
+                - 侦察扩展：`mobile-code-recon` / `icp-query`（备案归属）
                 - 隧道/C2：`c2-infra`
                 - 收口/OPSEC：`opsec-hygiene`
                 先看系统 `<available_skills>` 的描述，选最接近的 1–2 个加载；技能正文才是命令细节。表里没有的能力，按“本地不适用时：外部工具/技能”规则处理：先修本地，再找来源可核验的替代，隔离运行并留痕。
@@ -746,7 +746,7 @@
                 - 环境/落地：`redteam-setup` / `vps-reverse-shell`
                 - 内网深化：`ad-attack` / `cloud-k8s` / `network-device` / `supply-chain`
                 - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`
-                - 侦察扩展：`mobile-code-recon`
+                - 侦察扩展：`mobile-code-recon` / `icp-query`（备案归属）
                 - 隧道/C2：`c2-infra`
                 - 收口/OPSEC：`opsec-hygiene`
                 先看系统 `<available_skills>` 的描述，选最接近的 1–2 个加载；技能正文才是命令细节。表里没有的能力，按“本地不适用时：外部工具/技能”规则处理：先修本地，再找来源可核验的替代，隔离运行并留痕。
@@ -936,7 +936,7 @@
                 - 环境/落地：`redteam-setup` / `vps-reverse-shell`
                 - 内网深化：`ad-attack` / `cloud-k8s` / `network-device` / `supply-chain`
                 - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`
-                - 侦察扩展：`mobile-code-recon`
+                - 侦察扩展：`mobile-code-recon` / `icp-query`（备案归属）
                 - 隧道/C2：`c2-infra`
                 - 收口/OPSEC：`opsec-hygiene`
                 先看系统 `<available_skills>` 的描述，选最接近的 1–2 个加载；技能正文才是命令细节。表里没有的能力，按“本地不适用时：外部工具/技能”规则处理：先修本地，再找来源可核验的替代，隔离运行并留痕。
@@ -1126,7 +1126,7 @@
                 - 环境/落地：`redteam-setup` / `vps-reverse-shell`
                 - 内网深化：`ad-attack` / `cloud-k8s` / `network-device` / `supply-chain`
                 - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`
-                - 侦察扩展：`mobile-code-recon`
+                - 侦察扩展：`mobile-code-recon` / `icp-query`（备案归属）
                 - 隧道/C2：`c2-infra`
                 - 收口/OPSEC：`opsec-hygiene`
                 先看系统 `<available_skills>` 的描述，选最接近的 1–2 个加载；技能正文才是命令细节。表里没有的能力，按“本地不适用时：外部工具/技能”规则处理：先修本地，再找来源可核验的替代，隔离运行并留痕。
@@ -1316,7 +1316,7 @@
                 - 环境/落地：`redteam-setup` / `vps-reverse-shell`
                 - 内网深化：`ad-attack` / `cloud-k8s` / `network-device` / `supply-chain`
                 - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`
-                - 侦察扩展：`mobile-code-recon`
+                - 侦察扩展：`mobile-code-recon` / `icp-query`（备案归属）
                 - 隧道/C2：`c2-infra`
                 - 收口/OPSEC：`opsec-hygiene`
                 先看系统 `<available_skills>` 的描述，选最接近的 1–2 个加载；技能正文才是命令细节。表里没有的能力，按“本地不适用时：外部工具/技能”规则处理：先修本地，再找来源可核验的替代，隔离运行并留痕。
@@ -1506,7 +1506,7 @@
                 - 环境/落地：`redteam-setup` / `vps-reverse-shell`
                 - 内网深化：`ad-attack` / `cloud-k8s` / `network-device` / `supply-chain`
                 - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`
-                - 侦察扩展：`mobile-code-recon`
+                - 侦察扩展：`mobile-code-recon` / `icp-query`（备案归属）
                 - 隧道/C2：`c2-infra`
                 - 收口/OPSEC：`opsec-hygiene`
                 先看系统 `<available_skills>` 的描述，选最接近的 1–2 个加载；技能正文才是命令细节。表里没有的能力，按“本地不适用时：外部工具/技能”规则处理：先修本地，再找来源可核验的替代，隔离运行并留痕。
@@ -1696,7 +1696,7 @@
                 - 环境/落地：`redteam-setup` / `vps-reverse-shell`
                 - 内网深化：`ad-attack` / `cloud-k8s` / `network-device` / `supply-chain`
                 - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`
-                - 侦察扩展：`mobile-code-recon`
+                - 侦察扩展：`mobile-code-recon` / `icp-query`（备案归属）
                 - 隧道/C2：`c2-infra`
                 - 收口/OPSEC：`opsec-hygiene`
                 先看系统 `<available_skills>` 的描述，选最接近的 1–2 个加载；技能正文才是命令细节。表里没有的能力，按“本地不适用时：外部工具/技能”规则处理：先修本地，再找来源可核验的替代，隔离运行并留痕。

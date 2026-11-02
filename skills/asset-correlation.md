@@ -32,6 +32,8 @@ enabled: true
 - 没有归属证据的资产默认按 T2 处理，不能直接打。
 
 ## 归属证明（得分资产必填）
+
+- 备案主体/备案号查询用 `icp-query`；查询结果写入 `redteam_asset_test` 的 `test`，并与证书/WHOIS/页脚交叉验证。
 每个得分资产至少一种：ICP 备案号、证书 CN/SAN、WHOIS 注册人、首页页脚版权/单位落款、系统登录页单位名称。
 写进 `redteam_asset_test` 的 `test`（`归属证明：...`），并用 `redteam_shot_add` 留首页/备案截图；报告第一节据此判强弱。
 

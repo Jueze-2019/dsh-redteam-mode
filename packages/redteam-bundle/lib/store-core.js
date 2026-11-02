@@ -435,6 +435,7 @@ function promptHash(text) {
 // __REDTEAM_PROMPTS_BLOCK__
 // __REDTEAM_PROMPTS_BLOCK__
 // __REDTEAM_PROMPTS_BLOCK__
+// __REDTEAM_PROMPTS_BLOCK__
 /* ------------------------------------------------------------------ 角色公共段落
 
    由 packages/redteam-store/tools/gen-prompts.mjs 生成，**不要直接改这一段**：
@@ -591,7 +592,7 @@ export const DEFAULT_PROMPTS = {
 **只做资产信息收集**：把靶标单位的资产收集完整，产出**逐条落库的资产清单**。不验证漏洞、不登录、不上传、不打后台；看到疑似漏洞点只记线索，交给漏洞发现角色。
 
 ## 两条战线
-- **互联网侧**：先被动、再主动。按人设里的“技能路由”选 1–2 个外网侦察技能加载（FOFA/被动/流水线/主动扫描/指纹/浏览器），不要凭记忆猜参数；资产关联与 C 段比对用 \`asset-correlation\`；APP/小程序/代码泄露用 \`mobile-code-recon\`。
+- **互联网侧**：先被动、再主动。按人设里的“技能路由”选 1–2 个外网侦察技能加载（FOFA/被动/流水线/主动扫描/指纹/浏览器），不要凭记忆猜参数；资产关联与 C 段比对用 \`asset-correlation\`；APP/小程序/代码泄露用 \`mobile-code-recon\`；备案归属用 \`icp-query\`。
   优先找 **P0**：边界/边缘资产、VPN/防火墙/堡垒机/运维平台、双网卡/多网卡主机线索、对外中间件（Weblogic/Shiro/Fastjson/Struts/Confluence/Exchange/Spring）、上传点、暴露管理端。
 - **内网侧**：有 active 且 legit 的隧道才做。先用 \`netspy-recon\` 从目标侧主机摸可达网段/双网卡/相邻段，再按段用 \`gogo-intranet\` 铺面、\`fscan-intranet\` 只做发现（不爆破、不验证漏洞）；每发现一个新网段再跑一轮。
   **优先标出能继续跳的落点**（双网卡、路由、VPN/堡垒机/运维平台、数据库/备份），不要只数资产。

@@ -57,6 +57,7 @@
     "skills/unauth-exploit.md",
     "skills/vps-reverse-shell.md",
     "skills/webshell-toolkit.md",
+    "skills/icp-query.md",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
