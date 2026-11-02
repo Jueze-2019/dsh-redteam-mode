@@ -43,8 +43,8 @@ node node_modules/dsh-redteam-mode/lib/migrate-legacy-rows.mjs                  
 
 | 能力 | 说明 |
 | --- | --- |
-| 五个执行角色 | 信息收集 / 资产梳理 / 漏洞发现 / 漏洞利用 / 内网渗透，主会话只做调度与指挥 |
-| 角色工具裁剪 | 5 个 `redteam-worker-*` 预设按 profile 裁剪工具（recon 38 / assess 40 / vuln-scan 47 / exploit 53 / internal 54；默认全部 59） |
+| 六个执行角色 | 信息收集 / 资产梳理 / 漏洞发现 / 漏洞利用 / 内网信息收集 / 内网渗透，主会话只做调度与指挥 |
+| 角色工具裁剪 | 6 个 `redteam-worker-*` 预设按 profile 裁剪工具（recon 38 / assess 40 / vuln-scan 47 / exploit 53 / internal-recon 38 / internal 54；默认全部 59） |
 | 资产测绘 | C 段按内外网分组、端口/服务/指纹/域名/Web 标题、易打性评估、测试状态 |
 | 得分目标 | 得分点可编辑、命中记录一行一条；自建账号不计分；**账号权限与数据库权限按「同一资产 + 同一端口」封顶**（拿到最高权限账号即该服务拿满，同服务再刷账号标「服务已拿满 · 不计分」），其余得分点仍不设数量上限 |
 | 会话隧道 | WebShell 与隧道状态、连通性实测、**是否跨越靶标边界**的判定 |

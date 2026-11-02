@@ -532,6 +532,14 @@ const PROFILE_EXCLUDES = {
     'redteam_asset_assess', 'redteam_score_point_save', 'redteam_report', 'redteam_report_targets',
     'redteam_role_prompt_reset', 'redteam_shot_delete',
   ]),
+  'internal-recon': new Set([
+    'redteam_vuln_add', 'redteam_vuln_update', 'redteam_credential_add', 'redteam_access_add',
+    'redteam_webshell_add', 'redteam_webshell_update', 'redteam_tunnel_add', 'redteam_tunnel_update',
+    'redteam_score_hit', 'redteam_score_point_save', 'redteam_score_report', 'redteam_report',
+    'redteam_report_targets', 'redteam_role_prompt_reset', 'redteam_poc_add', 'redteam_poc_update',
+    'redteam_poc_use', 'redteam_attack_file_add', 'redteam_shot_delete', 'redteam_http_evidence_add',
+    'redteam_data_proof',
+  ]),
   internal: new Set([
     'redteam_score_point_save', 'redteam_report', 'redteam_report_targets', 'redteam_role_prompt_reset',
     'redteam_shot_delete',

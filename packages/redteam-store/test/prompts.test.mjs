@@ -6,7 +6,7 @@
  * 规则：**是内置默认就跟着新版走，用户自己改过的永不覆盖。**
  * 判断依据是内容指纹（manifest 记下"上次写入默认时的指纹" + 历史默认指纹表）。
  *
- * v0.9.0 起角色从 4 个变成 6 个（主会话 plan + 五个执行角色），并整体重写了正文；
+ * v0.9.0 起角色从 4 个变成 6 个，v0.15.5 起主会话 plan + 六个执行角色（共 7 个）；
  * 这里同步覆盖"新角色自动补种"这条新行为。
  */
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs'
@@ -28,18 +28,19 @@ try {
   const manifestPath = store.promptManifestPathOf(id)
   const roles = Object.keys(ROLE_TITLES)
 
-  /* 1) 新靶标：六个角色都是当前内置默认 */
+  /* 1) 新靶标：七个角色都是当前内置默认 */
   const fresh = store.listPrompts(id)
-  ok(fresh.length === 6 && fresh.every((p) => p.content.trim() === DEFAULT_PROMPTS[p.role].trim()),
-    '新靶标播种的六个角色提示词 = 当前内置默认')
+  ok(fresh.length === 7 && fresh.every((p) => p.content.trim() === DEFAULT_PROMPTS[p.role].trim()),
+    '新靶标播种的七个角色提示词 = 当前内置默认')
   ok(fresh.filter((p) => p.planner === true).length === 1 && fresh.find((p) => p.planner)?.role === 'plan',
-    '六个角色里只有一个主会话（plan），它不参与派活')
+    '七个角色里只有一个主会话（plan），它不参与派活')
   ok(fresh.every((p) => p.stale === false && p.injected === (p.role !== 'plan')),
     '新靶标 stale=false；只有执行角色标记 injected=true')
   ok(DEFAULT_PROMPTS.plan.includes('campaign-planning') && DEFAULT_PROMPTS.assess.includes('specialist-paths')
     && DEFAULT_PROMPTS.exploit.includes('specialist-paths') && DEFAULT_PROMPTS.internal.includes('specialist-paths'),
     '角色提示词已接入作战规划/专项路径技能')
-  ok(DEFAULT_PROMPTS.internal.includes('netspy-recon'), '内网提示词接入 netspy 可达网段发现')
+  ok(DEFAULT_PROMPTS['internal-recon'].includes('netspy-recon'), '内网信息收集提示词接入 netspy 可达网段发现')
+  ok(DEFAULT_PROMPTS.internal.includes('internal-recon'), '内网渗透提示词接入 internal-recon 地图交接')
   ok(roles.every((r) => typeof DEFAULT_PROMPTS[r] === 'string' && DEFAULT_PROMPTS[r].trim() !== ''),
     '每个角色都有内置默认提示词（不会出现空角色）')
 
@@ -99,7 +100,7 @@ try {
     '形似但指纹不符的内容不被动（避免误伤用户自写）')
   /* 6) 缺文件的角色不炸 */
   mkdirSync(legDir, { recursive: true })
-  ok(store.listPrompts(legId).length === 6, '角色文件缺失时读取不报错')
+  ok(store.listPrompts(legId).length === 7, '角色文件缺失时读取不报错')
 } finally {
   rmSync(root, { recursive: true, force: true })
 }

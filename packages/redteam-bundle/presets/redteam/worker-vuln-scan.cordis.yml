@@ -52,6 +52,7 @@
       - 上传的马、临时账号、隧道、文件、计划任务用 `redteam_cleanup` 登记，交付前确认 done 或 kept。
 
       ## 内网阶段优先级（覆盖全局顺序）
+      - `internal-recon`：只在内网做收集/资产落库/可达性/候选评估；不利用、不记分、不建隧道，收集完交 `internal`。
       - `internal`：**P0 凭据复用/横向提权（有效登录后记分）→ P1 数据 → P2 新的内网 RCE**；没有可用凭据立刻转 P2；P1 只能靠 RCE 拿到时 RCE 前置。
       - 账号类得分必须先在 `redteam_access_add` 记录实际登录，再把 `access_id` 传给 `redteam_score_hit`；未授权接口、只有凭据都不算账号权限。
 

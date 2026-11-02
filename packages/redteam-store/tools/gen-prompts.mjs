@@ -34,6 +34,7 @@ const ROLE_COMMONS = {
   assess: ['AUTH', 'SAFETY', 'DEVIATION', 'EXTERNAL', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF'],
   'vuln-scan': ['AUTH', 'SAFETY', 'DEVIATION', 'EXTERNAL', 'SCORE_RULES', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF'],
   exploit: ['AUTH', 'SAFETY', 'DEVIATION', 'EXTERNAL', 'SCORE_RULES', 'BOUNDARY', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF'],
+  'internal-recon': ['AUTH', 'SAFETY', 'DEVIATION', 'EXTERNAL', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF'],
   internal: ['AUTH', 'SAFETY', 'DEVIATION', 'EXTERNAL', 'SCORE_RULES', 'BOUNDARY', 'DB_LOOKUP', 'EVIDENCE', 'HANDOFF'],
 }
 
@@ -156,12 +157,12 @@ function main() {
 
   parts.push('/* ------------------------------------------------------------------ 角色提示词')
   parts.push('')
-  parts.push('   六个角色 = 主会话（指挥）+ 五个执行角色。每个角色正文末尾按固定顺序')
+  parts.push('   七个角色 = 主会话（指挥）+ 六个执行角色。每个角色正文末尾按固定顺序')
   parts.push('   拼接公共段落（授权 → 安全边界 → 记分 → 边界判定（仅 exploit/internal）→ 查库 → 落库溯源 → 交付口径）。')
   parts.push('   角色的 code 同时是提示词文件名（agents/<code>.md）与库里的 agent 列取值。 */')
   parts.push('')
   parts.push('export const DEFAULT_PROMPTS = {')
-  const order = ['plan', 'recon', 'assess', 'vuln-scan', 'exploit', 'internal']
+  const order = ['plan', 'recon', 'assess', 'vuln-scan', 'exploit', 'internal-recon', 'internal']
   order.forEach((role, i) => {
     const pieces = [toTemplateLiteral(roles[role])]
     /* 公共段落按固定顺序拼在正文末尾：插入的是常量引用（生成物里是 ${COMMON_X}），
@@ -173,7 +174,7 @@ function main() {
   })
   parts.push('}')
   parts.push('/* 角色清单（工具、面板、提示词刷新脚本共用）：顺序即推荐执行顺序。 */')
-  parts.push("export const ROLE_ORDER = ['recon', 'assess', 'vuln-scan', 'exploit', 'internal']")
+  parts.push("export const ROLE_ORDER = ['recon', 'assess', 'vuln-scan', 'exploit', 'internal-recon', 'internal']")
   parts.push("export const PLANNER_ROLE = 'plan'")
   parts.push('')
 

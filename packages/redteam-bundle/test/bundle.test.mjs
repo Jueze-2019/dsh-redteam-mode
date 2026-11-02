@@ -112,8 +112,8 @@ ok(/^\s*name: "红队执行角色"$/m.test(decl), '执行角色显示名（与 p
 ok(/^\s*order: 90$/m.test(decl), '执行角色排在模式列表末尾')
 ok(!decl.includes('{{REDTEAM_SKILLS_DIR}}'), '声明行里没有未替换的占位符（留着会让整个预设激活失败）')
 ok(!decl.includes('{{cwd}}'), '声明行里没有当前 DSH 不支持的 {{cwd}} 变量（会把红队模式直接卡成“处理失败”）')
-ok((decl.match(/sampleOverCapGlobResults: false/g) || []).length >= 7,
-  '主预设 + 执行角色 + 5 个角色变体都带 tool-fs-search 的必填 sampleOverCapGlobResults（缺了会 mount 失败）')
+ok((decl.match(/sampleOverCapGlobResults: false/g) || []).length >= 8,
+  '主预设 + 执行角色 + 6 个角色变体都带 tool-fs-search 的必填 sampleOverCapGlobResults（缺了会 mount 失败）')
 ok(/redteamMode/.test(decl) && /skills/.test(decl), '技能目录运行时解析（redteamMode 服务，包搬到哪都对）')
 ok(/dshHomePath\('skills'\)/.test(decl), '技能根顺序：$DSH_HOME/skills 排在包内目录前面')
 ok(/name: '@deepseek-ai\/dsh-workflow-ptc'/.test(decl) && !/name: '@deepseek-ai\/dsh-workflow-worker-thread'/.test(decl),
@@ -127,9 +127,9 @@ for (const wanted of ['persona', 'redteam-tools', 'skill-filesystem', 'delegatio
 ok(/^\s+- id: tool-subagent$/m.test(decl) && /maxDepth: 1/.test(decl),
   '组内的 tool-subagent 行与其 maxDepth=1 硬约束随声明行一起带过来')
 ok(/agentPreset: redteam-worker/.test(decl), 'tool-subagent 用 agentPreset 指向执行角色预设')
-ok(/allowedAgentPresets:/.test(decl) && ['recon','assess','vuln-scan','exploit','internal'].every((r) => decl.includes('redteam-worker-' + r)),
-  '主预设列出 5 个按角色裁剪的执行预设（recon/assess/vuln-scan/exploit/internal）')
-for (const r of ['recon','assess','vuln-scan','exploit','internal']) {
+ok(/allowedAgentPresets:/.test(decl) && ['recon','assess','vuln-scan','exploit','internal-recon','internal'].every((r) => decl.includes('redteam-worker-' + r)),
+  '主预设列出 6 个按角色裁剪的执行预设（recon/assess/vuln-scan/exploit/internal-recon/internal）')
+for (const r of ['recon','assess','vuln-scan','exploit','internal-recon','internal']) {
   ok(decl.includes('- id: preset-redteam-worker-' + r) && new RegExp('profile: ' + r).test(decl),
     '角色预设声明存在并带 profile=' + r)
   ok(existsSync(join(root, 'presets/redteam/worker-' + r + '.cordis.yml')),
@@ -163,7 +163,7 @@ ok(/redteam_agent_slot/.test(preset), '人设写明并发闸门 redteam_agent_sl
 ok(/数量由用户配置|当前\*\*名额/.test(preset) && /默认 3/.test(preset), '人设写明并发数量可配置、默认 3')
 ok(/会话隔离/.test(preset), '人设写明会话隔离（多会话不串写靶标）')
 ok(/不动手/.test(preset) && /不扫描、不爆破、不利用/.test(preset), '人设写明主会话只计划/汇总、不参与动手')
-ok(/assess/.test(preset) && /资产梳理/.test(preset), '人设写明六个角色（含资产梳理）')
+ok(/assess/.test(preset) && /资产梳理/.test(preset), '人设写明七个角色（含资产梳理与内网信息收集）')
 ok(/gogo-intranet/.test(preset) && /fscan-intranet/.test(preset),
   '人设写明内网信息收集要用 gogo/fscan 技能（不要把 nmap 那套带进内网）')
 ok(!preset.includes('/home/'), '预设里没有本机绝对路径')

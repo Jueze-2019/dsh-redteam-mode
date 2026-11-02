@@ -111,7 +111,7 @@ write('lib/tools.js', tools)
        a) `presets/redteam/agent.cordis.yml` —— 老式「目录预设」，只有 DSH < 0.1.7
           的 `$DSH_HOME/.agent-presets/` 扫描机制会读它，留着给老版本用户。
        b) `cordis.patch.yml` 生成区里的 `preset-redteam` / `preset-redteam-worker`
-          七条声明行（主预设 + 执行角色 + 5 个角色变体）—— DSH 0.1.7-alpha.1 起 agent preset **只认
+          八条声明行（主预设 + 执行角色 + 6 个角色变体）—— DSH 0.1.7-alpha.1 起 agent preset **只认
           `@deepseek-ai/dsh-agent-preset` 声明行**（注册表既不扫目录也不接受预设路径）。
           DSH 0.2.1 起 `tool-subagent` 移除了 persona/toolFilter：执行角色的人设与
           工具集必须由 `preset-redteam-worker` 提供，再由主预设的
@@ -150,7 +150,7 @@ function renderPreset(rel) {
 const preset = renderPreset('../preset/agent.cordis.yml')
 const workerPreset = renderPreset('../preset/worker.cordis.yml')
 
-/* 5 个按角色裁剪工具的执行预设：同一份 worker 模板，只改 persona 标题与
+/* 6 个按角色裁剪工具的执行预设：同一份 worker 模板，只改 persona 标题与
    redteam-tools 的 config.profile。工具裁剪在插件里按排除集实现；profile 没被
    宿主传进来时回退 all，所以即使这里配置失效也只是“多看见工具”，不会少工具。 */
 const ROLE_PROFILES = [
@@ -158,6 +158,7 @@ const ROLE_PROFILES = [
   { profile: 'assess', title: '资产梳理' },
   { profile: 'vuln-scan', title: '漏洞发现' },
   { profile: 'exploit', title: '漏洞利用' },
+  { profile: 'internal-recon', title: '内网信息收集' },
   { profile: 'internal', title: '内网渗透' },
 ]
 const workerMeta = read('../preset/worker.preset.yml')
@@ -360,7 +361,7 @@ if (CHECK) {
     for (const d of drift) console.error('   ' + d)
     process.exit(1)
   }
-  console.log(`✓ 生成物与源码同步（lib/ ${generated.length} 个文件、预设 7 份、cordis.patch.yml 七条声明行、技能 ${skills} 个）`)
+  console.log(`✓ 生成物与源码同步（lib/ ${generated.length} 个文件、预设 8 份、cordis.patch.yml 八条声明行、技能 ${skills} 个）`)
   process.exit(0)
 }
-console.log(`✓ dsh-redteam-mode 已生成：lib/ ${generated.length} 个文件（含 core 与报告拆出的模块）、预设 7 份（指挥者 + 执行角色 + 5 个角色变体）+ cordis.patch.yml 七条声明行、技能 ${skills} 个、安装脚本 ${setupCopied ? '1 个' : '缺失'}`)
+console.log(`✓ dsh-redteam-mode 已生成：lib/ ${generated.length} 个文件（含 core 与报告拆出的模块）、预设 8 份（指挥者 + 执行角色 + 6 个角色变体）+ cordis.patch.yml 八条声明行、技能 ${skills} 个、安装脚本 ${setupCopied ? '1 个' : '缺失'}`)
