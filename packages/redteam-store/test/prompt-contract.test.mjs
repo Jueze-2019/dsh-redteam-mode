@@ -140,6 +140,7 @@ try {
   ok(/P0 凭据复用/.test(DEFAULT_PROMPTS.internal) && /P1/.test(DEFAULT_PROMPTS.internal) && /P2/.test(DEFAULT_PROMPTS.internal) && /SSH/.test(DEFAULT_PROMPTS.internal), '内网角色写入凭据优先 / 数据 / 新 RCE 与 SSH key')
   ok(/WebShell/.test(DEFAULT_PROMPTS.exploit) && /SSH key/.test(DEFAULT_PROMPTS.exploit), '利用角色写入 WebShell 优先与 SSH key 回退')
   ok(/access_id/.test(DEFAULT_PROMPTS.exploit) || /access_id/.test(DEFAULT_PROMPTS.internal), '执行角色写入账号分 access_id 门槛')
+  ok(['recon', 'assess', 'vuln-scan', 'exploit', 'internal'].every((r) => /测试数据/.test(DEFAULT_PROMPTS[r])), '五个执行角色都写入测试数据纪律')
   ok(['recon', 'assess', 'vuln-scan', 'exploit', 'internal'].every((r) => DEFAULT_PROMPTS[r].includes('curl | bash')),
     '外部安装脚本必须可审阅，禁止 curl|bash 一类盲装')
 

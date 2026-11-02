@@ -31,7 +31,7 @@ enabled: true
 | K8S/OpenShift/云控制台/AK-SK | `cloud-platform` | API Server、控制台、metadata | 管理员操作证明；节点 <100 按 web-app |
 | 摄像头/门禁/物联网管控平台 | `iot-platform` | 平台后台、默认口令、API | 平台控制、连接点数；打入核心网 +5000 |
 | WAF/IPS/IDS/审计设备 | `secdev` | 管理口、默认口令、CVE | 管理员权限（非集权类） |
-| FTP/NAS/OSS/企业网盘 | `file-storage` | 匿名/弱口令、目录列举 | 管理员/普通权限、文件清单 |
+| FTP/NAS/OSS/企业网盘 | `file-storage` | 账号/AK-SK、默认口令（匿名不算权限） | 登录/调用成功、账号档位 |
 | 模型智能体/skill/Agent 平台 | `ai-agent` | 管理端、提示词注入、工具滥用 | 可操作 agent 的证据、控制深度 |
 | Jupyter/Kubeflow/MLflow/Ray/知识库 | `model-compute` | 未授权、弱口令、API | 系统管理权限；知识库/超大数据 ×2 |
 | 模型权重/训练数据/推理服务 | `model-data` | 管理端、对象存储、API | 管理员权限；无知识库翻倍 |
@@ -84,8 +84,8 @@ enabled: true
 ## 7. 文件存储（file-storage）
 
 - 识别：FTP、SMB/NAS、对象存储（OSS/S3/MinIO）、企业网盘。
-- 路径：匿名/弱口令、目录列举、AK/SK、备份文件；拿到后列文件清单与数据量。
-- 证据：登录/列举成功、文件清单、数据量；管理员 50 / 普通或空系统 10；数据单独计分（G2）。
+- 路径：账号/AK-SK、默认口令、后台登录；匿名列举/读写只记漏洞或数据，不算存储系统权限。
+- 证据：登录/调用成功、账号档位、文件清单；管理员 50 / 普通 10；数据单独计分（G2）。
 
 ## 8. 模型 / 算力（ai-agent / model-compute / model-data / computepower-*）
 

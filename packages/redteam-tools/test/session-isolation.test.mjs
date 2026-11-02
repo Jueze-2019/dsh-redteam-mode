@@ -169,7 +169,7 @@ store.addChainStep(opened1.engagement.id, {
   tool: 'suo5-linux-amd64 -t http://10.9.9.9:8080/shell.jsp -l 1080', result: 'socks5 127.0.0.1:1080 通内网', agent: 'exploit',
   asset_id: asset.id,
 })
-store.addTunnel(opened1.engagement.id, {
+const tunnel = store.addTunnel(opened1.engagement.id, {
   asset_id: asset.id, kind: 'suo5', listen: '127.0.0.1:1080', entry: 'http://10.9.9.9:8080/shell.jsp',
   reach: '10.9.9.0/24', entry_kind: 'target-http', command: 'suo5-linux-amd64 -t ... -l 1080', agent: 'exploit',
 })
@@ -191,9 +191,14 @@ const supplyNoScope = await call('redteam_score_hit', {
   boundary: { entry_zone: '供应商', target_zone: '主防单位', isolation: 'supply', target_asset: '10.9.9.9:22' },
 }, main1)
 ok(supplyNoScope.ok === false && /scope_confirmed/.test(supplyNoScope.error || ''), '边界硬门槛：boundary-supply 未确认授权范围时拒绝')
+const ssrfBoundary = await call('redteam_score_hit', {
+  code: 'boundary-logical', asset_id: asset.id, target: '10.9.9.9', evidence: 'SSRF 直接访问 10.9.9.9:22',
+  boundary: { entry_zone: '互联网', target_zone: '办公网', isolation: 'firewall', target_asset: '10.9.9.9:22（SSRF 回显）' },
+}, main1)
+ok(ssrfBoundary.ok === false && /tunnel_id/.test(ssrfBoundary.error || ''), '边界硬门槛：SSRF/一次性请求没有 tunnel_id → 拒绝')
 await call('redteam_score_hit', {
   code: 'boundary-logical', asset_id: asset.id, target: '10.9.9.9', evidence: '10.9.9.9｜suo5 隧道可达 10.9.9.0/24',
-  boundary: { entry_zone: '互联网', target_zone: '办公网', isolation: 'firewall', target_asset: '10.9.9.9:22（SSH banner 实测）' },
+  boundary: { entry_zone: '互联网', target_zone: '办公网', isolation: 'firewall', target_asset: '10.9.9.9:22（SSH banner 实测）', tunnel_id: tunnel.id },
 }, main1)
 const report = store.scoreReport(opened1.engagement.id)
 ok(report.summary.withSteps === 2 && report.summary.withCommands === 2,

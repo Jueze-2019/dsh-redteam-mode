@@ -382,16 +382,19 @@ function socks5Probe(listen, target, timeoutMs = 6000) {
 }
 
 /**
- * boundary-* 的工具级硬门槛：必须有结构化 boundary 对象，且入口区 ≠ 落点区；
- * boundary-supply 还要求 scope_confirmed=true。store 层只警告（兼容历史/迁移脚本），
- * 但所有模型调用都走工具层，因此这里拒绝后智能体无法把同区隧道记成边界突破。
+ * boundary-* 的工具级硬门槛：
+ *   · 必须有结构化 boundary 对象，入口区 ≠ 落点区；
+ *   · boundary-logical / boundary-strong / boundary-supply 必须绑定一条真实隧道
+ *     （不是 SSRF 一次性请求），隧道有 reach 且不是 self-only；
+ *   · boundary-supply 还要求 scope_confirmed=true。
+ * store 层只警告（兼容历史/迁移脚本），模型调用走这里拒绝。
  */
-function assertBoundaryGate(args, code) {
+function assertBoundaryGate(args, code, store, id) {
   const c = String(code || '')
   if (!c.startsWith('boundary-')) return
   const b = args && args.boundary
   if (b === null || b === undefined || typeof b !== 'object') {
-    throw new Error('边界突破必须提供 boundary 对象（entry_zone / target_zone / isolation / target_asset）；只有边界四问齐全才能记 boundary-*，同区隧道只能记 internal。')
+    throw new Error('边界突破必须提供 boundary 对象（entry_zone / target_zone / isolation / target_asset；逻辑隔离还要 tunnel_id）；只有边界四问齐全才能记 boundary-*，同区隧道只能记 internal。')
   }
   const entry = String(b.entry_zone || '').trim()
   const target = String(b.target_zone || '').trim()
@@ -406,10 +409,22 @@ function assertBoundaryGate(args, code) {
   if (c === 'boundary-supply' && b.scope_confirmed !== true) {
     throw new Error('boundary-supply 需要 scope_confirmed=true：先让用户确认供应商/云服务在授权范围内，再记分。')
   }
+  /* 逻辑隔离 / 强隔离 / 供应链通道都必须是"拿下互联网服务器 → 建隧道 → 经隧道访问内网"；
+     SSRF、一次性代理请求、只证明能路由到，不算突破隔离。物理隔离可走物理通道，不强制 tunnel_id。 */
+  if (c !== 'boundary-physical') {
+    const tunnelId = Number(b.tunnel_id)
+    if (!Number.isFinite(tunnelId) || tunnelId <= 0) {
+      throw new Error('逻辑隔离必须提供 tunnel_id：SSRF/一次性请求不算突破隔离；先拿下互联网服务器、建隧道并实测经隧道访问内网资产，再把隧道 id 写进 boundary.tunnel_id。')
+    }
+    const tunnel = (store.listTunnels(id, { limit: 1000 }) || []).find((x) => Number(x.id) === tunnelId)
+    if (tunnel === undefined) throw new Error('boundary.tunnel_id 不存在：先 redteam_tunnel_add 并实测隧道，再记 boundary-*。')
+    if (!String(tunnel.reach || '').trim()) throw new Error('boundary.tunnel_id 没有 reach：隧道还没证明能访问内网，不能记边界突破。')
+    if (/self-only/i.test(String(tunnel.entry_kind || ''))) throw new Error('boundary.tunnel_id 是 self-only（自己在 VPS 上开的代理），不算目标侧隧道。')
+  }
 }
 
 /** 账号类得分必须绑定真实登录会话；未授权接口/只有凭据不能记账号分。 */
-const ACCOUNT_SCORE_CODES = new Set(['web-app', 'central-system'])
+const ACCOUNT_SCORE_CODES = new Set(['web-app', 'central-system', 'file-storage'])
 
 function hostOfTarget(value) {
   return String(value || '')
@@ -1797,6 +1812,7 @@ export function apply(ctx, config = {}) {
           target_zone: { type: 'string', required: true, description: '落点区' },
           isolation: { type: 'string', enum: ['firewall', 'airgap', 'physical', 'multi-homed', 'supply', 'other'], required: true, description: '跨过的隔离' },
           target_asset: { type: 'string', required: true, description: '实际访问到的靶标内网资产（IP:端口 + 回显）' },
+          tunnel_id: { type: 'number', description: '【逻辑/强隔离/供应链必填】经它访问内网的隧道 id；SSRF/一次性请求不算。' },
           scope_confirmed: { type: 'boolean', description: 'boundary-supply 必填 true：用户已确认授权范围' },
           note: { type: 'string' },
         },
@@ -1808,7 +1824,7 @@ export function apply(ctx, config = {}) {
     output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
     async execute(args, exec) {
       const id = resolveEngagement(store, exec, args.engagement)
-      assertBoundaryGate(args, args.code)
+      assertBoundaryGate(args, args.code, store, id)
       const pointRows = store.listScorePoints(id).items || []
       const point = pointRows.find((p) => (args.point_id !== undefined && args.point_id !== null && Number(p.id) === Number(args.point_id))
         || (args.point_name && String(p.name) === String(args.point_name))

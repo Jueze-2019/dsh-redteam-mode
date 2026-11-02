@@ -32,6 +32,7 @@ const accessT80 = (await call('redteam_access_add', { host: 't:80', username: 'a
 const accessT9090 = (await call('redteam_access_add', { host: 't:9090', username: 'u9', method: 'web' })).id
 const accessReal = (await call('redteam_access_add', { host: 'real.example:8443', username: 'svc-demo', method: 'web' })).id
 const accessApi = (await call('redteam_access_add', { host: 'api.example:8443', username: 'api-admin', method: 'web' })).id
+const accessStorage = (await call('redteam_access_add', { host: 'minio.example:9000', username: 'minioadmin', method: 's3' })).id
 
 /* 自己注册的账号：记录但明确不计分 */
 const self = await call('redteam_score_hit', { code: 'web-app', points: 50, target: 'http://t/register', evidence: '自建 ztest/1', self_created: true })
@@ -97,6 +98,10 @@ const stepReal = await call('redteam_score_hit', { code: 'web-app', target: 'htt
 ok(stepReal.counted === true && stepReal.step_id, 'score_hit：真实账号照常计分，且 command 自动生成动作记录')
 const gateRejected = await call('redteam_score_hit', { code: 'web-app', target: 'http://unauth.example', evidence: '未授权接口直接读取用户列表' })
 ok(gateRejected.ok === false && /access_id|账号类|登录/.test(String(gateRejected.error || '')), 'score_hit：未授权接口没有 access_id → 拒绝记账号分')
+const storageGate = await call('redteam_score_hit', { code: 'file-storage', target: 'http://minio.example:9000', evidence: '匿名列举 bucket 成功' })
+ok(storageGate.ok === false && /access_id|账号类|登录/.test(String(storageGate.error || '')), 'score_hit：匿名 MinIO 读写没有 access_id → 拒绝记存储权限')
+const storageHit = await call('redteam_score_hit', { code: 'file-storage', points: 10, target: 'http://minio.example:9000', access_id: accessStorage, evidence: 'minioadmin 账号登录成功（普通权限）' })
+ok(storageHit.counted === true, 'score_hit：有账号/MinIO 凭据的存储权限正常计分')
 
 const hitWithVuln = await call('redteam_score_hit', { code: 'web-app', target: 'http://api.example:8443/api/users', access_id: accessApi, evidence: '管理员 api-admin 登录后读取 12000 条用户数据', vuln_id: vulnWithReq.id })
 ok(hitWithVuln.counted === true, 'score_hit：关联带原始请求的漏洞后正常计分')
