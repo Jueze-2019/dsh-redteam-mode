@@ -156,8 +156,8 @@
                 ## 六个执行角色（加上你自己，共七个；用 redteam_role_prompt 取完整职责，写进子任务描述）
                 派活时在 `subagent` 里传 `agent_preset` 选择按角色裁剪工具的预设：`recon`→`redteam-worker-recon`、`assess`→`redteam-worker-assess`、`vuln-scan`→`redteam-worker-vuln-scan`、`exploit`→`redteam-worker-exploit`、`internal`→`redteam-worker-internal`；不传则用默认 `redteam-worker`（全部工具）。
                 - `recon` **信息收集**：收全资产，**先标 T0/T1**；T2 旁站/同 C 段只作线索。优先标出 `P0-RCE候选`（边界/边缘、VPN/防火墙/堡垒机/运维平台、双网卡、对外中间件与上传点）、`可进内网`、`P1-数据接口`（未授权/账号接口、暴露数据库/备份）；APP/小程序/代码泄露用 `mobile-code-recon`；内网必须用 `gogo-intranet` 先铺面、`fscan-intranet` 只做发现，并在子任务里指定真实隧道。
-                - `assess` **资产梳理**：逐条评估 priority/potential/reason 并**全部落库**，排序按 **P0 能进内网的 RCE → P1 ≥1 万条三要素数据 → P2 其它**，不验证漏洞；AD/云/K8s/网络设备/供应链要单独标注。
-                - `vuln-scan` **漏洞发现**：**先查库** → 优先 RCE/上传/反序列化与能进内网的洞 → 再未授权/已授权数据接口/数据库（≥1 万条三要素）→ 其它；盲打用 `oob-verify`，AI/Agent 用 `ai-agent-attack`；每条落库 + 原始请求。
+                - `assess` **资产梳理**：逐条评估 priority/potential/reason 并**全部落库**，排序按 **P0 能进内网的 RCE → P1 ≥1 万条三要素数据 → P2 其它**，不验证漏洞；AD/云/K8s/网络设备/供应链要单独标注。评完后按 `redteam_asset_next` **逐个资产**派 `vuln-scan`，不要把一批资产塞给一个子智能体。
+                - `vuln-scan` **漏洞发现**：一次只负责**一个资产**；先 `redteam_asset op=coverage` + `asset-deep-scan` 做 surface/web/auth/cve/app 五项，批量 nuclei/ffuf 只当候选，不能代替深挖；优先 RCE/上传/反序列化与能进内网的洞，再未授权/数据接口（≥1 万条三要素）；盲打用 `oob-verify`，AI 用 `ai-agent-attack`；每条落库 + 原始请求，五项完成才 `redteam_asset op=close`。
                 - `exploit` **漏洞利用**：P0 先拿服务器权限（**冰蝎/哥斯拉马 + 实测用户能连上**），**立刻建隧道并实测能访问内网**（给用户可粘贴的 `socks5://127.0.0.1:<端口>`）；P1 按 `api-data-exfil` 用现成账号/未授权接口/数据库证明 ≥1 万条三要素；供应链看 `supply-chain`；最后做其它得分项。
                 - `internal-recon` **内网信息收集**：叶子节点，只在内网收集/落库/评估候选，不利用、不记分、不建隧道；先 `redteam_session_check`，再用 `netspy-recon` / `gogo-intranet` / `fscan-intranet` 摸段、双网卡、资产，`redteam_batch` 落库、`asset_assess` 标 T0/T1/T2 与 P0/P1/P2 候选；输出网段/资产/可达性/卡点给 `internal`。
                 - `internal` **内网渗透**：叶子节点，**先读 `internal-recon` 地图，不重复全量扫描**；**P0 凭据复用与横向提权**（有效登录后记分，账号类必须带 `access_id`），**P1 证明 ≥1 万条三要素数据**（`data_proof`），**P2 才打新的、能继续跳的 RCE**（AD/云/K8s/网络设备分别用 `ad-attack`/`cloud-k8s`/`network-device`）；无凭据时立即转 P2；Linux 拿权限后按 `lateral-movement` 写每靶标独立 SSH key；长期控制用 `c2-infra`；每发现新网段交给 `internal-recon` 再收集，不要自己重扫。
@@ -557,7 +557,7 @@
                 - 代理/出口/关联：`cn-proxy-pool` / `asset-correlation`
                 - 环境/落地：`redteam-setup` / `vps-reverse-shell`
                 - 内网深化：`ad-attack` / `cloud-k8s` / `network-device` / `supply-chain` / `host-post-exploit`
-                - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`
+                - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`；单资产深挖用 `asset-deep-scan`
                 - 侦察扩展：`mobile-code-recon` / `icp-query`（备案归属）
                 - 隧道/C2：`c2-infra`
                 - 收口/OPSEC：`opsec-hygiene`
@@ -745,7 +745,7 @@
                 - 代理/出口/关联：`cn-proxy-pool` / `asset-correlation`
                 - 环境/落地：`redteam-setup` / `vps-reverse-shell`
                 - 内网深化：`ad-attack` / `cloud-k8s` / `network-device` / `supply-chain` / `host-post-exploit`
-                - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`
+                - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`；单资产深挖用 `asset-deep-scan`
                 - 侦察扩展：`mobile-code-recon` / `icp-query`（备案归属）
                 - 隧道/C2：`c2-infra`
                 - 收口/OPSEC：`opsec-hygiene`
@@ -935,7 +935,7 @@
                 - 代理/出口/关联：`cn-proxy-pool` / `asset-correlation`
                 - 环境/落地：`redteam-setup` / `vps-reverse-shell`
                 - 内网深化：`ad-attack` / `cloud-k8s` / `network-device` / `supply-chain` / `host-post-exploit`
-                - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`
+                - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`；单资产深挖用 `asset-deep-scan`
                 - 侦察扩展：`mobile-code-recon` / `icp-query`（备案归属）
                 - 隧道/C2：`c2-infra`
                 - 收口/OPSEC：`opsec-hygiene`
@@ -1125,7 +1125,7 @@
                 - 代理/出口/关联：`cn-proxy-pool` / `asset-correlation`
                 - 环境/落地：`redteam-setup` / `vps-reverse-shell`
                 - 内网深化：`ad-attack` / `cloud-k8s` / `network-device` / `supply-chain` / `host-post-exploit`
-                - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`
+                - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`；单资产深挖用 `asset-deep-scan`
                 - 侦察扩展：`mobile-code-recon` / `icp-query`（备案归属）
                 - 隧道/C2：`c2-infra`
                 - 收口/OPSEC：`opsec-hygiene`
@@ -1315,7 +1315,7 @@
                 - 代理/出口/关联：`cn-proxy-pool` / `asset-correlation`
                 - 环境/落地：`redteam-setup` / `vps-reverse-shell`
                 - 内网深化：`ad-attack` / `cloud-k8s` / `network-device` / `supply-chain` / `host-post-exploit`
-                - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`
+                - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`；单资产深挖用 `asset-deep-scan`
                 - 侦察扩展：`mobile-code-recon` / `icp-query`（备案归属）
                 - 隧道/C2：`c2-infra`
                 - 收口/OPSEC：`opsec-hygiene`
@@ -1505,7 +1505,7 @@
                 - 代理/出口/关联：`cn-proxy-pool` / `asset-correlation`
                 - 环境/落地：`redteam-setup` / `vps-reverse-shell`
                 - 内网深化：`ad-attack` / `cloud-k8s` / `network-device` / `supply-chain` / `host-post-exploit`
-                - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`
+                - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`；单资产深挖用 `asset-deep-scan`
                 - 侦察扩展：`mobile-code-recon` / `icp-query`（备案归属）
                 - 隧道/C2：`c2-infra`
                 - 收口/OPSEC：`opsec-hygiene`
@@ -1695,7 +1695,7 @@
                 - 代理/出口/关联：`cn-proxy-pool` / `asset-correlation`
                 - 环境/落地：`redteam-setup` / `vps-reverse-shell`
                 - 内网深化：`ad-attack` / `cloud-k8s` / `network-device` / `supply-chain` / `host-post-exploit`
-                - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`
+                - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`；单资产深挖用 `asset-deep-scan`
                 - 侦察扩展：`mobile-code-recon` / `icp-query`（备案归属）
                 - 隧道/C2：`c2-infra`
                 - 收口/OPSEC：`opsec-hygiene`

@@ -516,6 +516,7 @@ const PROFILE_EXCLUDES = {
     'redteam_poc_add', 'redteam_poc_update', 'redteam_poc_use', 'redteam_attack_file_add',
     'redteam_shot_delete', 'redteam_http_evidence_add',
     'redteam_host', 'redteam_next_action',
+    'redteam_asset', 'redteam_asset_next',
   ]),
   assess: new Set([
     'redteam_vuln_add', 'redteam_vuln_update', 'redteam_credential_add', 'redteam_access_add',
@@ -524,6 +525,7 @@ const PROFILE_EXCLUDES = {
     'redteam_report_targets', 'redteam_role_prompt_reset', 'redteam_poc_add', 'redteam_poc_update',
     'redteam_poc_use', 'redteam_attack_file_add', 'redteam_shot_delete',
     'redteam_host', 'redteam_next_action',
+    'redteam_asset', 'redteam_asset_next',
   ]),
   'vuln-scan': new Set([
     'redteam_asset_assess', 'redteam_access_add', 'redteam_webshell_add', 'redteam_webshell_update',
@@ -543,10 +545,12 @@ const PROFILE_EXCLUDES = {
     'redteam_report_targets', 'redteam_role_prompt_reset', 'redteam_poc_add', 'redteam_poc_update',
     'redteam_poc_use', 'redteam_attack_file_add', 'redteam_shot_delete', 'redteam_http_evidence_add',
     'redteam_data_proof',
+    'redteam_asset', 'redteam_asset_next',
   ]),
   internal: new Set([
     'redteam_score_point_save', 'redteam_report', 'redteam_report_targets', 'redteam_role_prompt_reset',
     'redteam_shot_delete',
+    'redteam_asset', 'redteam_asset_next',
   ]),
 }
 
@@ -1791,6 +1795,52 @@ export function apply(ctx, config = {}) {
           evidence: p.hits.map((h) => (h.target ? h.target + '：' : '') + h.evidence).slice(0, 3),
         })),
       }, null, 2)
+    },
+  })))
+
+  registerTool(withStructuredErrors(defineTool({
+    name: 'redteam_asset',
+    description: '外部资产单资产深挖覆盖度：op=coverage 查看 surface/web/auth/cve/app 缺什么；op=update 标记进度；op=close 收口（未完成会拒绝）。用于按单个资产派活，避免批量扫描漏细节。',
+    parameters: {
+      engagement: { type: 'string' },
+      op: { type: 'string', enum: ['coverage', 'update', 'close'], required: true },
+      asset_id: { type: 'number', required: true },
+      surface: { type: 'string', enum: ['untested', 'partial', 'done', 'blocked', 'not_applicable'] },
+      web: { type: 'string', enum: ['untested', 'partial', 'done', 'blocked', 'not_applicable'] },
+      auth: { type: 'string', enum: ['untested', 'partial', 'done', 'blocked', 'not_applicable'] },
+      cve: { type: 'string', enum: ['untested', 'partial', 'done', 'blocked', 'not_applicable'] },
+      app: { type: 'string', enum: ['untested', 'partial', 'done', 'blocked', 'not_applicable'] },
+      note: { type: 'string' },
+      status: { type: 'string', enum: ['closed', 'blocked'], description: 'op=close' },
+      reason: { type: 'string', description: 'op=close blocked 必填' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      if (args.op === 'coverage') return JSON.stringify({ ok: true, engagement: id, coverage: store.getAssetCoverage(id, args.asset_id) }, null, 2)
+      if (args.op === 'update') {
+        const patch = {}
+        for (const k of ['surface', 'web', 'auth', 'cve', 'app', 'note', 'blocked_reason']) if (args[k] !== undefined) patch[k] = args[k]
+        return JSON.stringify({ ok: true, engagement: id, coverage: store.updateAssetCoverage(id, args.asset_id, patch, agentOf(args)) }, null, 2)
+      }
+      const coverage = store.closeAssetCoverage(id, args.asset_id, { status: args.status, reason: args.reason, actor: agentOf(args) })
+      return JSON.stringify({ ok: true, engagement: id, coverage }, null, 2)
+    },
+  })))
+
+  registerTool(withStructuredErrors(defineTool({
+    name: 'redteam_asset_next',
+    description: '返回还没深挖完的外部资产及缺失项（surface/web/auth/cve/app），用于主会话按单资产派 vuln-scan；不是扫描器。',
+    parameters: {
+      engagement: { type: 'string' },
+      asset_id: { type: 'number', description: '只看一个资产（可选）' },
+      limit: { type: 'number', description: '默认 8，最多 30' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      const out = store.assetNextActions(id, { assetId: args.asset_id, limit: args.limit })
+      return JSON.stringify({ ok: true, engagement: id, ...out }, null, 2)
     },
   })))
 

@@ -39,7 +39,7 @@ const pkgSkillFiles = readdirSync(join(root, 'skills')).filter((f) => f.endsWith
 const npmSkillFiles = (manifest.files ?? []).filter((f) => f.startsWith('skills/')).map((f) => f.slice('skills/'.length)).sort()
 const riskySkillFiles = ['ad-attack.md', 'ai-agent-attack.md', 'api-data-exfil.md', 'c2-infra.md', 'cloud-k8s.md', 'mobile-code-recon.md', 'network-device.md', 'oob-verify.md', 'opsec-hygiene.md', 'supply-chain.md', 'chisel-tunnel.md', 'credential-attack.md', 'frp-tunnel.md', 'lateral-movement.md', 'shell-handler.md', 'suo5-tunnel.md', 'unauth-exploit.md', 'vps-reverse-shell.md', 'webshell-toolkit.md']
 ok((manifest.files ?? []).includes('cordis.patch.yml') && (manifest.files ?? []).includes('presets'), 'files 覆盖补丁/预设')
-ok(!(manifest.files ?? []).includes('skills') && npmSkillFiles.length === 40, 'npm 包显式列出全部 40 个技能（不用 skills 通配，排除本地自有技能）')
+ok(!(manifest.files ?? []).includes('skills') && npmSkillFiles.length === 41, 'npm 包显式列出全部 41 个技能（不用 skills 通配，排除本地自有技能）')
 ok(npmSkillFiles.every((f) => pkgSkillFiles.includes(f)), 'npm 技能清单里的文件都在包内')
 ok(!npmSkillFiles.includes('egress-ip-rotate.md'), '本地自有技能 egress-ip-rotate 不随包')
 ok(riskySkillFiles.every((f) => npmSkillFiles.includes(f)), '专项/操作类技能全部随 npm 包分发')

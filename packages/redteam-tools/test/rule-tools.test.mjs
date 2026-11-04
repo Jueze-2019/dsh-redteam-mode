@@ -119,6 +119,21 @@ const batchAssets = await call('redteam_batch', { kind: 'assets', items: [
 ] })
 ok(batchAssets.ok && batchAssets.counts.assets === 2, 'batch assets：一次导入 2 个资产')
 const firstAsset = store.listAssets(engId, { ip: '10.9.1.1', limit: 1 }).items[0]
+const publicAssetRes = await call('redteam_asset_add', { ip: '203.0.113.10', provenance: 'passive', tool: 'fofa', ports: [{ port: 80, service: 'http', url: 'http://203.0.113.10', title: '外部 OWA' }] })
+const publicAsset = store.listAssets(engId, { ip: '203.0.113.10', limit: 1 }).items[0]
+const assetCov = await call('redteam_asset', { op: 'coverage', asset_id: publicAsset.id })
+ok(assetCov.ok && assetCov.coverage.surface === 'untested' && assetCov.coverage.asset.ports.length === 1, 'asset coverage：单资产初始五项待检')
+const assetNext = await call('redteam_asset_next', { asset_id: publicAsset.id })
+ok(assetNext.ok && assetNext.actions.length === 1 && assetNext.actions[0].missing.includes('surface') && assetNext.actions[0].missing.includes('auth'), 'asset_next：返回该资产的缺失深挖项')
+const assetCloseEarly = await call('redteam_asset', { op: 'close', asset_id: publicAsset.id })
+ok(assetCloseEarly.ok === false && /还没深挖完/.test(assetCloseEarly.error || ''), 'asset close：未完成 surface/web/auth/cve/app 时拒绝')
+const assetPartial = await call('redteam_asset', { op: 'update', asset_id: publicAsset.id, surface: 'done', web: 'partial', auth: 'done', cve: 'done', app: 'done' })
+ok(assetPartial.ok && assetPartial.coverage.web === 'partial', 'asset update：逐项标记深挖进度')
+const assetClosed = await call('redteam_asset', { op: 'close', asset_id: publicAsset.id })
+ok(assetClosed.ok === false && /web/.test(assetClosed.error || ''), 'asset close：web 仍 partial 时继续拒绝')
+await call('redteam_asset', { op: 'update', asset_id: publicAsset.id, web: 'done' })
+const assetClosed2 = await call('redteam_asset', { op: 'close', asset_id: publicAsset.id })
+ok(assetClosed2.ok && assetClosed2.coverage.status === 'closed', 'asset close：五项补齐后允许收口')
 const batchAssess = await call('redteam_batch', { kind: 'assess', items: [{ asset_id: firstAsset.id, priority: 'high', potential: 'server-host', reason: 'P0 RCE 候选' }] })
 ok(batchAssess.ok && batchAssess.assessed === 1 && batchAssess.results[0].priority === 'high', 'batch assess：一次评估 1 条')
 const batchVulns = await call('redteam_batch', { kind: 'vulns', items: [{

@@ -191,13 +191,13 @@ const reconTools = collect('recon')
 const assessTools = collect('assess')
 const vulnTools = collect('vuln-scan')
 const internalReconTools = collect('internal-recon')
-ok(allTools.size === 61, 'profile=all 不裁剪（61 个工具）')
+ok(allTools.size === 63, 'profile=all 不裁剪（63 个工具）')
 ok(reconTools.size < allTools.size && !reconTools.has('redteam_score_hit') && !reconTools.has('redteam_tunnel_add') && reconTools.has('redteam_asset_add'),
   'recon profile 裁掉记分/隧道等越界写操作，保留资产入库（' + reconTools.size + ' 个）')
 ok(assessTools.has('redteam_asset_assess') && !assessTools.has('redteam_vuln_add') && !assessTools.has('redteam_webshell_add'),
   'assess profile 保留评估工具、裁掉漏洞/入口写操作（' + assessTools.size + ' 个）')
 ok(vulnTools.has('redteam_vuln_add') && vulnTools.has('redteam_score_hit') && !vulnTools.has('redteam_tunnel_add'),
-  'vuln-scan profile 保留漏洞发现/记分，裁掉隧道（' + vulnTools.size + ' 个）')
+  'vuln-scan profile 保留漏洞发现/记分/单资产覆盖（' + vulnTools.size + ' 个）')
 ok(internalReconTools.size === 40 && internalReconTools.has('redteam_asset_add') && !internalReconTools.has('redteam_score_hit'),
   'internal-recon profile 保留资产入库/query/主机覆盖，裁掉记分/利用（' + internalReconTools.size + ' 个）')
 const internalTools = collect('internal')
