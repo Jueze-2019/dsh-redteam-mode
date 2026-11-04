@@ -262,6 +262,36 @@ CREATE TABLE IF NOT EXISTS http_evidence (
   captured_by TEXT, captured_at TEXT
 );
 
+/* 主机覆盖度：内网拿到入口后，按资产记录"文件/凭据/提权/Web/DB/横向"是否做过。
+   这是 redteam_next_action 的数据源，避免智能体打一个点就收口。 */
+CREATE TABLE IF NOT EXISTS host_coverage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id INTEGER NOT NULL UNIQUE,
+  access TEXT DEFAULT 'none',
+  files TEXT DEFAULT 'untested',
+  credentials INTEGER DEFAULT 0,
+  privesc TEXT DEFAULT 'untested',
+  web TEXT DEFAULT 'untested',
+  db TEXT DEFAULT 'untested',
+  lateral TEXT DEFAULT 'untested',
+  status TEXT DEFAULT 'open',
+  blocked_reason TEXT,
+  updated_by TEXT,
+  updated_at TEXT
+);
+
+/* 主机侧结构化发现：文件/凭据/提权/横向/Web/DB；用于驱动下一步，不是自由文本。 */
+CREATE TABLE IF NOT EXISTS host_finding (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  title TEXT,
+  detail TEXT,
+  evidence_ref TEXT,
+  created_by TEXT,
+  created_at TEXT
+);
+
 /* 数据泄露证明：P1 敏感数据的结构化证据（字段/条数/样本/来源）。
    自由文本 evidence 说不清"是不是三要素、够不够 1 万条"，这张表专门用于核对与报告引用。 */
 CREATE TABLE IF NOT EXISTS data_proof (
@@ -589,6 +619,34 @@ export function migrate(db) {
   /* 阶段归属：得分命中可显式覆盖（默认自动推导）；攻击步骤记录所属阶段 */
   ensure('score_hit', 'stage_code', 'TEXT')
   /* 自建账号标记：自己注册/自己创建的账号不算得分权限，只作过程记录（老数据默认 0） */
+  /* 新表：老库也要补建（主机覆盖度/发现） */
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS host_coverage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      asset_id INTEGER NOT NULL UNIQUE,
+      access TEXT DEFAULT 'none',
+      files TEXT DEFAULT 'untested',
+      credentials INTEGER DEFAULT 0,
+      privesc TEXT DEFAULT 'untested',
+      web TEXT DEFAULT 'untested',
+      db TEXT DEFAULT 'untested',
+      lateral TEXT DEFAULT 'untested',
+      status TEXT DEFAULT 'open',
+      blocked_reason TEXT,
+      updated_by TEXT,
+      updated_at TEXT
+    )`)
+    db.exec(`CREATE TABLE IF NOT EXISTS host_finding (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      asset_id INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      title TEXT,
+      detail TEXT,
+      evidence_ref TEXT,
+      created_by TEXT,
+      created_at TEXT
+    )`)
+  } catch { /* 表已存在或并发建表，忽略 */ }
   /* 新表：老库也要补建（0.15.0 的数据证明与清理台账） */
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS data_proof (

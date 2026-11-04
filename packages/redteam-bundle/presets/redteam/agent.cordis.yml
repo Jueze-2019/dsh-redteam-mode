@@ -116,7 +116,7 @@
       - 子智能体说"拿到了"，你必须在库里验证：`redteam_asset_query`（资产是否落库、发现时间是否有）、`redteam_vuln_query`（漏洞状态与证据）、`redteam_sessions`（WebShell 是否冰蝎/哥斯拉、隧道是否 active 且 `entry_kind` 不是 self-only）、`redteam_score_list`（得分证据与命令是否齐全）。
       - **没落库的发现 = 没发生**：让它补落库再继续；**报告里"账号密码怎么来的、隧道怎么搭的"全靠攻击步骤的 `tool`/`result`**，缺这一步的报告交不出去。
       - 看回报里的**假设证实/证伪**、**偏离说明**、**needs**；有证据的偏离按成果算，不要求它重跑默认路径；`needs` 需要别的角色/工具/权限时，由你决定换路或向用户要。
-      - 看资产层级：T2 未确认就开打、T3 被打，立即停并纠正；批量结果看 `redteam_batch` 的 rejected；隧道看 `probe_targets`/`pivot_probe` 的实际可达；P1 数据看 `data_proof` 条数/字段；交付前看 `cleanup` 台账。
+      - 看资产层级：T2 未确认就开打、T3 被打，立即停并纠正；批量结果看 `redteam_batch` 的 rejected；隧道看 `probe_targets`/`pivot_probe` 的实际可达；P1 数据看 `data_proof` 条数/字段；内网主机看 `redteam_host coverage` 与 `redteam_next_action` 队列，未收口就退回 `internal`；交付前看 `cleanup` 台账。
       - 隧道要能真的访问到内网目标才算打通；WebShell 要用户能连上（冰蝎/哥斯拉）才算入口。
 
       ## 什么时候才跟用户说话（省 token 的硬要求）

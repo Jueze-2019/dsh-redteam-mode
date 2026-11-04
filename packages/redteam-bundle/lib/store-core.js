@@ -436,6 +436,8 @@ function promptHash(text) {
 // __REDTEAM_PROMPTS_BLOCK__
 // __REDTEAM_PROMPTS_BLOCK__
 // __REDTEAM_PROMPTS_BLOCK__
+// __REDTEAM_PROMPTS_BLOCK__
+// __REDTEAM_PROMPTS_BLOCK__
 /* ------------------------------------------------------------------ 角色公共段落
 
    由 packages/redteam-store/tools/gen-prompts.mjs 生成，**不要直接改这一段**：
@@ -747,6 +749,9 @@ export const DEFAULT_PROMPTS = {
 4. **Linux 主机落地**：拿到 Linux 服务器权限后，按 \`lateral-movement\` 的 SSH 密钥流程为用户写一个**每靶标独立**的公钥到 \`authorized_keys\`，实测 \`ssh -i <key> user@host 'id'\` 通过隧道可登录；私钥只留本机 \`runs/ssh/\`，\`access_add\` 记 \`method=ssh\`，\`cleanup\` 记 \`kept\`。Windows 没有 SSH 时用 RDP/WebShell 回退。
 5. **P1：证明敏感数据**：内网未授权接口、已拿账号可访问的接口、暴露数据库/备份；能导出姓名/身份证/手机号等三要素 ≥1 万条优先；只取证明所需样本并统计总量，不拖全库，记录字段/条数/请求；用 \`redteam_data_proof\`。
 6. **P2：新的内网 RCE / 继续跳**：P0/P1 走不动时，再 \`redteam_poc_search\`（走隧道时加代理参数），重点 MS17-010/SMBGhost/Shiro/Fastjson/Weblogic/Jenkins/Redis/Docker/共享、内网管理端；AD 用 \`ad-attack\`、云/K8s 用 \`cloud-k8s\`、网络设备用 \`network-device\`；拿到主机后按路由表继续建隧道往下一段跳。
+
+7. **主机扩展循环**：每做完一个动作，先 \`redteam_host op=coverage\` + \`redteam_next_action\`；有文件/凭据/提权/Web/DB/横向动作就继续，**不要打一个点就回报**。按 \`host-post-exploit\` 逐项翻文件、收凭据、找提权、看本地 Web/DB/共享；每个发现用 \`redteam_host op=finding\` 结构化落库，有效登录后再记分。
+8. **收口**：队列空后用 \`redteam_host op=close\`；close 报缺文件/提权/横向就补，不能跳过；没有入口的主机标 blocked + 原因。只有 close 成功才向主会话交付这台主机。
 
 ## 证据与交接
 - 内网资产批量用 \`redteam_batch kind=assets\`；隧道用 \`redteam_session_check\` 带 \`probe_targets\` 或 \`redteam_pivot_probe\` 实测 host:port，不只看本地端口。
@@ -1505,6 +1510,163 @@ export class RedteamStore {
     detail.edges = db.prepare(`SELECT src_kind, src_id, dst_kind, dst_id, relation, confidence FROM edge
       WHERE (src_kind = 'asset' AND src_id = ?) OR (dst_kind = 'asset' AND dst_id = ?)`).all(String(a.id), String(a.id))
     return detail
+  }
+
+  /* ---------- 主机覆盖度与下一步行动（内网扩展的核心状态） ---------- */
+
+  #ensureCoverage(db, assetId) {
+    db.prepare('INSERT OR IGNORE INTO host_coverage(asset_id) VALUES(?)').run(Number(assetId))
+    return db.prepare('SELECT * FROM host_coverage WHERE asset_id = ?').get(Number(assetId))
+  }
+
+  #assetAccess(db, asset) {
+    const like = String(asset.ip) + ':%'
+    const rows = db.prepare(`SELECT username, method, privilege FROM access_session
+      WHERE asset_id = ? OR host = ? OR host LIKE ? ORDER BY id DESC LIMIT 20`).all(asset.id, asset.ip, like)
+    const creds = db.prepare(`SELECT COUNT(*) AS n FROM credential
+      WHERE asset_id = ? OR host = ? OR host LIKE ?`).get(asset.id, asset.ip, like).n
+    if (rows.length === 0) return { access: 'none', credentials: Number(creds) || 0 }
+    const best = rows.find((r) => /root|system|admin|管理员/i.test(String(r.privilege || ''))) || rows[0]
+    return { access: String(best.privilege || best.method || 'user'), credentials: Math.max(Number(creds) || 0, rows.filter((r) => String(r.username || '').trim() !== '').length) }
+  }
+
+  #scoreCodesOfAsset(db, assetId) {
+    return new Set(db.prepare(`SELECT DISTINCT sp.code FROM score_hit sh
+      JOIN score_point sp ON sp.id = sh.point_id
+      WHERE sh.asset_id = ? AND COALESCE(sh.self_created, 0) = 0`).all(Number(assetId)).map((r) => String(r.code)))
+  }
+
+  /** 读取/初始化一台主机的覆盖度；access 会按现有 access_session 推导。 */
+  getHostCoverage(id, assetId) {
+    const db = this.db(id)
+    const asset = this.getAsset(id, assetId)
+    if (asset === undefined) throw new Error('asset not found')
+    const row = this.#ensureCoverage(db, asset.id)
+    const derived = this.#assetAccess(db, asset)
+    const coverage = {
+      ...row,
+      access: row.access && row.access !== 'none' ? row.access : derived.access,
+      credentials: Math.max(Number(row.credentials) || 0, derived.credentials),
+      open_ports: asset.open_ports || 0,
+      asset: { id: asset.id, ip: asset.ip, primary_name: asset.primary_name, scope: asset.scope, priority: asset.priority, potential: asset.potential },
+      findings: db.prepare('SELECT * FROM host_finding WHERE asset_id = ? ORDER BY id DESC LIMIT 100').all(asset.id),
+    }
+    return coverage
+  }
+
+  updateHostCoverage(id, assetId, patch = {}, actor = null) {
+    const db = this.db(id)
+    const row = this.#ensureCoverage(db, assetId)
+    const fields = ['access', 'files', 'privesc', 'web', 'db', 'lateral', 'status', 'blocked_reason']
+    const sets = []
+    const args = []
+    for (const f of fields) {
+      if (Object.prototype.hasOwnProperty.call(patch, f)) { sets.push(f + ' = ?'); args.push(patch[f] ?? null) }
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'credentials')) {
+      const n = Number(patch.credentials)
+      if (!Number.isFinite(n) || n < 0) throw new Error('credentials 必须是非负数字')
+      sets.push('credentials = ?'); args.push(n)
+    }
+    if (sets.length === 0) return this.getHostCoverage(id, assetId)
+    sets.push('updated_by = ?', 'updated_at = ?')
+    args.push(actor ?? null, nowIso(), row.asset_id)
+    db.prepare('UPDATE host_coverage SET ' + sets.join(', ') + ' WHERE asset_id = ?').run(...args)
+    return this.getHostCoverage(id, assetId)
+  }
+
+  addHostFinding(id, f = {}) {
+    const db = this.db(id)
+    const asset = this.getAsset(id, f.asset_id)
+    if (asset === undefined) throw new Error('asset not found')
+    const kind = String(f.kind || '').trim()
+    if (!['file', 'credential', 'privesc', 'lateral', 'web', 'db', 'config', 'share'].includes(kind)) {
+      throw new Error('host finding kind must be file/credential/privesc/lateral/web/db/config/share')
+    }
+    db.prepare(`INSERT INTO host_finding(asset_id, kind, title, detail, evidence_ref, created_by, created_at)
+      VALUES(?,?,?,?,?,?,?)`).run(asset.id, kind, f.title ?? null, f.detail ?? null, f.evidence_ref ?? null, f.created_by ?? null, nowIso())
+    const row = this.#ensureCoverage(db, asset.id)
+    const partial = (v) => (v === 'untested' || v === null || v === undefined ? 'partial' : v)
+    const patch = {}
+    if (kind === 'file' || kind === 'config' || kind === 'share') patch.files = partial(row.files)
+    if (kind === 'privesc') patch.privesc = partial(row.privesc)
+    if (kind === 'lateral') patch.lateral = partial(row.lateral)
+    if (kind === 'web') patch.web = partial(row.web)
+    if (kind === 'db') patch.db = partial(row.db)
+    if (kind === 'credential') patch.credentials = Math.max(Number(row.credentials) || 0, 0) + 1
+    return { finding_id: Number(db.prepare('SELECT last_insert_rowid() AS id').get().id), coverage: this.updateHostCoverage(id, asset.id, patch, f.created_by) }
+  }
+
+  /** 关闭一台主机的覆盖度；exhausted 必须把文件/提权/Web/DB/横向都做完或标 blocked。 */
+  closeHostCoverage(id, assetId, opts = {}) {
+    const coverage = this.getHostCoverage(id, assetId)
+    const status = opts.status === 'blocked' ? 'blocked' : 'closed'
+    const reason = String(opts.reason || '').trim()
+    if (coverage.access === 'none') {
+      if (reason === '') throw new Error('没有主机权限，关闭必须写 blocked_reason（例如“无入口/认证失败/无可用漏洞”）')
+      return this.updateHostCoverage(id, assetId, { status: 'blocked', blocked_reason: reason }, opts.actor)
+    }
+    const required = ['files', 'privesc', 'web', 'db', 'lateral']
+    const okValues = new Set(['done', 'blocked', 'not_applicable'])
+    const missing = required.filter((k) => !okValues.has(String(coverage[k] || '')))
+    if (status === 'closed' && missing.length > 0) {
+      throw new Error('主机还没收口，缺少：' + missing.join(' / ') + '。先用 redteam_host op=update 标记 done/blocked/not_applicable，再关闭；不要打一个点就结束。')
+    }
+    if (reason === '' && status === 'blocked') throw new Error('blocked 必须写 reason')
+    return this.updateHostCoverage(id, assetId, { status, blocked_reason: reason || null }, opts.actor)
+  }
+
+  /** 生成下一动作队列：按资产/服务/凭据/当前得分计算还差什么。 */
+  hostNextActions(id, opts = {}) {
+    const db = this.db(id)
+    const limit = Math.min(Math.max(Number(opts.limit) || 8, 1), 30)
+    const where = []
+    const args = []
+    if (opts.assetId !== undefined && opts.assetId !== null) { where.push('a.id = ?'); args.push(Number(opts.assetId)) }
+    where.push(`COALESCE(a.scope, (${SCOPE_SQL})) = 'internal'`)
+    const rows = db.prepare(`SELECT * FROM asset a WHERE ${where.join(' AND ')} ORDER BY COALESCE(a.priority, 'medium') DESC, a.id ASC LIMIT 300`).all(...args)
+    const actions = []
+    const expected = { 'web-app': '50/100', 'server-host': '10/50', 'db-credential': '10/50', 'file-storage': '10/50', 'central-system': '50/500' }
+    const isWeb = (p) => {
+      const s = String(p.service || '') + ' ' + String(p.product || '')
+      return /http|web|nginx|apache|tomcat|iis|weblogic|jboss|jetty/i.test(s) || [80, 443, 8000, 8080, 8443, 8888, 7001, 9090].includes(Number(p.port))
+    }
+    const isDb = (p) => [1433, 1521, 3306, 5432, 6379, 9200, 27017, 11211, 9042].includes(Number(p.port)) || /mysql|postgres|mssql|oracle|redis|mongo|elastic|memcached/i.test(String(p.service || '') + ' ' + String(p.product || ''))
+    const isStorage = (p) => [21, 139, 445, 873, 2049, 9000, 9001].includes(Number(p.port)) || /minio|s3|smb|ftp|nfs/i.test(String(p.service || '') + ' ' + String(p.product || ''))
+    for (const a of rows) {
+      const coverage = this.getHostCoverage(id, a.id)
+      const codes = this.#scoreCodesOfAsset(db, a.id)
+      const ports = (this.getAsset(id, a.id).ports || []).filter((p) => p.state === 'open')
+      const add = (kind, target, reason, code) => actions.push({
+        asset_id: a.id, asset_ip: a.ip, kind, target, reason,
+        expected_points: expected[code] || null, evidence_needed: code || null,
+        priority: coverage.access !== 'none' ? 0 : 1,
+      })
+      if (coverage.access !== 'none') {
+        if (!codes.has('server-host')) add('host-privesc', a.ip, '已有主机访问，未记 server-host；先确认普通/管理员权限', 'server-host')
+        if (!['done', 'blocked', 'not_applicable'].includes(String(coverage.files))) add('file-review', a.ip, '主机文件/配置/历史命令尚未结构化检查', 'file')
+        if (!['done', 'blocked', 'not_applicable'].includes(String(coverage.privesc))) add('privesc', a.ip, '尚未确认提权路径（sudo/SUID/服务/内核/配置）', 'server-host')
+        if (Number(coverage.credentials) > 0 && !['done', 'blocked', 'not_applicable'].includes(String(coverage.lateral))) add('credential-reuse', a.ip, '本机已有凭据，未做复用/横向尝试', 'lateral')
+      }
+      for (const p of ports) {
+        const target = p.url || (a.ip + ':' + p.port)
+        if (isStorage(p)) {
+          if (!codes.has('file-storage')) add('file-storage', target, '发现文件/对象存储服务，未拿到账号/AK-SK', 'file-storage')
+        } else if (isDb(p)) {
+          if (!codes.has('db-credential')) add('db-credential', target, '发现数据库服务，未验证账号/未授权', 'db-credential')
+        } else if (isWeb(p)) {
+          if (!codes.has('web-app')) add('web-app', target, '发现 Web 服务，未拿到有效登录', 'web-app')
+        }
+      }
+    }
+    actions.sort((x, y) => x.priority - y.priority || String(x.asset_ip).localeCompare(String(y.asset_ip)))
+    const seen = new Set()
+    const unique = actions.filter((x) => {
+      const k = x.asset_id + '|' + x.kind + '|' + x.target
+      if (seen.has(k)) return false
+      seen.add(k); return true
+    }).slice(0, limit)
+    return { total: unique.length, actions: unique }
   }
 
   /** 图谱投影：C 段 → 资产 → 开放端口（+ 域名解析关系）。 */

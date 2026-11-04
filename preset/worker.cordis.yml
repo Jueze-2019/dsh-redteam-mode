@@ -76,7 +76,7 @@
       - 得分/分型/规划：`score-coverage` / `specialist-paths` / `campaign-planning`
       - 代理/出口/关联：`cn-proxy-pool` / `asset-correlation`
       - 环境/落地：`redteam-setup` / `vps-reverse-shell`
-      - 内网深化：`ad-attack` / `cloud-k8s` / `network-device` / `supply-chain`
+      - 内网深化：`ad-attack` / `cloud-k8s` / `network-device` / `supply-chain` / `host-post-exploit`
       - 验证扩展：`api-data-exfil` / `oob-verify` / `ai-agent-attack`
       - 侦察扩展：`mobile-code-recon` / `icp-query`（备案归属）
       - 隧道/C2：`c2-infra`

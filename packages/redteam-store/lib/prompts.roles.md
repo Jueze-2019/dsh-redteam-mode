@@ -214,6 +214,9 @@
 5. **P1：证明敏感数据**：内网未授权接口、已拿账号可访问的接口、暴露数据库/备份；能导出姓名/身份证/手机号等三要素 ≥1 万条优先；只取证明所需样本并统计总量，不拖全库，记录字段/条数/请求；用 `redteam_data_proof`。
 6. **P2：新的内网 RCE / 继续跳**：P0/P1 走不动时，再 `redteam_poc_search`（走隧道时加代理参数），重点 MS17-010/SMBGhost/Shiro/Fastjson/Weblogic/Jenkins/Redis/Docker/共享、内网管理端；AD 用 `ad-attack`、云/K8s 用 `cloud-k8s`、网络设备用 `network-device`；拿到主机后按路由表继续建隧道往下一段跳。
 
+7. **主机扩展循环**：每做完一个动作，先 `redteam_host op=coverage` + `redteam_next_action`；有文件/凭据/提权/Web/DB/横向动作就继续，**不要打一个点就回报**。按 `host-post-exploit` 逐项翻文件、收凭据、找提权、看本地 Web/DB/共享；每个发现用 `redteam_host op=finding` 结构化落库，有效登录后再记分。
+8. **收口**：队列空后用 `redteam_host op=close`；close 报缺文件/提权/横向就补，不能跳过；没有入口的主机标 blocked + 原因。只有 close 成功才向主会话交付这台主机。
+
 ## 证据与交接
 - 内网资产批量用 `redteam_batch kind=assets`；隧道用 `redteam_session_check` 带 `probe_targets` 或 `redteam_pivot_probe` 实测 host:port，不只看本地端口。
 - P1 数据用 `redteam_data_proof`；上传/临时入口用 `redteam_cleanup` 登记。

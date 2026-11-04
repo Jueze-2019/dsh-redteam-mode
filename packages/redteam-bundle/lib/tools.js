@@ -515,6 +515,7 @@ const PROFILE_EXCLUDES = {
     'redteam_score_report', 'redteam_report', 'redteam_report_targets', 'redteam_role_prompt_reset',
     'redteam_poc_add', 'redteam_poc_update', 'redteam_poc_use', 'redteam_attack_file_add',
     'redteam_shot_delete', 'redteam_http_evidence_add',
+    'redteam_host', 'redteam_next_action',
   ]),
   assess: new Set([
     'redteam_vuln_add', 'redteam_vuln_update', 'redteam_credential_add', 'redteam_access_add',
@@ -522,15 +523,18 @@ const PROFILE_EXCLUDES = {
     'redteam_score_hit', 'redteam_score_point_save', 'redteam_score_report', 'redteam_report',
     'redteam_report_targets', 'redteam_role_prompt_reset', 'redteam_poc_add', 'redteam_poc_update',
     'redteam_poc_use', 'redteam_attack_file_add', 'redteam_shot_delete',
+    'redteam_host', 'redteam_next_action',
   ]),
   'vuln-scan': new Set([
     'redteam_asset_assess', 'redteam_access_add', 'redteam_webshell_add', 'redteam_webshell_update',
     'redteam_tunnel_add', 'redteam_tunnel_update', 'redteam_session_check', 'redteam_score_point_save',
     'redteam_report', 'redteam_report_targets', 'redteam_role_prompt_reset', 'redteam_shot_delete',
+    'redteam_host', 'redteam_next_action',
   ]),
   exploit: new Set([
     'redteam_asset_assess', 'redteam_score_point_save', 'redteam_report', 'redteam_report_targets',
     'redteam_role_prompt_reset', 'redteam_shot_delete',
+    'redteam_host', 'redteam_next_action',
   ]),
   'internal-recon': new Set([
     'redteam_vuln_add', 'redteam_vuln_update', 'redteam_credential_add', 'redteam_access_add',
@@ -1446,7 +1450,11 @@ export function apply(ctx, config = {}) {
     async execute(args, exec) {
       const id = resolveEngagement(store, exec, args.engagement)
       const result = store.addAccess(id, { ...args, engagement: undefined })
-      return JSON.stringify({ ok: true, engagement: id, ...result }, null, 2)
+      let nextActions
+      if (args.asset_id !== undefined && args.asset_id !== null) {
+        try { nextActions = store.hostNextActions(id, { assetId: args.asset_id, limit: 3 }) } catch { /* 规划失败不影响落库 */ }
+      }
+      return JSON.stringify({ ok: true, engagement: id, ...result, next_actions: nextActions }, null, 2)
     },
   })))
 
@@ -1787,6 +1795,64 @@ export function apply(ctx, config = {}) {
   })))
 
   registerTool(withStructuredErrors(defineTool({
+    name: 'redteam_host',
+    description: '主机覆盖度与结构化发现：op=coverage 查看这台主机还缺文件/凭据/提权/Web/DB/横向哪些面；op=finding 记录文件/凭据/提权/横向/Web/DB 发现；op=update 手动标记状态；op=close 收口（没收完会拒绝）。',
+    parameters: {
+      engagement: { type: 'string' },
+      op: { type: 'string', enum: ['coverage', 'finding', 'update', 'close'], required: true },
+      asset_id: { type: 'number', required: true },
+      kind: { type: 'string', enum: ['file', 'credential', 'privesc', 'lateral', 'web', 'db', 'config', 'share'], description: 'op=finding 必填' },
+      title: { type: 'string' },
+      detail: { type: 'string' },
+      evidence_ref: { type: 'string' },
+      access: { type: 'string', description: 'op=update：none/user/admin/root 等' },
+      files: { type: 'string', enum: ['untested', 'partial', 'done', 'blocked', 'not_applicable'] },
+      privesc: { type: 'string', enum: ['untested', 'partial', 'done', 'blocked', 'not_applicable'] },
+      web: { type: 'string', enum: ['untested', 'partial', 'done', 'blocked', 'not_applicable'] },
+      db: { type: 'string', enum: ['untested', 'partial', 'done', 'blocked', 'not_applicable'] },
+      lateral: { type: 'string', enum: ['untested', 'partial', 'done', 'blocked', 'not_applicable'] },
+      credentials: { type: 'number', description: 'op=update：已知凭据数' },
+      status: { type: 'string', enum: ['open', 'closed', 'blocked'] },
+      reason: { type: 'string', description: 'op=close：blocked/收口原因' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      if (args.op === 'coverage') return JSON.stringify({ ok: true, engagement: id, coverage: store.getHostCoverage(id, args.asset_id) }, null, 2)
+      if (args.op === 'finding') {
+        const out = store.addHostFinding(id, { ...args, created_by: agentOf(args) })
+        return JSON.stringify({ ok: true, engagement: id, ...out }, null, 2)
+      }
+      if (args.op === 'update') {
+        const patch = {}
+        for (const k of ['access', 'files', 'privesc', 'web', 'db', 'lateral', 'credentials', 'blocked_reason']) {
+          if (args[k] !== undefined) patch[k] = args[k]
+        }
+        if (args.reason !== undefined && patch.blocked_reason === undefined) patch.blocked_reason = args.reason
+        return JSON.stringify({ ok: true, engagement: id, coverage: store.updateHostCoverage(id, args.asset_id, patch, agentOf(args)) }, null, 2)
+      }
+      const coverage = store.closeHostCoverage(id, args.asset_id, { status: args.status, reason: args.reason, actor: agentOf(args) })
+      return JSON.stringify({ ok: true, engagement: id, coverage }, null, 2)
+    },
+  })))
+
+  registerTool(withStructuredErrors(defineTool({
+    name: 'redteam_next_action',
+    description: '内网下一动作队列：按资产/服务/凭据/当前得分返回还缺什么（文件、凭据、提权、Web、DB、横向），不是自动利用；有动作就继续，队列空再收口。',
+    parameters: {
+      engagement: { type: 'string' },
+      asset_id: { type: 'number', description: '只看一台主机（可选）' },
+      limit: { type: 'number', description: '默认 8，最多 30' },
+    },
+    output: { schema: { type: 'string' }, render: (_args, value) => text(value) },
+    async execute(args, exec) {
+      const id = resolveEngagement(store, exec, args.engagement)
+      const out = store.hostNextActions(id, { assetId: args.asset_id, limit: args.limit })
+      return JSON.stringify({ ok: true, engagement: id, ...out }, null, 2)
+    },
+  })))
+
+  registerTool(withStructuredErrors(defineTool({
     name: 'redteam_score_hit',
     description: '记录一次得分。规则是 25 项合并版；**记分前先用 `redteam_score_list` 读实际 code、上限与口径**，不要凭记忆。\n\n'
       + '**evidence 只写结果**：目标资产 + 拿到什么（账号/权限/数据量），不要写过程；能指向漏洞就带 vuln_id。\n\n'
@@ -1839,6 +1905,10 @@ export function apply(ctx, config = {}) {
         || (args.code && String(p.code) === String(args.code)))
       assertAccountAccess(store, id, args, point ? point.code : args.code)
       const result = store.addScoreHit(id, { ...args, engagement: undefined })
+      let nextActions
+      if (args.asset_id !== undefined && args.asset_id !== null) {
+        try { nextActions = store.hostNextActions(id, { assetId: args.asset_id, limit: 3 }) } catch { /* 规划失败不影响记分 */ }
+      }
       let stepId = null
       let stepHint = null
       const command = typeof args.command === 'string' ? args.command.trim() : ''
@@ -1864,7 +1934,7 @@ export function apply(ctx, config = {}) {
           stepHint = '得分已记录，但自动动作记录失败：' + (error && error.message ? error.message : String(error))
         }
       }
-      return JSON.stringify({ ok: true, engagement: id, ...result, step_id: stepId, step_hint: stepHint || undefined }, null, 2)
+      return JSON.stringify({ ok: true, engagement: id, ...result, step_id: stepId, step_hint: stepHint || undefined, next_actions: nextActions }, null, 2)
     },
   })))
 
