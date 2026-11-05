@@ -154,7 +154,7 @@ export function checkSkill(skill, options = {}) {
     const alt = readSkillFromRoot(other, name)
     if (alt === null || alt.content === content) continue
     const verdict = checkSkill({ name, content: alt.content, path: alt.path }, { env })
-    if (verdict.status === 'available' || verdict.problems.length < issues.length) {
+    if (issues.length > 0 && (verdict.status === 'available' || verdict.problems.length < issues.length)) {
       shadowed = { root: other, path: alt.path, status: verdict.status }
       addIssue('shadowed', '`' + other + '` 里还有一份同名技能（' + verdict.status + '），'
         + '但按技能根顺序当前加载的是这一份（上面这些不可用原因来自这一份）', { other_root: other })

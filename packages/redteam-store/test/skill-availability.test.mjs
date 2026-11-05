@@ -90,9 +90,10 @@ console.log('— 同名技能被前面的技能根盖住（误报兜底）')
   mkdirSync(mineRoot, { recursive: true })
   mkdirSync(bundleRoot, { recursive: true })
   writeFileSync(join(mineRoot, 'vps-demo.md'), '# vps-demo\nssh root@10.9.9.9 -p 9000\n', 'utf8')
+  writeFileSync(join(bundleRoot, 'vps-demo.md'), '# vps-demo\nssh root@<你的VPS_IP> -p 9000\n', 'utf8')
   const shadowed = checkSkill(
     { name: 'vps-demo', content: 'ssh root@<你的VPS_IP> -p 9000\n', root: bundleRoot },
-    { env: process.env, sameNameIn: [bundleRoot, mineRoot] },
+    { env: {}, sameNameIn: [bundleRoot, mineRoot] },
   )
   ok(shadowed.status === 'broken' && shadowed.shadowed_by === mineRoot,
     '真实加载的是占位符版本 → 仍然 broken，但指出"另一份可用、被盖住了"')
@@ -101,7 +102,7 @@ console.log('— 同名技能被前面的技能根盖住（误报兜底）')
   /* 反过来：当前这份本来就是好的，就不该报"被盖住"，也不该多出任何问题 */
   const fine = checkSkill(
     { name: 'vps-demo', content: 'ssh root@10.9.9.9 -p 9000\n', root: mineRoot },
-    { env: process.env, sameNameIn: [bundleRoot, mineRoot] },
+    { env: {}, sameNameIn: [bundleRoot, mineRoot] },
   )
   ok(fine.status === 'available' && fine.shadowed_by === undefined, '当前这份可用时不产生多余告警')
 

@@ -587,7 +587,19 @@ async function handleSkillOp(ctx, request) {
   try {
     lease = await resolveRedteamScope(ctx)
   } catch (error) {
-    return { ok: false, error: '无法解析红队 preset 作用域：' + (error && error.message ? error.message : String(error)) }
+    const reason = error && error.message ? error.message : String(error)
+    /* 作用域坏了不应该让只读技能页整页不可用：退回无 scope 读法，
+       并把原因作为 note 交给面板显示（不影响智能体侧预设）。 */
+    try {
+      const fallback = await readSkillOp(ctx, request, undefined)
+      if (fallback && fallback.ok !== false) {
+        fallback.scope_fallback = { reason }
+        fallback.note = (fallback.note ? fallback.note + '\n' : '')
+          + '注意：红队 preset 作用域解析失败，已退回无 scope 技能目录：' + reason
+        return fallback
+      }
+    } catch { /* 回退也失败，走下面的明确错误 */ }
+    return { ok: false, error: '无法解析红队 preset 作用域：' + reason }
   }
   /* 作用域是"租约"：无论读取成功还是抛错，读完都要还回去。 */
   try {
