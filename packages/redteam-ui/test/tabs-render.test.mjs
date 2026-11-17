@@ -488,6 +488,13 @@ console.log('\n— 有数据时的关键内容（渲染确实用了接口返回�
   ok(r.texts.includes('发现时间'), '资产测绘：「发现时间」视图仍在（删图谱时误伤过的那个）')
   ok(r.texts.includes('下一步 10 台'), '资产测绘：有「下一步 10 台」队列入口')
   ok(r.texts.includes('下一步 10 台 ·'), '资产测绘：默认进入下一步 10 台，而不是 174 行全量列表')
+  const assetRow = r.hosts.find((x) => x.props.className === 'rt-row' && x.handlers && x.handlers.onClick)
+  if (assetRow) assetRow.handlers.onClick()
+  const rExpanded = await renderAll()
+  ok(rExpanded.texts.includes('概览') && rExpanded.texts.includes('服务摘要') && rExpanded.texts.includes('指纹摘要'),
+    '资产测绘：展开后按概览 / 服务 / 指纹分组展示')
+  ok(rExpanded.texts.includes('展开全部（端口') && rExpanded.texts.includes('关联'),
+    '资产测绘：详情有明确收起/展开入口和关联计数')
   const f = await switchTab('漏洞战果')
   /* 默认「按目标聚合」：顶层只显示目标，漏洞标题在展开后才出现 —— 断言按这个真实行为写，
      否则测试会因为'没找到标题'而红，但其实页面是对的。 */
@@ -508,6 +515,8 @@ console.log('\n— 有数据时的关键内容（渲染确实用了接口返回�
   ok(!s.texts.includes('# 指挥') && s.texts.includes('指挥'), '智能体页：角色提示词默认渲染预览（不露 # 标题标记）')
   const sess = await switchTab('会话隧道')
   ok(sess.texts.includes('••••••••') && !sess.texts.includes('e45'), '会话隧道：WebShell 口令默认掩码，不直显')
+  ok(sess.texts.includes('代理地址') && sess.texts.includes('目标侧入口') && sess.texts.includes('连接口令'),
+    '会话隧道：WebShell/隧道按固定字段分行展示')
   const k = await switchTab('技能库')
   ok(k.texts.includes('fofa-recon'), '技能库：技能名渲染出来')
   ok(k.texts.includes('全部分类') && k.texts.includes('侦察'), '技能库：分类筛选与分类标签渲染出来')
@@ -557,6 +566,8 @@ console.log('\n— 有数据时的关键内容（渲染确实用了接口返回�
   ok(/显示 2 张/.test(sc2.texts), '得分目标：图条报出"显示几张"（' +
     ((/显示 \d+ 张/.exec(sc2.texts) || ['未找到'])[0]) + '）')
   ok(sc2.texts.includes('隧道连通性截图'), '得分目标：截图说明渲染出来')
+  ok(sc2.texts.includes('#1') && sc2.texts.includes('+1000 分') && sc2.texts.includes('展开完整证据 / 判定'),
+    '得分目标：命中记录按卡片展示分值/结果/详情入口')
 }
 
 console.log('\n— 空数据态给出"下一步怎么做"的引导（不是白屏）')

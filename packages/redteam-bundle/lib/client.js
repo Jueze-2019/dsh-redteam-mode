@@ -1138,6 +1138,94 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
 .rt-r2-group{border-top:1px dashed var(--dsw-alias-border-l1);padding-top:4px;margin-top:8px}
 .rt-r2-asset{margin-left:4px}
 @media(max-width:720px){.rt-r2-scroll{padding:10px}.rt-r2-table{min-width:460px}}
+
+/* ── 统一元数据排版（v0.16.0）────────────────────────────────────────────
+   四类卡片共用：摘要 3 行 / 分组详情 / 原始内容折叠。
+   短字段固定标签列，长值自动换行；不再用点号把异构字段拼成一行。 */
+.rt-meta{display:grid;grid-template-columns:76px minmax(0,1fr);gap:4px 10px;margin:5px 0;font-size:12px;align-items:start}
+.rt-meta dt{color:var(--dsw-alias-label-secondary);font-weight:600;line-height:1.55;white-space:nowrap}
+.rt-meta dd{margin:0;min-width:0;color:var(--dsw-alias-label-primary);line-height:1.55;overflow-wrap:anywhere;word-break:break-word}
+.rt-meta dd .rt-tag{margin-right:5px}
+.rt-meta-compact{grid-template-columns:64px minmax(0,1fr);font-size:11.5px;gap:3px 8px}
+.rt-meta-block{margin:8px 0 0;padding-top:7px;border-top:1px dashed var(--dsw-alias-border-l1)}
+.rt-meta-block:first-child{border-top:0;margin-top:2px;padding-top:0}
+.rt-meta-title{font-size:11.5px;font-weight:700;color:var(--dsw-alias-label-secondary);letter-spacing:.02em;margin:0 0 4px}
+.rt-card-head{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap}
+.rt-card-head-main{display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-width:0;flex:1 1 240px}
+.rt-card-actions{display:flex;align-items:center;gap:4px;flex:0 0 auto;margin-left:auto;flex-wrap:wrap}
+.rt-clamp{display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;line-height:1.6}
+.rt-clamp-1{-webkit-line-clamp:1}.rt-clamp-2{-webkit-line-clamp:2}.rt-clamp-3{-webkit-line-clamp:3}.rt-clamp-4{-webkit-line-clamp:4}.rt-clamp-5{-webkit-line-clamp:5}
+.rt-raw{margin:7px 0 0;border:1px solid var(--dsw-alias-border-l1);border-radius:7px;background:var(--dsw-alias-bg-base);overflow:hidden}
+.rt-raw>summary{cursor:pointer;padding:5px 8px;font-size:11.5px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);word-break:break-word}
+.rt-raw[open]>summary{border-bottom:1px solid var(--dsw-alias-border-l1)}
+.rt-raw-pre{margin:0;padding:8px;max-height:320px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;line-height:1.55;font-family:ui-monospace,Menlo,monospace;color:var(--dsw-alias-label-primary)}
+.rt-summary-line{font-size:12px;line-height:1.6;color:var(--dsw-alias-label-primary);overflow-wrap:anywhere}
+.rt-summary-muted{font-size:11.5px;color:var(--dsw-alias-label-secondary)}
+.rt-hit-card{display:flex;flex-direction:column;gap:5px;padding:8px 9px;border:1px solid var(--dsw-alias-border-l1);border-left:3px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-layer-1);margin-bottom:6px}
+.rt-hit-card.counted{border-left-color:#10b981}
+.rt-hit-card.capped{border-left-color:#f59e0b}
+.rt-hit-card.self-created{border-left-color:#ef4444}
+.rt-hit-card-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.rt-hit-card-title{font-family:ui-monospace,Menlo,monospace;font-weight:700;font-size:12px;overflow-wrap:anywhere;min-width:0}
+.rt-hit-card-points{font-size:12px;font-weight:700;color:#065f46;background:#a7f3d0;border:1px solid #10b98155;border-radius:8px;padding:0 7px;white-space:nowrap}
+.rt-hit-card-points.zero{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-border-l1)}
+.rt-hit-card-evidence{font-size:12px;line-height:1.6;color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
+.rt-hit-card-meta{display:flex;align-items:center;gap:5px 10px;flex-wrap:wrap;font-size:11px;color:var(--dsw-alias-label-secondary)}
+.rt-sess-meta{margin-top:7px}
+.rt-kb-headline{display:flex;align-items:flex-start;gap:7px;flex-wrap:wrap;padding:8px 10px}
+.rt-kb-headline-main{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;flex:1 1 260px}
+.rt-kb-title2{font-size:12.5px;font-weight:600;line-height:1.45;min-width:0;overflow-wrap:anywhere}
+.rt-kb-summary{padding:0 10px 8px;display:flex;flex-direction:column;gap:3px}
+.rt-evidence-card{border:1px solid var(--dsw-alias-border-l1);border-radius:7px;background:var(--dsw-alias-bg-layer-1);padding:7px 8px;margin:5px 0}
+.rt-evidence-card-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11.5px;font-weight:600}
+.rt-evidence-card-meta{font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:2px;word-break:break-word}
+.rt-http-line{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.6;overflow-wrap:anywhere}
+.rt-vuln-summary{display:flex;flex-direction:column;gap:5px;margin-top:2px}
+@media(max-width:860px){
+  .rt-meta{grid-template-columns:68px minmax(0,1fr)}
+  .rt-row{grid-template-columns:132px 62px 92px minmax(0,1fr) minmax(0,.9fr)}
+  .rt-kb-headline,.rt-kb-summary{padding-left:8px;padding-right:8px}
+}
+
+.rt-muted{color:var(--dsw-alias-label-secondary);font-weight:400}
+.rt-asset-stack{display:flex;flex-direction:column;gap:0;min-width:0;line-height:1.35}
+.rt-asset-ip{font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rt-asset-domain{font-size:10.5px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.rt-asset-time{font-size:10px;color:var(--dsw-alias-label-secondary);white-space:nowrap}
+.rt-port-row{display:grid;grid-template-columns:92px 104px minmax(0,1.5fr) auto;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px dashed var(--dsw-alias-border-l1);font-size:11.5px;line-height:1.5}
+.rt-port-row:last-child{border-bottom:0}
+.rt-port-num{font-weight:700;white-space:nowrap}
+.rt-port-svc{color:var(--dsw-alias-label-primary);overflow-wrap:anywhere}
+.rt-port-url{overflow-wrap:anywhere;word-break:break-word;min-width:0}
+.rt-fp-row{display:grid;grid-template-columns:64px minmax(0,1.1fr) minmax(0,1.4fr) auto;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px dashed var(--dsw-alias-border-l1);font-size:11.5px;line-height:1.5}
+.rt-fp-row:last-child{border-bottom:0}
+.rt-fp-cat{color:var(--dsw-alias-label-secondary);font-weight:600}
+.rt-fp-name{overflow-wrap:anywhere}
+.rt-fp-evi{color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
+.rt-obs-row{display:grid;grid-template-columns:90px minmax(0,1.8fr) minmax(0,1fr) auto;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px dashed var(--dsw-alias-border-l1);font-size:11.5px;line-height:1.5}
+.rt-obs-row:last-child{border-bottom:0}
+.rt-obs-attr{color:var(--dsw-alias-label-secondary);font-weight:600;overflow-wrap:anywhere}
+.rt-obs-val{overflow-wrap:anywhere;word-break:break-word}
+@media(max-width:860px){
+  .rt-port-row{grid-template-columns:80px minmax(0,1fr) auto;gap:5px}
+  .rt-port-url{grid-column:1/-1}
+  .rt-fp-row{grid-template-columns:54px minmax(0,1fr) auto;gap:5px}
+  .rt-fp-evi{grid-column:2/-1}
+  .rt-obs-row{grid-template-columns:76px minmax(0,1fr) auto;gap:5px}
+  .rt-obs-row > .rt-summary-muted{grid-column:2/-1}
+}
+
+.rt-gain-list{display:flex;flex-wrap:wrap;gap:5px}
+.rt-kb-summary-line{display:flex;flex-wrap:wrap;gap:5px;align-items:center;font-size:11.5px}
+.rt-kb-source-line{font-size:11px;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
+.rt-file-main{min-width:0;display:flex;flex-direction:column;gap:1px}
+.rt-file-name{font-size:12px;font-weight:600;overflow-wrap:anywhere}
+.rt-file-path{font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.rt-file-desc{min-width:0;overflow-wrap:anywhere}
+.rt-file-preview{min-width:0}
+.rt-kb-summary{padding:0 10px 8px;gap:4px}
+.rt-kb-headline-main{min-width:0}
+.rt-kb-title2{overflow-wrap:anywhere;word-break:break-word}
 `    /* ---------------------------------------------------------- 桥接与状态 */
     /** 是否在「全面浏览」独立窗口里（URL hash 标记，复用同一套界面代码）。 */
     const isFullWindow = () => {
@@ -1334,6 +1422,50 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
       return t.length >= 16 ? t.slice(5, 16) : (t || '—')
     }
     const provLabel = (p) => (p === 'passive' ? '被动' : p === 'active' ? '主动' : '未知')
+    /** 统一元数据表：短字段固定标签列，长值自动换行；四类卡片共用。 */
+    const Meta = (props) => {
+      const rows = (props.rows || []).filter(Boolean)
+      if (!rows.length) return null
+      return h('dl', { className: 'rt-meta' + (props.compact ? ' rt-meta-compact' : '') + (props.className ? ' ' + props.className : '') },
+        rows.map((row, i) => h(React.Fragment, { key: 'm' + i },
+          h('dt', null, row[0]),
+          h('dd', null, row.slice(1)))))
+    }
+    /** 分组块：标题 + 元数据；用于“概览 / 服务 / 溯源”等。 */
+    const MetaBlock = (props) => h('section', { className: 'rt-meta-block' },
+      props.title ? h('div', { className: 'rt-meta-title' }, props.title) : null,
+      props.children || h(Meta, { rows: props.rows, compact: props.compact }))
+    /** 默认截断、可展开的文本；不用把换行压平。 */
+    const ClampText = (props) => {
+      const text = String(props.text === undefined || props.text === null ? '' : props.text)
+      if (text.trim() === '') return null
+      const lines = props.lines || 3
+      return h('div', {
+        className: 'rt-clamp rt-clamp-' + lines + (props.className ? ' ' + props.className : ''),
+        title: props.title || (text.length > 120 ? text : undefined),
+      }, text)
+    }
+    /** 原始证据/命令：默认折叠，展开后限高滚动，保留所有换行。 */
+    const RawFold = (props) => {
+      const text = String(props.text === undefined || props.text === null ? '' : props.text)
+      if (text.trim() === '') return null
+      return h('details', { className: 'rt-raw' + (props.className ? ' ' + props.className : '') },
+        h('summary', null, props.label || ('展开原始内容（' + text.length + ' 字）')),
+        h('pre', { className: 'rt-raw-pre' }, text))
+    }
+    /** 卡片头：标题/标签与操作按钮分开，长标题换行，按钮不挤进标签行。 */
+    const CardHead = (props) => {
+      const kids = (Array.isArray(props.children) ? props.children : [props.children])
+        .filter((x) => x !== null && x !== undefined && x !== false)
+        .map((x, i) => h(React.Fragment, { key: 'ch' + i }, x))
+      const acts = (Array.isArray(props.actions) ? props.actions : [props.actions])
+        .filter((x) => x !== null && x !== undefined && x !== false)
+        .map((x, i) => h(React.Fragment, { key: 'ac' + i }, x))
+      return h('div', { className: 'rt-card-head' },
+        h('div', { className: 'rt-card-head-main' }, kids),
+        acts.length ? h('div', { className: 'rt-card-actions' }, acts) : null)
+    }
+
 
     /**
      * 给「可点击但不是 <button>」的元素补上键盘可达性，返回可直接展开进 props 的对象。
@@ -1884,13 +2016,14 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
                 background: it.state === 'live' ? '#10b981' : '#94a3b8',
               },
             }),
-            h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis' } }, it.ip),
-            /* 发现时间挂在 IP 下面一行：IP 列宽度有限，不另开列（列宽一改整表要跟着调） */
-            h('span', {
-              style: { fontSize: 10.5, color: 'var(--dsw-alias-label-secondary)', whiteSpace: 'nowrap' },
-              title: '发现时间：' + (it.discovered_at ? fmt(it.discovered_at) : '未记录')
-                + (it.last_seen ? '\n最近采集：' + fmt(it.last_seen) : ''),
-            }, it.discovered_at ? fmtShort(it.discovered_at) : '发现时间未知')),
+            h('span', { className: 'rt-asset-stack', title: it.primary_name || '' },
+              h('span', { className: 'rt-mono rt-asset-ip' }, it.ip),
+              it.primary_name ? h('span', { className: 'rt-asset-domain' }, it.primary_name) : null,
+              h('span', {
+                className: 'rt-asset-time',
+                title: '发现时间：' + (it.discovered_at ? fmt(it.discovered_at) : '未记录')
+                  + (it.last_seen ? '\n最近采集：' + fmt(it.last_seen) : ''),
+              }, it.discovered_at ? fmtShort(it.discovered_at) : '发现时间未知'))),
           h('span', null, h(PriTag, { p: it.priority, title: it.potential || '' })),
           h('span', null, h(TestTag, { s: it.test_status }),
             it.blocked_count ? h('span', { className: 'rt-tag', style: { color: '#ef4444', borderColor: '#ef444455', marginLeft: 4 } }, '封' + it.blocked_count) : null),
@@ -1905,70 +2038,82 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
         if (d) {
           for (const p of (d.ports || [])) {
             if (p.state !== 'open') continue
-            portRows.push(h('div', { key: 'p' + p.port, className: 'rt-kv' },
-              h('b', { className: 'rt-mono' }, p.port + '/' + p.proto),
-              h('span', null, [p.service, p.product, p.version].filter(Boolean).join(' ') || '未知服务'),
-              p.url ? h('a', { className: 'rt-link', href: p.url, target: '_blank', rel: 'noreferrer', title: p.url }, p.title ? p.title : p.url) : null,
+            portRows.push(h('div', { key: 'p' + p.port, className: 'rt-port-row' },
+              h('span', { className: 'rt-mono rt-port-num' }, p.port + '/' + p.proto),
+              h('span', { className: 'rt-port-svc' }, [p.service, p.product, p.version].filter(Boolean).join(' ') || '未知服务'),
+              p.url
+                ? h('a', { className: 'rt-link rt-port-url', href: p.url, target: '_blank', rel: 'noreferrer', title: p.url }, p.title || p.url)
+                : h('span', { className: 'rt-summary-muted' }, '—'),
               h(ProvTag, { p: p.provenance })))
           }
           for (const f of (d.fingerprints || [])) {
-            fpRows.push(h('div', { key: 'f' + (f.product || '') + (f.version || '') + (f.evidence || ''), className: 'rt-kv' },
-              h('b', null, f.category || '—'),
-              h('span', null, [f.vendor, f.product, f.version].filter(Boolean).join(' ') + (f.evidence ? '（' + f.evidence + '）' : '')),
+            fpRows.push(h('div', { key: 'f' + (f.product || '') + (f.version || '') + (f.evidence || ''), className: 'rt-fp-row' },
+              h('span', { className: 'rt-fp-cat' }, f.category || '—'),
+              h('span', { className: 'rt-fp-name' }, [f.vendor, f.product, f.version].filter(Boolean).join(' ') || '—'),
+              h('span', { className: 'rt-fp-evi' }, f.evidence || '—'),
               h(ProvTag, { p: f.provenance })))
           }
           for (const o of (d.observations || []).slice(0, 8)) {
-            obsRows.push(h('div', { key: 'o' + (o.attr || '') + (o.value || '') + (o.collected_at || ''), className: 'rt-kv' },
-              h('b', null, o.attr || '—'),
-              h('span', null, (o.value || '') + ' · ' + (o.tool || '未知工具') + ' · ' + fmt(o.collected_at)),
+            obsRows.push(h('div', { key: 'o' + (o.attr || '') + (o.value || '') + (o.collected_at || ''), className: 'rt-obs-row' },
+              h('span', { className: 'rt-obs-attr' }, o.attr || '—'),
+              h('span', { className: 'rt-obs-val' }, o.value || '—'),
+              h('span', { className: 'rt-summary-muted' }, (o.tool || '未知工具') + ' · ' + fmt(o.collected_at)),
               h(ProvTag, { p: o.provenance })))
           }
         }
         /* 详情分三层：3 行必读 → 「展开全部」后才是溯源、原始记录与备注全文 */
         const all = showAll === it.id
         const noteLines = d && d.test_notes ? d.test_notes.split('\n').filter(Boolean) : []
-        const inner = d
-          ? h('div', null,
-              /* 必读三行 */
-              h('div', { className: 'rt-kv' }, h('b', null, '测试'), h('span', null,
-                h(TestTag, { s: d.test_status }),
-                d.blocked_count ? h('span', { className: 'rt-tag', style: { marginLeft: 6, color: '#ef4444', borderColor: '#ef444455' } }, '被封 ' + d.blocked_count + ' 次') : null,
-                h('span', { style: { marginLeft: 8, color: 'var(--dsw-alias-label-secondary)' } },
-                  (d.test_updated_at ? fmt(d.test_updated_at) : '未测过') + (d.test_updated_by ? ' · ' + d.test_updated_by : '')))),
-              h('div', { className: 'rt-kv' }, h('b', null, '易打性'), h('span', null,
-                h(PriTag, { p: d.priority }),
-                h('span', { style: { marginLeft: 8 } }, d.potential || '未评估'),
-                d.assess_reason ? h('span', { style: { marginLeft: 8, color: 'var(--dsw-alias-label-secondary)' } }, d.assess_reason) : null)),
-              h('div', { className: 'rt-kv' }, h('b', null, '攻击面'), h('span', null,
-                d.test_surface || (portRows.length ? '未记录（开放端口见下）' : '无开放端口'),
-                d.scope ? h('span', { className: 'rt-scope rt-scope-' + (d.scope === 'internal' ? 'internal' : 'external'), style: { marginLeft: 8 } },
-                  d.scope === 'internal' ? '内网资产' : '外网资产') : null)),
+        const inner = d ? h('div', null,
+              h(MetaBlock, { title: '概览', rows: [
+                ['资产', h('span', { className: 'rt-mono' }, d.ip), d.primary_name ? h('span', { className: 'rt-muted' }, ' · ' + d.primary_name) : null],
+                ['范围', (d.scope === 'internal' ? '内网' : '外网') + (d.segment_cidr ? ' · ' + d.segment_cidr : '')],
+                ['状态', h('span', { className: 'rt-tag rt-tag-' + (d.state === 'live' ? 'live' : 'dead') }, d.state === 'live' ? '存活' : String(d.state || '未知'))],
+                ['评估', h(PriTag, { p: d.priority }), h('span', { className: 'rt-muted' }, ' ' + (d.potential || '未评估'))],
+                ['测试', h(TestTag, { s: d.test_status }),
+                  h('span', { className: 'rt-muted' },
+                    ' · ' + (d.test_updated_at ? fmt(d.test_updated_at) : '未测过')
+                    + (d.test_updated_by ? ' · ' + d.test_updated_by : '')
+                    + (d.blocked_count ? ' · 被封 ' + d.blocked_count + ' 次' : ''))],
+                ['攻击面', d.test_surface || '未记录'],
+                ['关联', '端口 ' + (d.ports || []).filter((x) => x.state === 'open').length
+                  + ' · 指纹 ' + (d.fingerprints || []).length
+                  + ' · 采集 ' + (d.observations || []).length
+                  + (d.webshells ? ' · WebShell ' + d.webshells : '')],
+              ] }),
+              h(MetaBlock, { title: '服务摘要', children: portRows.length
+                ? h('div', null, portRows.slice(0, all ? portRows.length : 3),
+                    !all && portRows.length > 3
+                      ? h('div', { className: 'rt-summary-muted' }, '另有 ' + (portRows.length - 3) + ' 个开放端口，展开全部查看')
+                      : null)
+                : h('div', { className: 'rt-summary-muted' }, '无开放端口') }),
+              h(MetaBlock, { title: '指纹摘要', children: fpRows.length
+                ? h('div', null, fpRows.slice(0, all ? fpRows.length : 2),
+                    !all && fpRows.length > 2
+                      ? h('div', { className: 'rt-summary-muted' }, '另有 ' + (fpRows.length - 2) + ' 条指纹')
+                      : null)
+                : h('div', { className: 'rt-summary-muted' }, '暂无指纹') }),
+              all ? h('div', null,
+                h(MetaBlock, { title: '时间与来源', rows: [
+                  ['发现时间', fmt(d.discovered_at)],
+                  ['最近采集', fmt(d.last_seen)],
+                  ['数据源首见', fmt(d.first_seen)],
+                  ['主机名', (d.names || []).map((n) => n.name).join(', ') || '—'],
+                  ['采集统计', '被动端口 ' + (d.passive || 0) + ' · 主动端口 ' + (d.active || 0)],
+                ] }),
+                h(MetaBlock, { title: '评估依据', rows: [
+                  ['易打性', (d.priority || '未评估') + (d.assessed_at ? ' · ' + fmt(d.assessed_at) : '')],
+                  ['预期', d.potential || '—'],
+                  ['依据', d.assess_reason || '—'],
+                ] }),
+                h(MetaBlock, { title: '开放端口 / 服务', children: portRows.length ? h('div', null, portRows) : h('div', { className: 'rt-summary-muted' }, '—') }),
+                h(MetaBlock, { title: '指纹', children: fpRows.length ? h('div', null, fpRows) : h('div', { className: 'rt-summary-muted' }, '—') }),
+                h(MetaBlock, { title: '采集溯源（最近 8 条）', children: obsRows.length ? h('div', null, obsRows) : h('div', { className: 'rt-summary-muted' }, '—') }),
+                noteLines.length ? h(MetaBlock, { title: '测试记录（' + noteLines.length + ' 条）', children: h(RawFold, { label: '展开测试记录', text: noteLines.join('\n') }) }) : null
+              ) : null,
               h('span', Object.assign({ className: 'rt-more' },
                 clickable(() => setShowAll(all ? null : it.id), { label: all ? '收起资产详情' : '展开资产详情', expanded: all })),
-                all ? '收起全部 ▲' : '展开全部（端口 · 指纹 · 采集溯源 · 测试记录）▼'),
-              all ? h('div', null,
-                h('div', { className: 'rt-kv' }, h('b', null, '主机名'), h('span', null, (d.names || []).map((n) => n.name).join(', ') || '—')),
-                h('div', { className: 'rt-kv' }, h('b', null, '发现时间'),
-                  h('span', { title: '本条资产第一次进入资产库的时刻（重复采集只刷新"最近采集"）' }, fmt(d.discovered_at)),
-                  h('b', { style: { minWidth: 0, marginLeft: 8 } }, '最近采集'), h('span', null, fmt(d.last_seen)),
-                  h('b', { style: { minWidth: 0, marginLeft: 8 } }, '数据源首见'), h('span', null, fmt(d.first_seen))),
-                h('div', { className: 'rt-kv' }, h('b', null, 'C 段'), h('span', null, d.segment_cidr)),
-                h('div', { className: 'rt-kv' }, h('b', null, '易打性'), h('span', null,
-                  (d.priority || '未评估') + (d.potential ? ' · 预期：' + d.potential : '')
-                  + (d.assess_reason ? ' · 依据：' + d.assess_reason : '')
-                  + (d.assessed_at ? '（' + fmt(d.assessed_at) + '）' : ''))),
-                h('div', { className: 'rt-kv' }, h('b', null, '来源'), h('span', null,
-                  '被动端口 ' + (d.passive || 0) + ' · 主动端口 ' + (d.active || 0))),
-                h('div', { style: { margin: '6px 0 3px', fontWeight: 600 } }, '开放端口 / 服务'),
-                h('div', null, portRows.length ? portRows : '—'),
-                h('div', { style: { margin: '6px 0 3px', fontWeight: 600 } }, '指纹'),
-                h('div', null, fpRows.length ? fpRows : '—'),
-                noteLines.length
-                  ? h(Clip, { key: 'notes', label: '测试记录（' + noteLines.length + ' 条）', text: noteLines.join('\n') })
-                  : null,
-                h('div', { style: { margin: '6px 0 3px', fontWeight: 600 } }, '采集溯源（最近 8 条）'),
-                h('div', null, obsRows.length ? obsRows : '—'))
-                : null)
+                all ? '收起全部 ▲' : '展开全部（端口 · 指纹 · 溯源 · 测试记录）▼'))
           : h('div', null, '加载中…')
         rowNodes.push(h('div', {
           key: 'd' + it.id, className: 'rt-row',
@@ -2437,31 +2582,47 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
       const looksHttp = /^(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|HTTP\/)/m.test(evi) || /\n[A-Za-z-]+: /.test(evi)
       const blocks = []
       if (evi) {
-        blocks.push(h('div', { key: 'ev', className: 'rt-evi' },
-          h('div', { className: 'rt-evi-head' }, '证据摘要',
+        blocks.push(h('div', { key: 'ev', className: 'rt-evidence-card' },
+          h('div', { className: 'rt-evidence-card-head' },
+            '证据摘要',
             h('span', { className: 'rt-tag' }, looksHttp ? '原始报文' : '文本'),
+            h('span', { className: 'rt-summary-muted' }, ' · ' + evi.length + ' 字'),
             h('div', { className: 'rt-spacer' }),
             h('button', {
               className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
               onClick: (e) => { e.stopPropagation(); copyText(evi) },
-            }, '复制')),
-          looksHttp ? h(HttpBlock, { text: evi }) : h('pre', { className: 'rt-evi-body' }, evi)))
+            }, '复制全文')),
+          h(ClampText, { text: evi, lines: 3, className: 'rt-hit-card-evidence' }),
+          h(RawFold, { label: '展开证据原文（' + evi.length + ' 字）', text: evi })))
       }
       const http = v.http_evidence || []
       for (const e of http) {
-        blocks.push(h('div', { key: 'h' + e.id, className: 'rt-evi' },
-          h('div', { className: 'rt-evi-head' },
+        const reqLine = String(e.request || '').split(/\r?\n/).find((x) => x.trim() !== '') || ''
+        const resLine = String(e.response || '').split(/\r?\n/).find((x) => x.trim() !== '') || ''
+        const size = (String(e.request || '').length + String(e.response || '').length)
+        blocks.push(h('div', { key: 'h' + e.id, className: 'rt-evidence-card' },
+          h('div', { className: 'rt-evidence-card-head' },
             e.label || 'HTTP 证据',
             h('span', { className: 'rt-tag' }, (e.method || '') + ' ' + (e.status === null || e.status === undefined ? '' : e.status)),
             h('div', { className: 'rt-spacer' }),
-            h('span', { style: { fontWeight: 400, color: 'var(--dsw-alias-label-secondary)' } }, fmt(e.captured_at || e.created_at))),
-          e.request ? h('div', null,
-            h('div', { className: 'rt-evi-head', style: { borderTop: 'none' } }, '▸ 请求（可直接粘进 Burp Repeater）'),
-            h(HttpBlock, { text: e.request, compact: true })) : null,
-          e.response ? h('div', null,
-            h('div', { className: 'rt-evi-head' }, '▸ 响应'),
-            h(HttpBlock, { text: e.response })) : null,
-          e.note ? h('pre', { className: 'rt-evi-body', style: { maxHeight: 80 } }, e.note) : null))
+            h('span', { className: 'rt-summary-muted' }, fmt(e.captured_at || e.created_at))),
+          h(Meta, { compact: true, rows: [
+            ['请求', reqLine ? h('span', { className: 'rt-http-line' }, reqLine) : '—'],
+            ['响应', resLine ? h('span', { className: 'rt-http-line' }, resLine) : '—'],
+            ['大小', size > 0 ? size + ' 字节（请求 + 响应）' : '未记录'],
+          ] }),
+          h('details', { className: 'rt-raw' },
+            h('summary', null, '展开请求 / 响应（' + size + ' 字节）'),
+            e.request ? h('div', null,
+              h('div', { className: 'rt-evidence-card-meta' }, '▸ 请求（可直接粘进 Burp Repeater）'),
+              h(HttpBlock, { text: e.request, compact: true })) : null,
+            e.response ? h('div', null,
+              h('div', { className: 'rt-evidence-card-meta' }, '▸ 响应'),
+              h(HttpBlock, { text: e.response })) : null,
+            e.note ? h('pre', { className: 'rt-raw-pre', style: { maxHeight: 100 } }, e.note) : null),
+          h('div', { style: { marginTop: 5, display: 'flex', gap: 4, flexWrap: 'wrap' } },
+            e.request ? h('button', { className: 'rt-btn', style: { padding: '0 6px', fontSize: 10.5 }, onClick: () => copyText(e.request) }, '复制请求') : null,
+            e.response ? h('button', { className: 'rt-btn', style: { padding: '0 6px', fontSize: 10.5 }, onClick: () => copyText(e.response) }, '复制响应') : null)))
       }
       if (blocks.length === 0) {
         blocks.push(h('div', { key: 'none', className: 'rt-kv' }, h('b', null, '证据'),
@@ -2476,38 +2637,56 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
       const creds = props.items || []
       if (!creds.length) return h('div', { className: 'rt-empty' }, '暂无凭据（拿到口令/密钥/Hash 后用 redteam_credential_add 落库，秒级可复用）')
       return h('div', { className: 'rt-pane' }, creds.map((c) => h('div', { key: 'c' + c.id, className: 'rt-cred' },
-        h('div', { className: 'rt-cred-head' },
-          h('span', { className: 'rt-cred-host' }, c.host),
-          c.username ? h('span', { className: 'rt-tag' }, c.username) : null,
-          h('span', { className: 'rt-tag rt-tag-passive' }, c.secret_type || 'password'),
-          c.privilege ? h('span', { className: 'rt-tag rt-tag-active' }, c.privilege) : null,
-          h('div', { className: 'rt-spacer' }),
-          h('button', {
+        h(CardHead, {
+          children: [
+            h('span', { className: 'rt-cred-host', title: c.host }, (c.username ? c.username + '@' : '') + (c.host || '未指定主机')),
+            h('span', { className: 'rt-tag rt-tag-passive' }, c.secret_type || 'password'),
+            c.privilege ? h('span', { className: 'rt-tag rt-tag-active' }, c.privilege) : null,
+          ],
+          actions: h('button', {
             className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
             onClick: (e) => { e.stopPropagation(); copyText(String(c.secret_value || '')) },
-          }, '复制')),
+          }, '复制'),
+        }),
         h(SecretText, { value: c.secret_value, className: 'rt-secret', empty: '未记明文 —— 请用 redteam_credential_add 的 secret_value 补上，面板才能直显' }),
-        h('div', { className: 'rt-cred-meta' },
-          [c.source ? '来源 ' + c.source : null,
-            c.tool ? '工具 ' + c.tool : null,
-            c.secret_ref ? '证据 ' + c.secret_ref : null,
-            c.found_by_agent ? 'by ' + c.found_by_agent : null,
-            c.found_at ? fmt(c.found_at) : null].filter(Boolean).join(' · ')),
-        c.note ? h('div', { className: 'rt-cred-meta' }, '备注：' + c.note) : null)))
+        h(Meta, { compact: true, rows: [
+          ['主机', h('span', { className: 'rt-mono' }, c.host || '—')],
+          ['用户名', c.username || '—'],
+          ['类型', c.secret_type || 'password'],
+          ['权限', c.privilege || '—'],
+          ['来源', c.source || '—'],
+          ['工具', c.tool || '—'],
+          ['取得时间', c.found_at ? fmt(c.found_at) : '—'],
+          ['发现角色', c.found_by_agent || '—'],
+          ['凭据引用', c.secret_ref ? h('span', { className: 'rt-mono' }, c.secret_ref) : '—'],
+        ] }),
+        c.note ? h(RawFold, { label: '备注（点击展开）', text: c.note }) : null)))
     }
 
     function AccessList(props) {
       const accesses = props.items || []
       if (!accesses.length) return h('div', { className: 'rt-empty' }, '暂无访问会话')
       return h('div', { className: 'rt-pane' }, accesses.map((a) => h('div', {
-        key: 'a' + a.id, className: 'rt-vrow',
-        style: { cursor: 'default', gridTemplateColumns: '1fr 110px 80px 80px 1fr' },
+        key: 'a' + a.id, className: 'rt-cred',
       },
-        h('span', { className: 'rt-mono' }, a.host),
-        h('span', null, a.username || '—'),
-        h('span', null, h('span', { className: 'rt-tag rt-tag-active' }, a.method || '—')),
-        h('span', null, a.privilege || '—'),
-        h('span', { className: 'rt-mono', title: a.session_ref || '' }, a.session_ref || '—'))))
+        h(CardHead, {
+          children: [
+            h('span', { className: 'rt-cred-host', title: a.host }, (a.username ? a.username + '@' : '') + (a.host || '未指定主机')),
+            a.method ? h('span', { className: 'rt-tag rt-tag-active' }, a.method) : null,
+            a.privilege ? h('span', { className: 'rt-tag' }, a.privilege) : null,
+          ],
+          actions: a.session_ref ? h('button', {
+            className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
+            onClick: (e) => { e.stopPropagation(); copyText(String(a.session_ref || '')) },
+          }, '复制引用') : null,
+        }),
+        h(Meta, { compact: true, rows: [
+          ['主机', h('span', { className: 'rt-mono' }, a.host || '—')],
+          ['用户名', a.username || '—'],
+          ['方式', a.method || '—'],
+          ['权限', a.privilege || '—'],
+          ['会话引用', a.session_ref ? h('span', { className: 'rt-mono' }, a.session_ref) : '—'],
+        ] }))))
     }
 
     /** 凭据 / 访问会话 / 攻击文件从「漏洞战果」移出，默认全部折叠，按需查看。 */
@@ -2669,25 +2848,36 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
           key: 'vd' + v.id, className: 'rt-vrow',
           style: { cursor: 'default', gridTemplateColumns: '1fr' },
         }, h('div', { className: 'rt-vdetail' },
-          h('div', { className: 'rt-kv' }, h('b', null, '拿到什么'),
+          h(MetaBlock, { title: '漏洞', rows: [
+            ['等级', h('span', { className: sevClass(v.severity) }, SEV_LABEL[v.severity] || v.severity)],
+            ['编号', v.cve || '—'],
+            ['状态', h('span', { className: 'rt-tag' }, STATUS_LABEL[v.status] || v.status)],
+            ['置信度', v.confidence === null || v.confidence === undefined ? '—' : Math.round(v.confidence * 100) + '%'],
+          ] }),
+          h(MetaBlock, { title: '目标与来源', rows: [
+            ['目标', h('span', { className: 'rt-mono' }, v.target || '—')],
+            ['资产', (v.asset_ip || '—') + (v.segment_cidr ? ' · ' + v.segment_cidr : '')],
+            ['来源', v.source || '—'],
+            ['发现角色', v.found_by_agent || '—'],
+            ['发现时间', fmt(v.found_at)],
+            ['证据', (v.http_evidence || []).length + ' 条 HTTP · ' + (v.shot_count || 0) + ' 张截图'],
+          ] }),
+          h(MetaBlock, { title: '拿到什么', children: h('div', { className: 'rt-gain-list' },
             gainedList.length
-              ? h('span', null, gainedList.map((g, gi) => h('span', { key: 'g' + gi, className: 'rt-gain', style: { marginRight: 6 } }, g)))
-              : h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } },
-                  '未记录 —— 拿到权限/成果后请用 redteam_vuln_update 补 gained（例：服务器权限、内网隧道、后台管理员账号）')),
-          h('div', { className: 'rt-kv' }, h('b', null, '目标'), h('span', { className: 'rt-mono', style: { wordBreak: 'break-all' } }, v.target || '—')),
-          h('div', { className: 'rt-kv' }, h('b', null, '资产'), h('span', null, (v.asset_ip || '—') + ' · ' + (v.segment_cidr || ''))),
-          h('div', { className: 'rt-kv' }, h('b', null, '来源'), h('span', null, (v.source || '—') + ' · ' + (v.found_by_agent || '—') + ' · ' + fmt(v.found_at))),
-          detailEvidence(v),
+              ? gainedList.map((g, gi) => h('span', { key: 'g' + gi, className: 'rt-gain' }, g))
+              : h('span', { className: 'rt-summary-muted' },
+                  '未记录 —— 拿到权限/成果后请用 redteam_vuln_update 补 gained（例：服务器权限、内网隧道、后台管理员账号）')) }),
+          h(MetaBlock, { title: '证据', children: detailEvidence(v) }),
           (() => {
             const mine = filesByVuln.get(Number(v.id)) || []
-            return h('div', { className: 'rt-kv' }, h('b', null, '攻击文件'),
-              mine.length
-                ? h('span', null, mine.map((f, fi) => h('div', { key: 'af' + fi, style: { marginBottom: 3 } },
-                    '· ' + (f.kind ? '[' + f.kind + '] ' : '') + (f.name || '(未命名)')
-                    + (f.description ? ' — ' + f.description : ''),
-                    h('div', { className: 'rt-mono', style: { fontSize: 11, marginLeft: 12, color: 'var(--dsw-alias-label-secondary)', overflowWrap: 'anywhere' } }, f.path || ''))))
-                : h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } },
-                    '（无）用 redteam_attack_file_add 把这条漏洞打通的脚本/马/EXP 归档，并带上 vuln_id'))
+            return h(MetaBlock, { title: '攻击文件', children: mine.length
+              ? h('div', null, mine.map((f, fi) => h('div', { key: 'af' + fi, className: 'rt-evidence-card' },
+                  h('div', { className: 'rt-evidence-card-head' },
+                    '[' + (f.kind || 'file') + '] ' + (f.name || '(未命名)')),
+                  f.description ? h('div', { className: 'rt-evidence-card-meta' }, f.description) : null,
+                  h('div', { className: 'rt-mono rt-evidence-card-meta' }, f.path || ''))))
+              : h('span', { className: 'rt-summary-muted' },
+                  '（无）用 redteam_attack_file_add 把这条漏洞打通的脚本/马/EXP 归档，并带上 vuln_id') })
           })(),
           h('div', { className: 'rt-actions' },
             h('button', { className: 'rt-btn', onClick: (e) => { e.stopPropagation(); setVulnStatus(v.id, 'confirmed') } }, '确认'),
@@ -3285,22 +3475,31 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
             onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFile(f) } },
           },
             h('span', { className: 'rt-sec-caret' }, detail && detail.id === f.id ? '▾' : '▸'),
-            h('span', { className: 'rt-mono' }, f.name),
+            h('div', { className: 'rt-file-main' },
+              h('div', { className: 'rt-mono rt-file-name' }, f.name),
+              h('div', { className: 'rt-summary-muted rt-file-path', title: f.path || '' }, f.path || '—')),
             h('span', null, h('span', { className: 'rt-tag rt-tag-active' }, FILE_KIND[f.kind] || f.kind || '—')),
-            h('span', { style: { fontSize: 11.5, color: 'var(--dsw-alias-label-secondary)' }, title: f.description || '' }, f.description || '—')))
+            h('span', { className: 'rt-file-desc', style: { fontSize: 11.5, color: 'var(--dsw-alias-label-secondary)' }, title: f.description || '' }, f.description || '—')))
           if (!detail || detail.id !== f.id) continue
           fileNodes.push(h('div', {
             key: 'ad' + f.id, className: 'rt-vrow', style: { cursor: 'default', gridTemplateColumns: '1fr' },
           }, h('div', { className: 'rt-vdetail' },
-            h('div', { className: 'rt-kv' }, h('b', null, '效果'), h('span', null, detail.evidence || '—')),
-            h('div', { className: 'rt-kv' }, h('b', null, '路径'), h('span', { className: 'rt-mono', style: { wordBreak: 'break-all' } }, detail.path)),
-            h('div', { className: 'rt-kv' }, h('b', null, '记录'), h('span', null, fmt(detail.created_at) + (detail.created_by ? ' · ' + detail.created_by : ''))),
-            /\.md$/i.test(detail.name || detail.path || '')
-              ? h(Markdown, {
-                  className: 'rt-markdown rt-md-view', text: detail.content || '（空）',
-                  style: { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 6, maxHeight: '40vh' },
-                })
-              : h('pre', { className: 'rt-md', style: { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 6, maxHeight: '40vh', padding: '10px 12px' } }, detail.content || '（空）'))))
+            h(MetaBlock, { title: '文件信息', rows: [
+              ['名称', h('span', { className: 'rt-mono' }, detail.name || '—')],
+              ['类型', FILE_KIND[detail.kind] || detail.kind || '—'],
+              ['目标', folder.target || '—'],
+              ['路径', h('span', { className: 'rt-mono' }, detail.path || '—')],
+              ['效果', detail.evidence || '—'],
+              ['记录', fmt(detail.created_at) + (detail.created_by ? ' · ' + detail.created_by : '')],
+            ] }),
+            h('div', { className: 'rt-summary-muted', style: { margin: '7px 0 3px' } }, '文件内容'),
+            h('div', { className: 'rt-file-preview' },
+              /\.md$/i.test(detail.name || detail.path || '')
+                ? h(Markdown, {
+                    className: 'rt-markdown rt-md-view', text: detail.content || '（空）',
+                    style: { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 6, maxHeight: '40vh' },
+                  })
+                : h('pre', { className: 'rt-md', style: { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 6, maxHeight: '40vh', padding: '10px 12px' } }, detail.content || '（空）')))))
         }
         rows.push(h(Section, {
           key: 'sec:' + folder.folder, tone: 'folder', title: folder.folder + '/',
@@ -3415,48 +3614,53 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
         const d = isOpen && detail && detail.id === x.id ? detail : null
         return h('div', { key: 'p' + x.id, className: 'rt-kb' + (isOpen ? ' open' : '') },
           h('div', {
-            className: 'rt-kb-head', role: 'button', tabIndex: 0, 'aria-expanded': isOpen ? 'true' : 'false',
+            className: 'rt-kb-head rt-kb-headline', role: 'button', tabIndex: 0, 'aria-expanded': isOpen ? 'true' : 'false',
             onClick: () => open(x.id),
             onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(x.id) } },
           },
             h('span', { className: 'rt-sec-caret' }, isOpen ? '▾' : '▸'),
             h('span', { className: 'rt-kb-kind k-' + (x.kind || 'poc') }, POC_KIND_LABEL[x.kind] || x.kind || 'POC'),
-            h('span', { className: 'rt-kb-title' }, x.title),
-            x.cve ? h('span', { className: 'rt-tag rt-tag-passive' }, x.cve) : null,
-            x.component ? h('span', { className: 'rt-tag' }, x.component) : null,
-            x.verified === 1
-              ? h('span', { className: 'rt-tag rt-tag-live' }, '已验证')
-              : h('span', { className: 'rt-tag rt-tag-warn' }, '未验证'),
+            h('div', { className: 'rt-kb-headline-main' },
+              h('span', { className: 'rt-kb-title2' }, x.title),
+              x.cve ? h('span', { className: 'rt-tag rt-tag-passive' }, x.cve) : null,
+              x.component ? h('span', { className: 'rt-tag' }, x.component) : null,
+              x.verified === 1
+                ? h('span', { className: 'rt-tag rt-tag-live' }, '已验证')
+                : h('span', { className: 'rt-tag rt-tag-warn' }, '未验证')),
             h('div', { className: 'rt-spacer' }),
             h('span', { className: 'rt-tag' }, POC_SOURCE_LABEL[x.source] || x.source || '—'),
             x.hit_count ? h('span', { className: 'rt-tag' }, '复用 ' + x.hit_count) : null),
-          /* 来源行：归类 · 影响版本 · 建立时间 · 来源靶标 · 发现资产 —— 一条知识"什么时候、
-             在哪个单位的哪台资产上发现的"一眼可见 */
-          h('div', { className: 'rt-kb-sub' },
-            [x.category ? '归类 ' + (POC_CAT_NAME[x.category] || x.category) : null,
-              x.versions ? '影响版本 ' + x.versions : null,
-              x.language || null,
-              x.tags || null,
-              '建立时间 ' + fmt(x.created_at),
-              (x.engagement_name || x.engagement_id) ? '来源靶标 ' + (x.engagement_name || x.engagement_id) : null,
-              x.asset_target ? '发现资产 ' + x.asset_target : null,
-              x.found_by_agent ? '发现角色 ' + (ROLE_LABEL[x.found_by_agent] || x.found_by_agent) : null,
-              x.source_url ? '来源 ' + x.source_url : null].filter(Boolean).join(' · ')),
+          h('div', { className: 'rt-kb-summary' },
+            h('div', { className: 'rt-kb-summary-line' },
+              x.category ? h('span', { className: 'rt-tag rt-tag-passive' }, POC_CAT_NAME[x.category] || x.category) : null,
+              x.versions ? h('span', { className: 'rt-tag' }, '影响 ' + x.versions) : null,
+              x.language ? h('span', { className: 'rt-tag' }, x.language) : null,
+              x.tags ? h('span', { className: 'rt-summary-muted' }, x.tags) : null),
+            h('div', { className: 'rt-summary-muted' },
+              [x.engagement_name || x.engagement_id ? '来源靶标 ' + (x.engagement_name || x.engagement_id) : null,
+                x.asset_target ? '资产 ' + x.asset_target : null,
+                x.found_by_agent ? '角色 ' + (ROLE_LABEL[x.found_by_agent] || x.found_by_agent) : null,
+                '建立 ' + fmt(x.created_at)].filter(Boolean).join(' · ')),
+            x.source_url ? h('div', { className: 'rt-kb-source-line' },
+              '来源 ', h('a', { className: 'rt-link', href: x.source_url, target: '_blank', rel: 'noreferrer', title: x.source_url }, x.source_url)) : null),
           isOpen
             ? h('div', { className: 'rt-kb-body' },
                 detailBusy && !d ? h('div', { className: 'rt-empty' }, '读取中…') : null,
                 d ? h('div', null,
-                  d.usage ? h('div', { className: 'rt-kv' }, h('b', null, '用法'), h('span', { className: 'rt-mono' }, d.usage)) : null,
-                  d.description ? h('div', { className: 'rt-kv' }, h('b', null, '说明'), h('span', null, d.description)) : null,
-                  d.verified_note ? h('div', { className: 'rt-kv' }, h('b', null, '验证证据'), h('span', null, d.verified_note)) : null,
-                  d.used_on ? h('div', { className: 'rt-kv' }, h('b', null, '最近使用'), h('span', null, d.used_on)) : null,
-                  d.path ? h('div', { className: 'rt-kv' }, h('b', null, '落盘'), h('span', { className: 'rt-mono' }, d.path)) : null,
+                  h(MetaBlock, { title: '用法与说明', rows: [
+                    ['用法', d.usage ? h('pre', { className: 'rt-raw-pre', style: { maxHeight: 120 } }, d.usage) : '—'],
+                    ['说明', d.description || '—'],
+                    ['验证证据', d.verified_note || '—'],
+                    ['最近使用', d.used_on || '—'],
+                    ['落盘', d.path ? h('span', { className: 'rt-mono' }, d.path) : '—'],
+                    ['来源链接', d.source_url || '—'],
+                  ] }),
                   h('div', { className: 'rt-kb-actions' },
                     h('button', { className: 'rt-btn', disabled: !d.content, onClick: () => copy(d.content || '', 'POC 正文') }, '复制正文'),
                     h('button', { className: 'rt-btn', onClick: () => useIt(x) }, '记一次复用'),
                     d.source_url ? h('button', { className: 'rt-btn', onClick: () => copy(d.source_url, '来源链接') }, '复制来源') : null),
                   d.content
-                    ? h('pre', { className: 'rt-rep-http' }, d.content.length > 12000 ? d.content.slice(0, 12000) + '\n…（已截断，完整内容见落盘文件）' : d.content)
+                    ? h(RawFold, { label: '展开 POC 正文（' + d.content.length + ' 字）', text: d.content.length > 12000 ? d.content.slice(0, 12000) + '\n…（已截断，完整内容见落盘文件）' : d.content })
                     : h('div', { className: 'rt-empty' }, '这条只有元数据，没有正文 —— 拿到正文后用 redteam_poc_update 补上'))
                 : null)
             : null)
@@ -3757,32 +3961,46 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
             : h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, '—'))))
         if (!open) continue
         /* 命中记录：一行一条 —— 第一行给"序号 + 资产 + 时间 + 复制"，内容另起一行自适应换行 */
-        const hitNodes = p.hits.map((hh, hi) => h('div', {
-          key: 'h' + hh.id,
-          className: 'rt-hit-row' + (hh.self_created ? ' self-created' : '') + (hh.capped ? ' service-capped' : ''),
-        },
-          h('span', { className: 'rt-hit-idx' }, String(hi + 1)),
-          h('span', { className: 'rt-hit-asset', title: hh.target || hh.asset_ip || '' },
-            hh.asset_ip || hh.target || '未指定资产'),
-          hh.self_created ? h('span', { className: 'rt-tag rt-tag-warn', title: '自己注册/自建的账号不算得分权限，只作过程记录' }, '自建 · 不计分') : null,
-          hh.capped ? h('span', {
-            className: 'rt-tag rt-tag-warn',
-            title: hh.capped_reason || '同一资产同一端口只算分值最高的一条，这条不计分',
-          }, '服务已拿满 · 不计分' + (hh.service ? '（' + hh.service + '）' : '')) : null,
-          hh.shot_count ? h('span', { className: 'rt-tag', title: '这条命中有证据截图（展开得分点即可看到代表图）' },
-            '图 ' + hh.shot_count) : null,
-          h('span', { className: 'rt-hit-time' }, fmt(hh.recorded_at)),
-          h('button', {
-            className: 'rt-btn', style: { padding: '0 5px', fontSize: 10.5 },
-            title: '复制这一条',
-            onClick: (e) => {
-              e.stopPropagation()
-              copyText((hh.asset_ip || hh.target || '') + '  ' + (hh.evidence || ''))
-            },
-          }, '复制'),
-          hh.evidence
-            ? h('span', { className: 'rt-hit-txt', title: hh.evidence }, String(hh.evidence).replace(/\n+/g, ' '))
-            : h('span', { className: 'rt-hit-txt none' }, '未填账号密码/结果')))
+        const hitNodes = p.hits.map((hh, hi) => {
+          const counted = hh.counted !== false && hh.self_created !== true && hh.capped !== true
+          const points = Number(hh.points) || 0
+          const meta = []
+          if (hh.service) meta.push('服务 ' + hh.service + (hh.port ? ':' + hh.port : ''))
+          if (hh.recorded_at) meta.push('记录 ' + fmt(hh.recorded_at))
+          if (hh.recorded_by) meta.push('by ' + hh.recorded_by)
+          if (hh.step_id) meta.push('步骤 ' + hh.step_id)
+          if (hh.shot_count) meta.push('截图 ' + hh.shot_count)
+          const detailLines = []
+          if (hh.capped_reason) detailLines.push('不计分原因：' + hh.capped_reason)
+          if (hh.multiplier && Number(hh.multiplier) > 1) detailLines.push('计分倍率：×' + hh.multiplier)
+          if (hh.boundary_evidence) detailLines.push('边界证据：' + hh.boundary_evidence)
+          if (hh.note) detailLines.push('备注：' + hh.note)
+          return h('div', {
+            key: 'h' + hh.id,
+            className: 'rt-hit-card '
+              + (hh.self_created ? 'self-created ' : '') + (hh.capped ? 'capped ' : '') + (counted ? 'counted' : ''),
+          },
+            h('div', { className: 'rt-hit-card-head' },
+              h('span', { className: 'rt-hit-card-title', title: hh.target || hh.asset_ip || '' },
+                '#' + (hi + 1) + ' ' + (hh.asset_ip || hh.target || '未指定资产')),
+              h('span', { className: 'rt-hit-card-points' + (counted ? '' : ' zero') },
+                (counted ? '+' : '') + points + ' 分'),
+              hh.self_created ? h('span', { className: 'rt-tag rt-tag-warn', title: '自己注册/自建的账号不算得分权限，只作过程记录' }, '自建 · 不计分') : null,
+              hh.capped ? h('span', { className: 'rt-tag rt-tag-warn', title: hh.capped_reason || '同一资产同一端口只算分值最高的一条，这条不计分' },
+                '服务已拿满 · 不计分' + (hh.service ? '（' + hh.service + '）' : '')) : null,
+              h('div', { className: 'rt-spacer' }),
+              h('button', {
+                className: 'rt-btn', style: { padding: '0 5px', fontSize: 10.5 }, title: '复制这一条',
+                onClick: (e) => { e.stopPropagation(); copyText((hh.asset_ip || hh.target || '') + '  ' + (hh.evidence || '')) },
+              }, '复制')),
+            hh.evidence
+              ? h(ClampText, { text: hh.evidence, lines: 2, className: 'rt-hit-card-evidence' })
+              : h('div', { className: 'rt-hit-card-evidence rt-summary-muted' }, '未填账号密码/结果'),
+            meta.length ? h('div', { className: 'rt-hit-card-meta' }, meta.join(' · ')) : null,
+            detailLines.length || hh.evidence
+              ? h(RawFold, { label: '展开完整证据 / 判定', text: [hh.evidence, detailLines.join('\n')].filter(Boolean).join('\n\n') })
+              : null)
+        })
         rows.push(h('div', {
           key: 'spd' + p.id, className: 'rt-score-row',
           style: { cursor: 'default', gridTemplateColumns: '1fr' },
@@ -4216,20 +4434,6 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
       const statusDot = (s) => h('span', { className: s === 'online' || s === 'active' ? 'rt-dot-on' : (s === 'unknown' || !s ? 'rt-dot-unk' : 'rt-dot-off') })
       /* 卡片里统一用「标签 + 值」两列，长文本自动换行 —— 比一行点分隔好扫读 */
       const fact = (label, value) => h('div', { className: 'rt-sess-fact' }, h('b', null, label), h('span', null, value))
-      /* 检测说明/备注常是整段取证文本（含内部 IP、哈希、密钥片段）：默认折叠，不占首屏。 */
-      const clip = (v, max) => {
-        const t = String(v === undefined || v === null ? '' : v)
-        const n = max || 90
-        return t.length > n ? t.slice(0, n) + '…' : t
-      }
-      const factClip = (label, value, max) => fact(label, h('span', { title: String(value || '') }, clip(value, max)))
-      const noteFold = (label, text) => {
-        const t = String(text || '')
-        if (t.trim() === '') return null
-        return h('details', { className: 'rt-sess-fold' },
-          h('summary', null, label + '（' + t.length + ' 字，点击展开）'),
-          h('div', { style: { whiteSpace: 'pre-wrap', wordBreak: 'break-word', padding: '4px 0', fontSize: 11.5, color: 'var(--dsw-alias-label-secondary)' } }, t))
-      }
       /* 交付要求：马必须是冰蝎/哥斯拉加密马（用户才连得上），内网必须走 suo5 隧道 */
       const isEncryptedShell = (t) => /behinder|godzilla|冰蝎|哥斯拉/i.test(String(t || ''))
       const isSuo5 = (t) => /suo5/i.test(String(t || ''))
@@ -4265,72 +4469,82 @@ body[data-ds-dark-theme] .rt-btn-primary{filter:none}
       }
 
       const shellCards = shells.map((w) => h('div', { key: 'w' + w.id, className: 'rt-sess' },
-        h('div', { className: 'rt-sess-head' },
-          statusDot(w.status),
-          h('span', { className: 'rt-sess-title' }, w.url),
-          h('span', { className: 'rt-tag rt-tag-active' }, w.shell_type || 'webshell'),
-          isEncryptedShell(w.shell_type) ? null : h('span', { className: 'rt-tag rt-tag-warn' }, '用户连不上'),
-          w.privilege ? h('span', { className: 'rt-tag' }, w.privilege) : null,
-          h('div', { className: 'rt-spacer' }),
-          copied === 'cmd' + w.id
-            ? h('span', { className: 'rt-tag', style: { color: '#10b981' } }, '已复制')
-            : h('button', {
-                className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
-                onClick: () => copy('cmd' + w.id, 'curl -s "' + w.url + '"'),
-              }, '复制 URL'),
-          h('button', {
-            className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
-            onClick: () => markShell(w, 'offline'),
-          }, '标记失效')),
-        h('div', { className: 'rt-sess-facts' },
-          fact('类型', (isEncryptedShell(w.shell_type) ? '加密马（冰蝎/哥斯拉，用户可直连）' : '非加密马 —— 用户连不上，仅可作临时中转')),
-          w.pass_key ? fact('连接口令', h(SecretText, { value: w.pass_key })) : null,
-          w.asset_ip ? fact('所在资产', w.asset_ip) : null,
-          w.privilege ? fact('权限', w.privilege) : null,
-          w.secret_ref ? fact('凭据引用', h('span', { className: 'rt-mono' }, w.secret_ref)) : null,
-          fact('最后检测', (w.last_check ? fmt(w.last_check) : '未检测')
-            + (w.latency_ms !== null && w.latency_ms !== undefined ? '（' + w.latency_ms + 'ms）' : '')),
-          noteFold('检测说明', w.check_note),
-          noteFold('备注', w.note))))
+        h(CardHead, {
+          children: [
+            statusDot(w.status),
+            h('span', { className: 'rt-sess-title', title: w.url }, w.url),
+            h('span', { className: 'rt-tag rt-tag-' + (w.status === 'online' ? 'live' : 'passive') }, w.status === 'online' ? '在线' : (w.status || '未知')),
+            h('span', { className: 'rt-tag rt-tag-active' }, w.shell_type || 'webshell'),
+            isEncryptedShell(w.shell_type) ? null : h('span', { className: 'rt-tag rt-tag-warn' }, '用户连不上'),
+          ],
+          actions: [
+            copied === 'cmd' + w.id
+              ? h('span', { className: 'rt-tag', style: { color: '#10b981' } }, '已复制')
+              : h('button', {
+                  className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
+                  onClick: () => copy('cmd' + w.id, 'curl -s "' + w.url + '"'),
+                }, '复制 URL'),
+            h('button', {
+              className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
+              onClick: () => markShell(w, 'offline'),
+            }, '标记失效'),
+          ],
+        }),
+        h(Meta, { compact: true, className: 'rt-sess-meta', rows: [
+          ['类型', isEncryptedShell(w.shell_type) ? '加密马（冰蝎/哥斯拉，用户可直连）' : '非加密马 —— 用户连不上，仅可作临时中转'],
+          ['权限', w.privilege || '未记录'],
+          ['所在资产', w.asset_ip || '—'],
+          ['连接口令', w.pass_key ? h(SecretText, { value: w.pass_key }) : '未记录'],
+          ['凭据引用', w.secret_ref ? h('span', { className: 'rt-mono' }, w.secret_ref) : '—'],
+          ['最后检测', (w.last_check ? fmt(w.last_check) : '未检测')
+            + (w.latency_ms !== null && w.latency_ms !== undefined ? '（' + w.latency_ms + 'ms）' : '')],
+          ['发现', (w.created_at ? fmt(w.created_at) : '时间未知') + (w.found_by_agent ? ' · ' + w.found_by_agent : '')],
+        ] }),
+        w.check_note ? h(RawFold, { label: '检测说明（点击展开）', text: w.check_note }) : null,
+        w.note ? h(RawFold, { label: '备注（点击展开）', text: w.note }) : null))
 
       const tunnelCards = tunnels.map((t) => {
         const proxy = t.listen ? 'socks5://' + t.listen : ''
         const gogoCmd = t.listen ? './gogo -i <内网CIDR> -m ss --ping -p top2,win,db --proxy ' + proxy : ''
         const fscanCmd = t.listen ? './fscan -h <内网CIDR> -np -nobr -nopoc -socks5 ' + t.listen + ' -o intranet.txt' : ''
+        const legitLabel = t.legit === true
+          ? h('span', { className: 'rt-tag rt-tag-live', title: t.entry_kind_label || '' }, '目标侧通道')
+          : (t.legit === false
+              ? h('span', { className: 'rt-tag rt-tag-warn', title: '只在自己 VPS/自建服务器上开的通道，没有碰到目标 —— 不算边界突破/内网突破' }, '不算突破')
+              : h('span', { className: 'rt-tag', title: '未声明 entry_kind：请说明目标侧的那一端是什么（target-outbound / target-http / target-agent）' }, '待确认'))
         return h('div', { key: 't' + t.id, className: 'rt-sess' },
-          h('div', { className: 'rt-sess-head' },
-            statusDot(t.status),
-            h('span', { className: 'rt-sess-title' }, t.listen || '(未填监听地址)'),
-            h('span', { className: 'rt-tag rt-tag-passive' }, t.kind || 'tunnel'),
-            isSuo5(t.kind) ? null : h('span', { className: 'rt-tag rt-tag-warn' }, '非 suo5 标准通道'),
-            /* 只有跨越靶标边界的通道才算突破凭证（自己 VPS/自建服务器上开的不算） */
-            t.legit === true
-              ? h('span', { className: 'rt-tag rt-tag-live', title: t.entry_kind_label || '' }, '目标侧通道')
-              : (t.legit === false
-                  ? h('span', { className: 'rt-tag rt-tag-warn', title: '只在自己 VPS/自建服务器上开的通道，没有碰到目标 —— 不算边界突破/内网突破' }, '不算突破')
-                  : h('span', { className: 'rt-tag', title: '未声明 entry_kind：请说明目标侧的那一端是什么（target-outbound / target-http / target-agent）' }, '待确认')),
-            t.reach ? h('span', { className: 'rt-tag' }, '可达 ' + t.reach) : null,
-            h('div', { className: 'rt-spacer' }),
-            h('button', {
-              className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
-              onClick: () => copy('sock' + t.id, t.listen || ''),
-            }, copied === 'sock' + t.id ? '已复制' : '复制地址'),
-            t.status === 'active'
-              ? h('button', { className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 }, onClick: () => markTunnel(t, 'down') }, '标记失效')
-              : h('button', { className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 }, onClick: () => markTunnel(t, 'active') }, '标记可用')),
-          h('div', { className: 'rt-sess-facts' },
-            factClip('目标侧入口', t.entry || '未登记', 110),
-            fact('跨越边界', t.legit === true
-              ? h('span', { className: 'rt-tag rt-tag-live' }, t.entry_kind_label || t.entry_kind || '已确认目标侧')
-              : (t.legit === false
-                  ? h('span', { className: 'rt-tag rt-tag-warn' }, '不算突破（只在自己 VPS 上开代理）')
-                  : h('span', { className: 'rt-tag' }, '未声明 entry_kind，待确认'))),
-            t.reach ? factClip('可达网段', t.reach, 110) : null,
-            t.asset_ip ? fact('所在资产', t.asset_ip) : null,
-            fact('最后检测', (t.last_check ? fmt(t.last_check) : '未检测')
-              + (t.latency_ms !== null && t.latency_ms !== undefined ? '（' + t.latency_ms + 'ms）' : '')),
-            noteFold('检测说明', t.check_note),
-            noteFold('备注', t.note)),
+          h(CardHead, {
+            children: [
+              statusDot(t.status),
+              h('span', { className: 'rt-sess-title', title: proxy || t.listen }, proxy || '(未填监听地址)'),
+              h('span', { className: 'rt-tag rt-tag-passive' }, t.kind || 'tunnel'),
+              isSuo5(t.kind) ? null : h('span', { className: 'rt-tag rt-tag-warn' }, '非 suo5 标准通道'),
+              legitLabel,
+              t.reach ? h('span', { className: 'rt-tag' }, '可达 ' + t.reach) : null,
+            ],
+            actions: [
+              h('button', {
+                className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 },
+                onClick: () => copy('sock' + t.id, t.listen || ''),
+              }, copied === 'sock' + t.id ? '已复制' : '复制地址'),
+              t.status === 'active'
+                ? h('button', { className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 }, onClick: () => markTunnel(t, 'down') }, '标记失效')
+                : h('button', { className: 'rt-btn', style: { padding: '0 6px', fontSize: 11 }, onClick: () => markTunnel(t, 'active') }, '标记可用'),
+            ],
+          }),
+          h(Meta, { compact: true, className: 'rt-sess-meta', rows: [
+            ['代理地址', t.listen ? h('span', { className: 'rt-mono' }, proxy) : '未填监听地址'],
+            ['类型', (t.kind || 'tunnel') + (isSuo5(t.kind) ? '（标准通道）' : '')],
+            ['目标侧入口', t.entry ? h(ClampText, { text: t.entry, lines: 2, className: 'rt-http-line' }) : '未登记'],
+            ['跨越边界', legitLabel],
+            ['可达网段', t.reach || '未记录'],
+            ['所在资产', t.asset_ip || '—'],
+            ['最后检测', (t.last_check ? fmt(t.last_check) : '未检测')
+              + (t.latency_ms !== null && t.latency_ms !== undefined ? '（' + t.latency_ms + 'ms）' : '')],
+            ['建立', (t.created_at ? fmt(t.created_at) : '时间未知') + (t.found_by_agent ? ' · ' + t.found_by_agent : '')],
+          ] }),
+          t.check_note ? h(RawFold, { label: '检测说明（点击展开）', text: t.check_note }) : null,
+          t.note ? h(RawFold, { label: '备注（点击展开）', text: t.note }) : null,
           /* 命令默认折叠：卡片首要信息是"这条通道能不能用、通向哪"，命令按需展开 */
           t.command ? h('details', { className: 'rt-sess-fold' },
             h('summary', null, '建立命令（点击展开 / 复制）'),
