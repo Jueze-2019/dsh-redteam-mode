@@ -5,7 +5,7 @@
 #   git config core.hooksPath .githooks
 # （scripts/deploy-local.mjs 也会自动配好；CI 里不依赖钩子，而是直接跑同一个脚本。）
 #
-# 规则与背景见 scripts/check-no-confidential.mjs 与 README「数据与隐私」。
+# 规则与背景见 scripts/check-no-confidential.mjs。
 # 紧急情况（确认内容不含敏感信息但被误拦）：git commit --no-verify
 set -eu
 
