@@ -40,7 +40,7 @@ ok(self.counted === false && /自己注册|不计分/.test(self.warning || ''), 
 ok(self.summary.achievedPoints === 0 && self.summary.selfCreatedHits === 1, 'score_hit：自建账号不加分，summary 单独计数')
 
 /* 拿到别人已有的账号：照常计分 */
-const real = await call('redteam_score_hit', { code: 'web-app', points: 50, target: 'http://t/admin', access_id: accessT, evidence: '普通账号 tomcat/Tomcat@2024（普通档 50，已登录）' })
+const real = await call('redteam_score_hit', { code: 'web-app', points: 50, target: 'http://t/admin', access_id: accessT, evidence: '普通账号 tomcat/ExamplePass2024（普通档 50，已登录）' })
 ok(real.counted === true && real.summary.achievedPoints === 50,
   'score_hit：拿到已有账号照常计分（规则 6 业务系统普通账号 50 分）')
 

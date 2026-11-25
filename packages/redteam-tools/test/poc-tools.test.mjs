@@ -60,7 +60,7 @@ try {
     versions: '12.2.1.3 / 12.2.1.4 / 14.1.1', language: 'python', source: 'web',
     source_url: 'https://example.com/cve-2023-21839', description: 'T3 协议反序列化',
     usage: 'python3 poc.py -t https://TARGET:7001', content: 'import socket\n# payload', verified: true,
-    verified_note: '10.1.2.3:7001 返回命令回显', tags: 'java,反序列化,rce', created_by: 'vuln-scan',
+    verified_note: '10.0.0.5:7001 返回命令回显', tags: 'java,反序列化,rce', created_by: 'vuln-scan',
   })
   ok(added.ok === true && added.created === true, '新增 POC 成功（' + added.code + '）')
   ok(added.verified === true, '验证状态被记录')

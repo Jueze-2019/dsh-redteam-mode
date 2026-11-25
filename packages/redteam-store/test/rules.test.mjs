@@ -46,7 +46,7 @@ try {
 
   const real = store.addScoreHit(id, {
     code: 'web-app', points: 50, target: 'http://t.example.com/admin', port: 443,
-    evidence: '后台普通用户 tomcat/Tomcat@2024（弱口令，普通档 50 分）', recorded_by: 'exploit',
+    evidence: '后台普通用户 tomcat/ExamplePass2024（弱口令，普通档 50 分）', recorded_by: 'exploit',
   })
   ok(real.counted === true && real.summary.achievedPoints === byCode.points + 50,
     '拿到别人已有的账号照常计分（业务系统普通账号档 50 分，在基线之上累加）')

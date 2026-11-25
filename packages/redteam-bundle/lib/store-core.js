@@ -440,6 +440,7 @@ function promptHash(text) {
 // __REDTEAM_PROMPTS_BLOCK__
 // __REDTEAM_PROMPTS_BLOCK__
 // __REDTEAM_PROMPTS_BLOCK__
+// __REDTEAM_PROMPTS_BLOCK__
 /* ------------------------------------------------------------------ 角色公共段落
 
    由 packages/redteam-store/tools/gen-prompts.mjs 生成，**不要直接改这一段**：
@@ -489,7 +490,7 @@ const COMMON_EXTERNAL = `## 本地不适用时：外部工具/技能（所有执
 `
 
 const COMMON_SCORE_RULES = `## 记分纪律（所有角色都遵守）
-- **一次记分必填两样**：\`code\`（得分点短代码）+ \`evidence\`（**只写结果**：目标资产 + 拿到的东西，如「10.1.2.3｜后台管理员 tomcat/Tomcat@2024」）。**缺 code 或 evidence 直接报错**，等于没发生。
+- **一次记分必填两样**：\`code\`（得分点短代码）+ \`evidence\`（**只写结果**：目标资产 + 拿到的东西，如「10.0.0.5｜后台管理员 tomcat/ExamplePass2024」）。**缺 code 或 evidence 直接报错**，等于没发生。
 - **记分前先用 \`redteam_score_list\` 读实际 code/上限/档位**，不要凭记忆；不确定 code、档位或证据要求时加载 \`score-coverage\` 技能。旧 code（web-account-*、webshell、rce、server-shell、db-access、sensitive-data、boundary、internal-pivot、core-system）已废弃，会报 \`score point not found\`。
 - **账号类得分必须绑定有效登录**：先 \`redteam_access_add\` 记录实际登录（host/username/method），再把 \`access_id\` 传给 \`redteam_score_hit\`；只有未授权接口/响应里有数据/只有凭据，都不算账号权限，按漏洞或数据证明记。
 - **同一系统只按最高权限计一次（G1）**：先记普通档，提权后用 \`points\` 改记高档，系统自动顶掉低档。
@@ -3659,14 +3660,14 @@ export class RedteamStore {
     const credsAllForDeps = this.listCredentials(id)
     const ownsCred = (x, c) => {
       /* ⚠️ 判定只能用"本条证据自己写出来的东西"，**不能**把 trace 挂上来的凭据也算进去：
-         trace 是"同资产/同主机"的宽松匹配（目标 10.1.2.142 会挂上所有 host 里带该地址的凭据），
+         trace 是"同资产/同主机"的宽松匹配（目标 10.0.0.10 会挂上所有 host 里带该地址的凭据），
          拿它当依据会推出"MySQL 条目依赖域控"这种结论。 */
       const text = [x.evidence, x.note, x.gained, x.target].join('\n')
       const sv = String(c.secret_value || '').trim()
       if (sv.length >= 6 && text.indexOf(sv) !== -1) return true
       const un = String(c.username || '').trim()
       /* 账号要"像账号"才算特征串：纯英文单词会撞车 —— 实测边界条目的证据里写着
-         `default via 10.1.2.1`，于是把用户名 default 的 Redis 凭据认成了本条的来处，
+         `default via 10.0.0.1`，于是把用户名 default 的 Redis 凭据认成了本条的来处，
          推出"跨境突破依赖 Redis"。带数字/反斜杠/@ 的（工号、域账号）才认。 */
       const accountLike = (v) => /[\d\\@]/.test(v) || v.length >= 10
       if (un.length >= 6 && accountLike(un) && text.indexOf(un) !== -1) {
@@ -3676,15 +3677,15 @@ export class RedteamStore {
         if (cip === null) return true
         return cip === ipOfTarget(x.target) || text.indexOf(cip) !== -1
       }
-      /* 不用"凭据 host 出现在证据里"来认领：目标 10.1.2.142 的证据里当然写着它，
+      /* 不用"凭据 host 出现在证据里"来认领：目标 10.0.0.10 的证据里当然写着它，
          那会把同主机上所有 config-leak 凭据都算成本条用到的（实测推出
          "MySQL 条目依赖域控"）。只认口令/账号这类**特征串**。 */
       return false
     }
     /* 前置候选 = 本条证据里直接提到的地址 + **所认领凭据的来源指针**。
        凭据的 tool/note 里"第一个 IP"通常就是这条口令/权限的来处
-       （例："从 10.1.2.163:9200 的 ES 检索到口令" → 来处是那台 ES；
-        "smbclient //10.1.2.5/SYSVOL 取启动脚本" → 来处是域控）。
+       （例："从 10.0.0.11:9200 的 ES 检索到口令" → 来处是那台 ES；
+        "smbclient //10.0.0.12/SYSVOL 取启动脚本" → 来处是域控）。
        只取第一个 IP 是为了精度：tool 字段后面往往顺带提到别的资产，
        全量取会把"RabbitMQ 口令来自应用配置"误判成"这条依赖 RabbitMQ"。 */
     for (const x of ordered) {

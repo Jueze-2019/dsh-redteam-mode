@@ -149,7 +149,7 @@ john --show hashes.txt
 2. **必须实测登录才记分**：Web 后台用 `browser-automation` / `kimi-webbridge` 真实登录一次
    （打开登录页 → 填账号口令 → 确认进入后台 → 记页面标题/菜单/当前用户名 → 抓 Cookie 存证据）→
    `redteam_access_add`（`method=web-login`）→ `redteam_score_hit`（`web-app` 10 分 / `web-app` 20 分，
-   `evidence` 写「资产｜后台管理员 tomcat/Tomcat@2024」）。
+   `evidence` 写「资产｜后台管理员 tomcat/ExamplePass2024」）。
    **登不进去就在 `redteam_asset_test` 的 `test` 里记一行卡点**（哈希未破解/需二次认证/限制来源 IP/账号已禁用），不记分。
 3. **账号权限按服务封顶**：同一资产同一端口只算一次分，拿到管理员即该服务拿满——不要在同一服务上刷多个账号。
 4. 记分时把实际命令/回显放进 `redteam_score_hit` 的 `command`/`result`，不需要再单独写 chain。

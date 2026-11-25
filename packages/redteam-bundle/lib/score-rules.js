@@ -127,7 +127,7 @@ export function scoreServiceKey(hit = {}) {
   return 'a' + assetId + ':' + (port === null ? 0 : port)
 }
 
-/** 「服务」的可读标签，给告警/报告用（如 `10.1.2.3:8080`）。 */
+/** 「服务」的可读标签，给告警/报告用（如 `10.0.0.5:8080`）。 */
 export function serviceLabel(hit = {}, assetIp) {
   const ip = assetIp || hit.asset_ip || ''
   const port = normalizePort(hit.port) ?? parseTargetPort(hit.target)
