@@ -55,13 +55,6 @@ Thumbs.db
 *.bak-*
 
 # ── 演练现场产物（在仓库根生成的，一律不入库）─────────────────────────────
-# 2026-09 巡检发现：根目录这几个文件是实战现场产物，绝不能进公开仓库。
-#   · runs_cgroup_targets.tsv —— 某靶标全部资产 IP/域名/端口清单（185 行真实数据）
-#   · ligolo-ng.yaml          —— 隧道配置，含 web.secret 与用户 argon2 口令哈希
-#   · screenshots/            —— 目标页面留证截图
-#   · reach_*.py              —— 走 SOCKS 隧道的连通性探测脚本（靶标可达性）
-#   · .sock.lock              —— 本机隧道运行时锁文件
-# 备份位置：$DSH_HOME/redteam/local-backup-<日期>/
 /runs_*.tsv
 /ligolo-ng.yaml
 /screenshots/
